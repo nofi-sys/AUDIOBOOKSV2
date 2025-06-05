@@ -25,3 +25,9 @@ python qc_app.py
 ```
 
 The application lets you select a script (PDF or TXT) and an ASR transcript, performs alignment and saves a `.qc.json` file.
+
+## Implementation notes
+
+Alignment relies on dynamic time warping with anchor trigrams to keep the
+matching monotonic.  Each output row shows the WER of a chunk computed using
+word-level Levenshtein distance.

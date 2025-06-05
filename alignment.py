@@ -149,9 +149,12 @@ def build_rows(ref: str, hyp: str) -> List[List]:
             asr_line = ""
 
         orig_line = " ".join(block)
-        wer_val = (
-            Levenshtein.normalized_distance(orig_line, asr_line) if asr_line else 1.0
-        )
+        ref_tokens = orig_line.split()
+        hyp_tokens = asr_line.split()
+        if hyp_tokens:
+            wer_val = Levenshtein.normalized_distance(ref_tokens, hyp_tokens)
+        else:
+            wer_val = 1.0
         flag = "✅" if wer_val <= WARN_WER else ("⚠️" if wer_val <= 0.20 else "❌")
         dur = round(len(asr_line.split()) / 3.0, 2)
 
