@@ -107,12 +107,12 @@ def build_rows(ref: str, hyp: str) -> List[List]:
     anchor_pairs = find_anchor_trigrams(ref_tok, hyp_tok)
 
     full_pairs: List[Tuple[int, int]] = []
-    seg_starts = [
-        (-1, -1),
-        *anchor_pairs,
-        (len(ref_tok) - 1, len(hyp_tok) - 1),
+    seg_starts = [(-1, -1)] + anchor_pairs + [
+        (len(ref_tok) - 1, len(hyp_tok) - 1)
     ]
-    for (prev_i, prev_j), (next_i, next_j) in zip(seg_starts[:-1], seg_starts[1:]):
+    for (prev_i, prev_j), (next_i, next_j) in zip(
+        seg_starts[:-1], seg_starts[1:]
+    ):
         if next_i > prev_i + 1 and next_j > prev_j + 1:
             sub_ref = ref_tok[prev_i + 1 : next_i]
             sub_hyp = hyp_tok[prev_j + 1 : next_j]
@@ -149,54 +149,33 @@ def build_rows(ref: str, hyp: str) -> List[List]:
             map_h[ri] = hj
 
     rows = []
-    spans: List[Tuple[int, int]] = []
-    start = 0
-    for idx, tok in enumerate(ref_tok):
-        if tok in {".", "?", "!"} or tok.endswith(".") or tok.endswith("?") or tok.endswith("!"):
-            spans.append((start, idx + 1))
-            start = idx + 1
-    if start < len(ref_tok):
-        spans.append((start, len(ref_tok)))
-
+    pos = 0
     line_id = 0
     consumed_h = set()
 
-    for span_start, span_end in spans:
-        block = ref_tok[span_start:span_end]
+    while pos < len(ref_tok):
+        block = ref_tok[pos : pos + LINE_LEN]
+        span_start = pos
+        span_end = pos + len(block)
+        pos = span_end
 
-        # First collect all candidate hyp-indices in this block,
-        # then drop any that have already been consumed by previous rows
-        h_idxs_all = [map_h[k] for k in range(span_start, span_end) if map_h[k] != -1]
-        h_idxs = [h for h in h_idxs_all if h not in consumed_h]
-
+        h_idxs = [map_h[k] for k in range(span_start, span_end) if map_h[k] != -1]
         if h_idxs:
             h_start = min(h_idxs)
             h_end = max(h_idxs) + 1
-
-            # Backfill up to two preceding stop words, but only if not already consumed
+            # backfill up to two preceding stop words
             for _ in range(2):
-                if (
-                    h_start > 0
-                    and hyp_tok[h_start - 1] in STOP
-                    and (h_start - 1) not in consumed_h
-                ):
+                if h_start > 0 and hyp_tok[h_start - 1] in STOP:
                     h_start -= 1
                 else:
                     break
-
-            # Extend for any missing reference tokens by including prior hyp tokens,
-            # as long as they are not "." or ";" and not already consumed
+            # extend for unmapped ref tokens
             missing = sum(1 for k in range(span_start, span_end) if map_h[k] == -1)
             for _ in range(missing):
-                if (
-                    h_start > 0
-                    and hyp_tok[h_start - 1] not in {".", ";"}
-                    and (h_start - 1) not in consumed_h
-                ):
+                if h_start > 0 and hyp_tok[h_start - 1] not in {".", ";"}:
                     h_start -= 1
                 else:
                     break
-
             asr_line = " ".join(hyp_tok[h_start:h_end])
             # Mark these hyp indices as “consumed” so future rows won’t reuse them
             consumed_h.update(range(h_start, h_end))
@@ -208,17 +187,9 @@ def build_rows(ref: str, hyp: str) -> List[List]:
         hyp_tokens = asr_line.split()
         if hyp_tokens:
             wer_val = Levenshtein.normalized_distance(ref_tokens, hyp_tokens)
-            base_ref = [r.strip(".,;!") for r in ref_tokens]
-            base_hyp = [h.strip(".,;!") for h in hyp_tokens]
-            base_wer = Levenshtein.normalized_distance(base_ref, base_hyp)
         else:
             wer_val = 1.0
-            base_wer = 1.0
-        if base_wer <= 0.05:
-            flag = "✅"
-        else:
-            threshold = 0.20 if len(ref_tokens) < 5 else WARN_WER
-            flag = "✅" if wer_val <= threshold else ("⚠️" if wer_val <= 0.20 else "❌")
+        flag = "✅" if wer_val <= WARN_WER else ("⚠️" if wer_val <= 0.20 else "❌")
         dur = round(len(asr_line.split()) / 3.0, 2)
 
         rows.append([line_id, flag, round(wer_val * 100, 1), dur, orig_line, asr_line])
