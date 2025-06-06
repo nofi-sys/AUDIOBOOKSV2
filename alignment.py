@@ -221,4 +221,68 @@ def build_rows(ref: str, hyp: str) -> List[List]:
         rows.append([line_id, flag, round(wer_val * 100, 1), dur, orig_line, asr_line])
         line_id += 1
 
+    return refine_segments(rows)
+
+
+def refine_segments(rows: List[List], max_shift: int = 2) -> List[List]:
+    """Fine-tune ASR segments by shifting words across boundaries."""
+
+    rows = [r[:] for r in rows]
+
+    def _wer(ref_t: List[str], hyp_t: List[str]) -> float:
+        return Levenshtein.normalized_distance(ref_t, hyp_t)
+
+    for i in range(len(rows) - 1):
+        ref_i = rows[i][4].split()
+        ref_next = rows[i + 1][4].split()
+        asr_i = rows[i][5].split()
+        asr_next = rows[i + 1][5].split()
+        cost = _wer(ref_i, asr_i) + _wer(ref_next, asr_next)
+        improved = True
+        while improved:
+            improved = False
+            for k in range(1, max_shift + 1):
+                if k <= len(asr_next):
+                    new_i = asr_i + asr_next[:k]
+                    new_n = asr_next[k:]
+                    c = _wer(ref_i, new_i) + _wer(ref_next, new_n)
+                    if c < cost:
+                        asr_i, asr_next = new_i, new_n
+                        cost = c
+                        improved = True
+                        break
+            for k in range(1, max_shift + 1):
+                if k <= len(asr_i):
+                    new_i = asr_i[:-k]
+                    if not new_i:
+                        continue
+                    new_n = asr_i[-k:] + asr_next
+                    c = _wer(ref_i, new_i) + _wer(ref_next, new_n)
+                    if c < cost:
+                        asr_i, asr_next = new_i, new_n
+                        cost = c
+                        improved = True
+                        break
+        rows[i][5] = " ".join(asr_i)
+        rows[i + 1][5] = " ".join(asr_next)
+
+    for r in rows:
+        ref_tokens = r[4].split()
+        hyp_tokens = r[5].split()
+        if hyp_tokens:
+            wer_val = Levenshtein.normalized_distance(ref_tokens, hyp_tokens)
+            base_ref = [t.strip(".,;!") for t in ref_tokens]
+            base_hyp = [t.strip(".,;!") for t in hyp_tokens]
+            base_wer = Levenshtein.normalized_distance(base_ref, base_hyp)
+        else:
+            wer_val = 1.0
+            base_wer = 1.0
+        if base_wer <= 0.05:
+            flag = "✅"
+        else:
+            threshold = 0.20 if len(ref_tokens) < 5 else WARN_WER
+            flag = "✅" if wer_val <= threshold else ("⚠️" if wer_val <= 0.20 else "❌")
+        r[1] = flag
+        r[2] = round(wer_val * 100, 1)
+        r[3] = round(len(hyp_tokens) / 3.0, 2)
     return rows
