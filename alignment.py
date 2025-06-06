@@ -159,7 +159,8 @@ def build_rows(ref: str, hyp: str) -> List[List]:
                 span_end = k + 1
                 break
             if tok.endswith(",") or tok.endswith(";") or tok in {",", ";"}:
-                add = 2 if k + 1 < len(ref_tok) and k + 2 - pos <= LINE_LEN else 1
+                cond = k + 1 < len(ref_tok) and k + 2 - pos <= LINE_LEN
+                add = 2 if cond else 1
                 span_end = min(k + add, max_end)
                 break
         block = ref_tok[pos:span_end]
