@@ -25,3 +25,7 @@ def test_find_anchor_trigrams():
     hyp = "x a b c y d e f".split()
     anchors = text_utils.find_anchor_trigrams(ref, hyp)
     assert anchors == [(3, 5)]
+
+
+def test_token_equal_accents_case():
+    assert text_utils.token_equal("Árbol", "arbol")
