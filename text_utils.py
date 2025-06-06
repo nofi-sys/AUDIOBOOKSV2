@@ -36,6 +36,9 @@ STOP = {
     "le",
     "ya",
     "fue",
+    "punto",
+    "puntos",
+    "coma",
 }
 
 DIGIT_NAMES = {
@@ -70,6 +73,12 @@ def normalize(text: str, strip_punct: bool = True) -> str:
     """Lowercase, remove accents and optionally strip punctuation."""
 
     text = unidecode.unidecode(text.lower())
+    if not strip_punct:
+        # unify spelled punctuation with symbols for easier matching
+        text = re.sub(r"\bpunto y coma\b", ";", text)
+        text = re.sub(r"\bpunto\b", ".", text)
+        text = re.sub(r"\bpuntos\b", ".", text)
+        text = re.sub(r"\bcoma\b", ",", text)
     if strip_punct:
         text = re.sub(r"[^\w\s]", " ", text)
     return re.sub(r"\s+", " ", text).strip()
@@ -96,6 +105,15 @@ def token_equal(a: str, b: str) -> bool:
 
     if a == b:
         return True
+    # consider punctuation words equivalent to symbols
+    punct_map = {
+        ".": {"punto", "puntos"},
+        ",": {"coma"},
+        ";": {"punto y coma"},
+    }
+    for sym, words in punct_map.items():
+        if (a == sym and b in words) or (b == sym and a in words):
+            return True
     if Levenshtein.normalized_distance(a, b) <= 0.2:
         return True
     if a.isdigit() and DIGIT_NAMES.get(a) == b:
