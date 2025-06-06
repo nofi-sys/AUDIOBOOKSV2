@@ -107,10 +107,14 @@ def build_rows(ref: str, hyp: str) -> List[List]:
     anchor_pairs = find_anchor_trigrams(ref_tok, hyp_tok)
 
     full_pairs: List[Tuple[int, int]] = []
-    seg_starts = [(-1, -1)] + anchor_pairs + [
-        (len(ref_tok) - 1, len(hyp_tok) - 1)
+    seg_starts = [
+        (-1, -1),
+        *anchor_pairs,
+        (len(ref_tok) - 1, len(hyp_tok) - 1),
     ]
-    for (prev_i, prev_j), (next_i, next_j) in zip(seg_starts[:-1], seg_starts[1:]):
+    for (prev_i, prev_j), (next_i, next_j) in zip(
+        seg_starts[:-1], seg_starts[1:]
+    ):
         if next_i > prev_i + 1 and next_j > prev_j + 1:
             sub_ref = ref_tok[prev_i + 1 : next_i]
             sub_hyp = hyp_tok[prev_j + 1 : next_j]
