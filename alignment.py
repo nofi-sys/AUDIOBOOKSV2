@@ -107,26 +107,35 @@ def build_rows(ref: str, hyp: str) -> List[List]:
     anchor_pairs = find_anchor_trigrams(ref_tok, hyp_tok)
 
     full_pairs: List[Tuple[int, int]] = []
-    seg_starts = [(-1, -1)] + anchor_pairs + [(len(ref_tok) - 1, len(hyp_tok) - 1)]
+    seg_starts = [(-1, -1)] + anchor_pairs + [
+        (len(ref_tok) - 1, len(hyp_tok) - 1)
+    ]
     for (prev_i, prev_j), (next_i, next_j) in zip(seg_starts[:-1], seg_starts[1:]):
         if next_i > prev_i + 1 and next_j > prev_j + 1:
             sub_ref = ref_tok[prev_i + 1 : next_i]
             sub_hyp = hyp_tok[prev_j + 1 : next_j]
             if sub_ref and sub_hyp:
-                pairs = safe_dtw(sub_ref, sub_hyp, COARSE_W)
+                # remove stop words for alignment but keep position maps
+                ref_idx = [i for i, t in enumerate(sub_ref) if t not in STOP]
+                hyp_idx = [j for j, t in enumerate(sub_hyp) if t not in STOP]
+                sub_r_sw = [sub_ref[i] for i in ref_idx]
+                sub_h_sw = [sub_hyp[j] for j in hyp_idx]
+                pairs = safe_dtw(sub_r_sw, sub_h_sw, COARSE_W)
                 for ri, hj in pairs:
-                    full_pairs.append((prev_i + 1 + ri, prev_j + 1 + hj))
+                    full_pairs.append(
+                        (prev_i + 1 + ref_idx[ri], prev_j + 1 + hyp_idx[hj])
+                    )
         if 0 <= next_i < len(ref_tok) and 0 <= next_j < len(hyp_tok):
             full_pairs.append((next_i, next_j))
 
     # ensure one-to-one mapping and avoid propagating indexes
     full_pairs.sort()
-    used_h = set()
+    used_h: dict[int, int] = {}
     dedup_pairs: List[Tuple[int, int]] = []
     for ri, hj in full_pairs:
-        if hj not in used_h:
+        if hj not in used_h or abs(ri - used_h[hj]) > 1:
             dedup_pairs.append((ri, hj))
-            used_h.add(hj)
+            used_h[hj] = ri
 
     map_h = [-1] * len(ref_tok)
     for ri, hj in dedup_pairs:
@@ -136,17 +145,51 @@ def build_rows(ref: str, hyp: str) -> List[List]:
     rows = []
     pos = 0
     line_id = 0
+    consumed_h = set()
     while pos < len(ref_tok):
-        block = ref_tok[pos : pos + LINE_LEN]
+        max_end = min(pos + LINE_LEN, len(ref_tok))
+        span_end = max_end
+        for k in range(pos, max_end):
+            tok = ref_tok[k]
+            if tok.endswith(".") or tok in {".", "?", "!"}:
+                span_end = k + 1
+                break
+            if tok.endswith(",") or tok.endswith(";") or tok in {",", ";"}:
+                add = 2 if k + 1 < len(ref_tok) and k + 2 - pos <= LINE_LEN else 1
+                span_end = min(k + add, max_end)
+                break
+        block = ref_tok[pos:span_end]
         span_start = pos
-        span_end = pos + len(block)
         pos = span_end
 
-        h_idxs = [map_h[k] for k in range(span_start, span_end) if map_h[k] != -1]
+        h_idxs_all = [map_h[k] for k in range(span_start, span_end) if map_h[k] != -1]
+        h_idxs = [h for h in h_idxs_all if h not in consumed_h]
         if h_idxs:
             h_start = min(h_idxs)
             h_end = max(h_idxs) + 1
+            # backfill up to two preceding stop words
+            for _ in range(2):
+                if (
+                    h_start > 0
+                    and hyp_tok[h_start - 1] in STOP
+                    and (h_start - 1) not in consumed_h
+                ):
+                    h_start -= 1
+                else:
+                    break
+            # extend for unmapped ref tokens
+            missing = sum(1 for k in range(span_start, span_end) if map_h[k] == -1)
+            for _ in range(missing):
+                if (
+                    h_start > 0
+                    and hyp_tok[h_start - 1] not in {".", ";"}
+                    and (h_start - 1) not in consumed_h
+                ):
+                    h_start -= 1
+                else:
+                    break
             asr_line = " ".join(hyp_tok[h_start:h_end])
+            consumed_h.update(range(h_start, h_end))
         else:
             asr_line = ""
 
