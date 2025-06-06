@@ -4,6 +4,7 @@ from pathlib import Path
 from typing import List, Tuple, Dict
 import re
 import unicodedata
+from collections import Counter
 
 import unidecode
 import pdfplumber
@@ -215,3 +216,11 @@ def find_anchor_trigrams(
             last_i, last_j = i, j
 
     return filtered
+
+
+def extract_word_list(text: str, max_words: int = 50) -> List[str]:
+    """Return frequent non-stopwords from ``text`` for ASR prompting."""
+
+    tokens = normalize(text).split()
+    counts = Counter(t for t in tokens if t not in STOP and len(t) > 3)
+    return [w for w, _ in counts.most_common(max_words)]
