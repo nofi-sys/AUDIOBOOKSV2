@@ -167,12 +167,14 @@ def build_rows(ref: str, hyp: str) -> List[List]:
         span_start = pos
         pos = span_end
 
+        # First collect all candidate hyp-indices in this block,
+        # then drop any that have already been consumed by previous rows
         h_idxs_all = [map_h[k] for k in range(span_start, span_end) if map_h[k] != -1]
         h_idxs = [h for h in h_idxs_all if h not in consumed_h]
         if h_idxs:
             h_start = min(h_idxs)
             h_end = max(h_idxs) + 1
-            # backfill up to two preceding stop words
+            # Backfill up to two preceding stop words, but only if not already consumed
             for _ in range(2):
                 if (
                     h_start > 0
@@ -182,7 +184,8 @@ def build_rows(ref: str, hyp: str) -> List[List]:
                     h_start -= 1
                 else:
                     break
-            # extend for unmapped ref tokens
+            # Extend for any missing reference tokens by including prior hyp tokens,
+            # as long as they are not "." or ";" and not already consumed
             missing = sum(1 for k in range(span_start, span_end) if map_h[k] == -1)
             for _ in range(missing):
                 if (
@@ -194,6 +197,7 @@ def build_rows(ref: str, hyp: str) -> List[List]:
                 else:
                     break
             asr_line = " ".join(hyp_tok[h_start:h_end])
+            # Mark these hyp indices as "consumed" so future rows won't reuse them
             consumed_h.update(range(h_start, h_end))
         else:
             asr_line = ""
