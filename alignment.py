@@ -118,18 +118,19 @@ def build_rows(ref: str, hyp: str) -> List[List]:
         if 0 <= next_i < len(ref_tok) and 0 <= next_j < len(hyp_tok):
             full_pairs.append((next_i, next_j))
 
-    map_h = [-1] * len(ref_tok)
+    # ensure one-to-one mapping and avoid propagating indexes
+    full_pairs.sort()
+    used_h = set()
+    dedup_pairs: List[Tuple[int, int]] = []
     for ri, hj in full_pairs:
+        if hj not in used_h:
+            dedup_pairs.append((ri, hj))
+            used_h.add(hj)
+
+    map_h = [-1] * len(ref_tok)
+    for ri, hj in dedup_pairs:
         if 0 <= ri < len(ref_tok) and 0 <= hj < len(hyp_tok) and map_h[ri] == -1:
             map_h[ri] = hj
-    last = -1
-    for i in range(len(map_h)):
-        if map_h[i] != -1:
-            last = map_h[i]
-        else:
-            if last + 1 < len(hyp_tok):
-                last += 1
-                map_h[i] = last
 
     rows = []
     pos = 0
