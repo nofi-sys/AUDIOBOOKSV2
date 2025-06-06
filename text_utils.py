@@ -3,6 +3,7 @@
 from pathlib import Path
 from typing import List, Tuple, Dict
 import re
+import unicodedata
 
 import unidecode
 import pdfplumber
@@ -76,6 +77,8 @@ def normalize(text: str, strip_punct: bool = True) -> str:
     """Lowercase, remove accents and optionally strip punctuation."""
 
     text = unidecode.unidecode(text.lower())
+    # remove dots from common single-letter abbreviations
+    text = re.sub(r"\b([a-z])\.\b", r"\1", text)
     if not strip_punct:
         # unify spelled punctuation with symbols for easier matching
         text = re.sub(r"\bpunto y coma\b", ";", text)
@@ -106,7 +109,12 @@ def token_equal(a: str, b: str) -> bool:
 
     from rapidfuzz.distance import Levenshtein
 
-    if a == b:
+    def _base(t: str) -> str:
+        t = unicodedata.normalize("NFKD", t)
+        t = t.encode("ascii", "ignore").decode("ascii")
+        return t.casefold()
+
+    if _base(a) == _base(b):
         return True
     # handle abbreviations like "r." vs "r"
     if (

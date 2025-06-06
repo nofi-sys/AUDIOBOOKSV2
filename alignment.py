@@ -149,27 +149,20 @@ def build_rows(ref: str, hyp: str) -> List[List]:
             map_h[ri] = hj
 
     rows = []
-    pos = 0
+    spans: List[Tuple[int, int]] = []
+    start = 0
+    for idx, tok in enumerate(ref_tok):
+        if tok in {".", "?", "!"} or tok.endswith(".") or tok.endswith("?") or tok.endswith("!"):
+            spans.append((start, idx + 1))
+            start = idx + 1
+    if start < len(ref_tok):
+        spans.append((start, len(ref_tok)))
+
     line_id = 0
     consumed_h = set()
 
-    while pos < len(ref_tok):
-        max_end = min(pos + LINE_LEN, len(ref_tok))
-        span_end = max_end
-        for k in range(pos, max_end):
-            tok = ref_tok[k]
-            if tok.endswith(".") or tok in {".", "?", "!"}:
-                span_end = k + 1
-                break
-            if tok.endswith(",") or tok.endswith(";") or tok in {",", ";"}:
-                cond = k + 1 < len(ref_tok) and k + 2 - pos <= LINE_LEN
-                add = 2 if cond else 1
-                span_end = min(k + add, max_end)
-                break
-
-        block = ref_tok[pos:span_end]
-        span_start = pos
-        pos = span_end
+    for span_start, span_end in spans:
+        block = ref_tok[span_start:span_end]
 
         # First collect all candidate hyp-indices in this block,
         # then drop any that have already been consumed by previous rows
@@ -215,11 +208,17 @@ def build_rows(ref: str, hyp: str) -> List[List]:
         hyp_tokens = asr_line.split()
         if hyp_tokens:
             wer_val = Levenshtein.normalized_distance(ref_tokens, hyp_tokens)
+            base_ref = [r.strip(".,;!") for r in ref_tokens]
+            base_hyp = [h.strip(".,;!") for h in hyp_tokens]
+            base_wer = Levenshtein.normalized_distance(base_ref, base_hyp)
         else:
             wer_val = 1.0
-        flag = (
-            "✅" if wer_val <= WARN_WER else ("⚠️" if wer_val <= 0.20 else "❌")
-        )
+            base_wer = 1.0
+        if base_wer <= 0.05:
+            flag = "✅"
+        else:
+            threshold = 0.20 if len(ref_tokens) < 5 else WARN_WER
+            flag = "✅" if wer_val <= threshold else ("⚠️" if wer_val <= 0.20 else "❌")
         dur = round(len(asr_line.split()) / 3.0, 2)
 
         rows.append([line_id, flag, round(wer_val * 100, 1), dur, orig_line, asr_line])
