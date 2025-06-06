@@ -107,15 +107,15 @@ def build_rows(ref: str, hyp: str) -> List[List]:
     anchor_pairs = find_anchor_trigrams(ref_tok, hyp_tok)
 
     full_pairs: List[Tuple[int, int]] = []
-    seg_starts = [
-        (-1, -1),
-        *anchor_pairs,
-        (len(ref_tok) - 1, len(hyp_tok) - 1),
+    seg_starts = [(-1, -1)] + anchor_pairs + [
+        (len(ref_tok) - 1, len(hyp_tok) - 1)
     ]
-    for (prev_i, prev_j), (next_i, next_j) in zip(seg_starts[:-1], seg_starts[1:]):
+    for (prev_i, prev_j), (next_i, next_j) in zip(
+        seg_starts[:-1], seg_starts[1:]
+    ):
         if next_i > prev_i + 1 and next_j > prev_j + 1:
-            sub_ref = ref_tok[prev_i + 1 : next_i]
-            sub_hyp = hyp_tok[prev_j + 1 : next_j]
+            sub_ref = ref_tok[prev_i + 1:next_i]
+            sub_hyp = hyp_tok[prev_j + 1:next_j]
             if sub_ref and sub_hyp:
                 # remove stop words for alignment but keep position maps
                 ref_idx = [i for i, t in enumerate(sub_ref) if t not in STOP]
@@ -151,8 +151,6 @@ def build_rows(ref: str, hyp: str) -> List[List]:
     rows = []
     pos = 0
     line_id = 0
-    consumed_h = set()
-
     while pos < len(ref_tok):
         max_end = min(pos + LINE_LEN, len(ref_tok))
         span_end = max_end
@@ -166,47 +164,32 @@ def build_rows(ref: str, hyp: str) -> List[List]:
                 add = 2 if cond else 1
                 span_end = min(k + add, max_end)
                 break
-
         block = ref_tok[pos:span_end]
         span_start = pos
         pos = span_end
 
-        # First collect all candidate hyp-indices in this block,
-        # then drop any that have already been consumed by previous rows
-        h_idxs_all = [map_h[k] for k in range(span_start, span_end) if map_h[k] != -1]
-        h_idxs = [h for h in h_idxs_all if h not in consumed_h]
-
+        h_idxs = [
+            map_h[k] for k in range(span_start, span_end) if map_h[k] != -1
+        ]
         if h_idxs:
             h_start = min(h_idxs)
             h_end = max(h_idxs) + 1
-
-            # Backfill up to two preceding stop words, but only if not already consumed
+            # backfill up to two preceding stop words
             for _ in range(2):
-                if (
-                    h_start > 0
-                    and hyp_tok[h_start - 1] in STOP
-                    and (h_start - 1) not in consumed_h
-                ):
+                if h_start > 0 and hyp_tok[h_start - 1] in STOP:
                     h_start -= 1
                 else:
                     break
-
-            # Extend for any missing reference tokens by including prior hyp tokens,
-            # as long as they are not "." or ";" and not already consumed
-            missing = sum(1 for k in range(span_start, span_end) if map_h[k] == -1)
+            # extend for unmapped ref tokens
+            missing = sum(
+                1 for k in range(span_start, span_end) if map_h[k] == -1
+            )
             for _ in range(missing):
-                if (
-                    h_start > 0
-                    and hyp_tok[h_start - 1] not in {".", ";"}
-                    and (h_start - 1) not in consumed_h
-                ):
+                if h_start > 0 and hyp_tok[h_start - 1] not in {".", ";"}:
                     h_start -= 1
                 else:
                     break
-
             asr_line = " ".join(hyp_tok[h_start:h_end])
-            # Mark these hyp indices as “consumed” so future rows won’t reuse them
-            consumed_h.update(range(h_start, h_end))
         else:
             asr_line = ""
 
@@ -222,7 +205,9 @@ def build_rows(ref: str, hyp: str) -> List[List]:
         )
         dur = round(len(asr_line.split()) / 3.0, 2)
 
-        rows.append([line_id, flag, round(wer_val * 100, 1), dur, orig_line, asr_line])
+        rows.append(
+            [line_id, flag, round(wer_val * 100, 1), dur, orig_line, asr_line]
+        )
         line_id += 1
 
     return rows
