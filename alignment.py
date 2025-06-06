@@ -8,6 +8,7 @@ from text_utils import (
     normalize,
     token_equal,
     STOP,
+    STOP_WEIGHT,
 )
 
 LINE_LEN = 12
@@ -39,7 +40,13 @@ def dtw_band(a: List[str], b: List[str], w: int) -> List[Tuple[int, int]]:
                     if c < best_cost:
                         best_cost, best_prev = c, prev
 
-            match_cost = 0 if token_equal(a[i], b[j]) else 1
+            if token_equal(a[i], b[j]):
+                match_cost = 0
+            else:
+                if a[i] in STOP or b[j] in STOP:
+                    match_cost = STOP_WEIGHT
+                else:
+                    match_cost = 1
             pos_cost = GAMMA_TIME * abs((i / n) - (j / m))
             total = best_cost + match_cost + pos_cost
 
@@ -105,16 +112,10 @@ def build_rows(ref: str, hyp: str) -> List[List]:
         if next_i > prev_i + 1 and next_j > prev_j + 1:
             sub_ref = ref_tok[prev_i + 1 : next_i]
             sub_hyp = hyp_tok[prev_j + 1 : next_j]
-            sub_r_sw = [t for t in sub_ref if t not in STOP]
-            sub_h_sw = [t for t in sub_hyp if t not in STOP]
-            if sub_r_sw and sub_h_sw:
-                pairs_sw = safe_dtw(sub_r_sw, sub_h_sw, COARSE_W)
-                idx_r = [k for k, t in enumerate(sub_ref) if t not in STOP]
-                idx_h = [k for k, t in enumerate(sub_hyp) if t not in STOP]
-                for ri, hj in pairs_sw:
-                    orig_i = prev_i + 1 + idx_r[ri]
-                    hyp_i = prev_j + 1 + idx_h[hj]
-                    full_pairs.append((orig_i, hyp_i))
+            if sub_ref and sub_hyp:
+                pairs = safe_dtw(sub_ref, sub_hyp, COARSE_W)
+                for ri, hj in pairs:
+                    full_pairs.append((prev_i + 1 + ri, prev_j + 1 + hj))
         if 0 <= next_i < len(ref_tok) and 0 <= next_j < len(hyp_tok):
             full_pairs.append((next_i, next_j))
 
