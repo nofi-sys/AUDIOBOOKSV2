@@ -24,6 +24,7 @@ class App(tk.Tk):
         self.v_asr = tk.StringVar()
         self.v_json = tk.StringVar()
         self.q: queue.Queue = queue.Queue()
+        self.ok_rows: set[int] = set()
 
         top = ttk.Frame(self)
         top.pack(fill="x", padx=3, pady=2)
@@ -53,16 +54,19 @@ class App(tk.Tk):
 
         self.tree = ttk.Treeview(
             self,
-            columns=("ID", "✓", "WER", "dur", "Original", "ASR"),
+            columns=("ID", "✓", "OK", "WER", "dur", "Original", "ASR"),
             show="headings",
             height=27,
         )
         for c, w in zip(
-            ("ID", "✓", "WER", "dur", "Original", "ASR"), (50, 30, 60, 60, 800, 800)
+            ("ID", "✓", "OK", "WER", "dur", "Original", "ASR"),
+            (50, 30, 40, 60, 60, 800, 800),
         ):
             self.tree.heading(c, text=c)
             self.tree.column(c, width=w, anchor="w")
         self.tree.pack(fill="both", expand=True, padx=3, pady=2)
+
+        self.tree.bind("<Double-1>", self._toggle_ok)
 
         self.log_box = scrolledtext.ScrolledText(self, height=5, state="disabled")
         self.log_box.pack(fill="x", padx=3, pady=2)
@@ -82,6 +86,24 @@ class App(tk.Tk):
 
     def clear_table(self) -> None:
         self.tree.delete(*self.tree.get_children())
+        self.ok_rows.clear()
+
+    def _toggle_ok(self, event: tk.Event) -> None:
+        item = self.tree.identify_row(event.y)
+        col = self.tree.identify_column(event.x)
+        if col != "#3" or not item:
+            return
+        current = self.tree.set(item, "OK")
+        new_val = "" if current == "OK" else "OK"
+        self.tree.set(item, "OK", new_val)
+        try:
+            line_id = int(self.tree.set(item, "ID"))
+        except Exception:
+            return
+        if new_val:
+            self.ok_rows.add(line_id)
+        else:
+            self.ok_rows.discard(line_id)
 
     def launch(self) -> None:
         if not (self.v_ref.get() and self.v_asr.get()):
@@ -125,7 +147,11 @@ class App(tk.Tk):
             rows = json.loads(Path(self.v_json.get()).read_text(encoding="utf8"))
             self.clear_table()
             for r in rows:
-                self.tree.insert("", tk.END, values=r)
+                if len(r) == 6:
+                    vals = [r[0], r[1], "", r[2], r[3], r[4], r[5]]
+                else:
+                    vals = r
+                self.tree.insert("", tk.END, values=vals)
             self.log_msg(f"✔ Cargado {self.v_json.get()}")
         except Exception as e:
             messagebox.showerror("Error", str(e))
@@ -136,7 +162,8 @@ class App(tk.Tk):
                 msg = self.q.get_nowait()
                 if isinstance(msg, tuple) and msg[0] == "ROWS":
                     for r in msg[1]:
-                        self.tree.insert("", tk.END, values=r)
+                        vals = [r[0], r[1], "", r[2], r[3], r[4], r[5]]
+                        self.tree.insert("", tk.END, values=vals)
                 else:
                     self.log_msg(str(msg))
         except queue.Empty:
