@@ -110,10 +110,12 @@ def build_rows(ref: str, hyp: str) -> List[List]:
     seg_starts = [(-1, -1)] + anchor_pairs + [
         (len(ref_tok) - 1, len(hyp_tok) - 1)
     ]
-    for (prev_i, prev_j), (next_i, next_j) in zip(seg_starts[:-1], seg_starts[1:]):
+    for (prev_i, prev_j), (next_i, next_j) in zip(
+        seg_starts[:-1], seg_starts[1:]
+    ):
         if next_i > prev_i + 1 and next_j > prev_j + 1:
-            sub_ref = ref_tok[prev_i + 1 : next_i]
-            sub_hyp = hyp_tok[prev_j + 1 : next_j]
+            sub_ref = ref_tok[prev_i + 1:next_i]
+            sub_hyp = hyp_tok[prev_j + 1:next_j]
             if sub_ref and sub_hyp:
                 # remove stop words for alignment but keep position maps
                 ref_idx = [i for i, t in enumerate(sub_ref) if t not in STOP]
@@ -139,7 +141,11 @@ def build_rows(ref: str, hyp: str) -> List[List]:
 
     map_h = [-1] * len(ref_tok)
     for ri, hj in dedup_pairs:
-        if 0 <= ri < len(ref_tok) and 0 <= hj < len(hyp_tok) and map_h[ri] == -1:
+        if (
+            0 <= ri < len(ref_tok)
+            and 0 <= hj < len(hyp_tok)
+            and map_h[ri] == -1
+        ):
             map_h[ri] = hj
 
     rows = []
@@ -154,14 +160,17 @@ def build_rows(ref: str, hyp: str) -> List[List]:
                 span_end = k + 1
                 break
             if tok.endswith(",") or tok.endswith(";") or tok in {",", ";"}:
-                add = 2 if k + 1 < len(ref_tok) and k + 2 - pos <= LINE_LEN else 1
+                cond = k + 1 < len(ref_tok) and k + 2 - pos <= LINE_LEN
+                add = 2 if cond else 1
                 span_end = min(k + add, max_end)
                 break
         block = ref_tok[pos:span_end]
         span_start = pos
         pos = span_end
 
-        h_idxs = [map_h[k] for k in range(span_start, span_end) if map_h[k] != -1]
+        h_idxs = [
+            map_h[k] for k in range(span_start, span_end) if map_h[k] != -1
+        ]
         if h_idxs:
             h_start = min(h_idxs)
             h_end = max(h_idxs) + 1
@@ -172,7 +181,9 @@ def build_rows(ref: str, hyp: str) -> List[List]:
                 else:
                     break
             # extend for unmapped ref tokens
-            missing = sum(1 for k in range(span_start, span_end) if map_h[k] == -1)
+            missing = sum(
+                1 for k in range(span_start, span_end) if map_h[k] == -1
+            )
             for _ in range(missing):
                 if h_start > 0 and hyp_tok[h_start - 1] not in {".", ";"}:
                     h_start -= 1
@@ -189,10 +200,14 @@ def build_rows(ref: str, hyp: str) -> List[List]:
             wer_val = Levenshtein.normalized_distance(ref_tokens, hyp_tokens)
         else:
             wer_val = 1.0
-        flag = "✅" if wer_val <= WARN_WER else ("⚠️" if wer_val <= 0.20 else "❌")
+        flag = (
+            "✅" if wer_val <= WARN_WER else ("⚠️" if wer_val <= 0.20 else "❌")
+        )
         dur = round(len(asr_line.split()) / 3.0, 2)
 
-        rows.append([line_id, flag, round(wer_val * 100, 1), dur, orig_line, asr_line])
+        rows.append(
+            [line_id, flag, round(wer_val * 100, 1), dur, orig_line, asr_line]
+        )
         line_id += 1
 
     return rows

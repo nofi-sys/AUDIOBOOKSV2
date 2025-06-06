@@ -168,8 +168,12 @@ def find_anchor_trigrams(
     for tri in hyp_trigs:
         freq_hyp[tri] = freq_hyp.get(tri, 0) + 1
 
-    lowfreq_ref = {tri for tri, count in freq_ref.items() if count <= ANCHOR_MAX_FREQ}
-    lowfreq_hyp = {tri for tri, count in freq_hyp.items() if count <= ANCHOR_MAX_FREQ}
+    lowfreq_ref = {
+        tri for tri, count in freq_ref.items() if count <= ANCHOR_MAX_FREQ
+    }
+    lowfreq_hyp = {
+        tri for tri, count in freq_hyp.items() if count <= ANCHOR_MAX_FREQ
+    }
     candidate_trigs = lowfreq_ref.intersection(lowfreq_hyp)
 
     anchors: List[Tuple[int, int]] = []
