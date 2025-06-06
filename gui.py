@@ -33,13 +33,17 @@ class App(tk.Tk):
         ttk.Button(
             top,
             text="…",
-            command=lambda: self.browse(self.v_ref, ("PDF/TXT", "*.pdf;*.txt")),
+            command=lambda: self.browse(
+                self.v_ref, ("PDF/TXT", "*.pdf;*.txt")
+            ),
         ).grid(row=0, column=2)
 
         ttk.Label(top, text="TXT ASR:").grid(row=1, column=0, sticky="e")
         ttk.Entry(top, textvariable=self.v_asr, width=70).grid(row=1, column=1)
         ttk.Button(
-            top, text="…", command=lambda: self.browse(self.v_asr, ("TXT", "*.txt"))
+            top,
+            text="…",
+            command=lambda: self.browse(self.v_asr, ("TXT", "*.txt")),
         ).grid(row=1, column=2)
 
         ttk.Button(top, text="Procesar", width=11, command=self.launch).grid(
@@ -47,7 +51,9 @@ class App(tk.Tk):
         )
 
         ttk.Label(top, text="JSON:").grid(row=2, column=0, sticky="e")
-        ttk.Entry(top, textvariable=self.v_json, width=70).grid(row=2, column=1)
+        ttk.Entry(top, textvariable=self.v_json, width=70).grid(
+            row=2, column=1
+        )
         ttk.Button(top, text="Abrir JSON…", command=self.load_json).grid(
             row=2, column=2
         )
@@ -68,7 +74,9 @@ class App(tk.Tk):
 
         self.tree.bind("<Double-1>", self._toggle_ok)
 
-        self.log_box = scrolledtext.ScrolledText(self, height=5, state="disabled")
+        self.log_box = scrolledtext.ScrolledText(
+            self, height=5, state="disabled"
+        )
         self.log_box.pack(fill="x", padx=3, pady=2)
 
         self.after(250, self._poll)
@@ -119,7 +127,9 @@ class App(tk.Tk):
             ref = read_script(self.v_ref.get())
 
             self.q.put("→ TXT externo cargado")
-            hyp = Path(self.v_asr.get()).read_text(encoding="utf8", errors="ignore")
+            hyp = Path(self.v_asr.get()).read_text(
+                encoding="utf8", errors="ignore"
+            )
 
             self.q.put("→ Alineando…")
             rows = build_rows(ref, hyp)
@@ -159,12 +169,16 @@ class App(tk.Tk):
 
     def load_json(self) -> None:
         if not self.v_json.get():
-            p = filedialog.askopenfilename(filetypes=[("QC JSON", "*.qc.json;*.json")])
+            p = filedialog.askopenfilename(
+                filetypes=[("QC JSON", "*.qc.json;*.json")]
+            )
             if not p:
                 return
             self.v_json.set(p)
         try:
-            rows = json.loads(Path(self.v_json.get()).read_text(encoding="utf8"))
+            rows = json.loads(
+                Path(self.v_json.get()).read_text(encoding="utf8")
+            )
             self.clear_table()
             for r in rows:
                 if len(r) == 6:
