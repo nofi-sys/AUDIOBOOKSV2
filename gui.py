@@ -137,6 +137,26 @@ class App(tk.Tk):
             traceback.print_exc(file=buf)
             self.q.put(buf.getvalue())
 
+    def save_json(self) -> None:
+        """Save current table rows to ``v_json`` path."""
+
+        if not self.v_json.get():
+            p = filedialog.asksaveasfilename(
+                filetypes=[("QC JSON", "*.qc.json;*.json")],
+                defaultextension=".json",
+            )
+            if not p:
+                return
+            self.v_json.set(p)
+        try:
+            rows = [list(self.tree.item(i)["values"]) for i in self.tree.get_children()]
+            Path(self.v_json.get()).write_text(
+                json.dumps(rows, ensure_ascii=False, indent=2), encoding="utf8"
+            )
+            self.log_msg(f"✔ Guardado {self.v_json.get()}")
+        except Exception as e:
+            messagebox.showerror("Error", str(e))
+
     def load_json(self) -> None:
         if not self.v_json.get():
             p = filedialog.askopenfilename(filetypes=[("QC JSON", "*.qc.json;*.json")])
