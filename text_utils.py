@@ -79,6 +79,17 @@ def normalize(text: str, strip_punct: bool = True) -> str:
     text = unidecode.unidecode(text.lower())
     # remove dots from common single-letter abbreviations
     text = re.sub(r"\b([a-z])\.\b", r"\1", text)
+    # expand common abbreviations to keep tokens aligned
+    abbr = {
+        "dr": "doctor",
+        "dra": "doctora",
+        "sr": "senor",
+        "sra": "senora",
+        "srta": "senorita",
+        "esq": "escribano",
+    }
+    for short, full in abbr.items():
+        text = re.sub(rf"\b{short}\.", full, text)
     if not strip_punct:
         # unify spelled punctuation with symbols for easier matching
         text = re.sub(r"\bpunto y coma\b", ";", text)

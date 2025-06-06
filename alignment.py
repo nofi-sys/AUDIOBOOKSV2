@@ -1,6 +1,7 @@
 """Alignment routines used by the QC application."""
 
 from typing import List, Tuple
+import re
 
 from rapidfuzz.distance import Levenshtein
 
@@ -149,36 +150,52 @@ def build_rows(ref: str, hyp: str) -> List[List]:
             map_h[ri] = hj
 
     rows = []
-    pos = 0
-    line_id = 0
     consumed_h = set()
+    line_id = 0
 
-    while pos < len(ref_tok):
-        block = ref_tok[pos : pos + LINE_LEN]
-        span_start = pos
-        span_end = pos + len(block)
-        pos = span_end
+    # divide reference into sentence spans for cleaner rows
+    text_norm = normalize(ref, strip_punct=False)
+    sentences = re.split(r"(?<=[\.\?\!])\s+", text_norm)
+    spans: List[Tuple[int, int]] = []
+    pos = 0
+    for sent in sentences:
+        tokens_sent = sent.split()
+        length = len(tokens_sent)
+        if length > 0:
+            spans.append((pos, pos + length))
+            pos += length
 
-        h_idxs = [map_h[k] for k in range(span_start, span_end) if map_h[k] != -1]
+    for span_start, span_end in spans:
+        block = ref_tok[span_start:span_end]
+
+        h_idxs_all = [map_h[k] for k in range(span_start, span_end) if map_h[k] != -1]
+        h_idxs = [h for h in h_idxs_all if h not in consumed_h]
         if h_idxs:
             h_start = min(h_idxs)
             h_end = max(h_idxs) + 1
-            # backfill up to two preceding stop words
             for _ in range(2):
-                if h_start > 0 and hyp_tok[h_start - 1] in STOP:
+                if (
+                    h_start > 0
+                    and hyp_tok[h_start - 1] in STOP
+                    and (h_start - 1) not in consumed_h
+                ):
                     h_start -= 1
                 else:
                     break
-            # extend for unmapped ref tokens
+
             missing = sum(1 for k in range(span_start, span_end) if map_h[k] == -1)
             for _ in range(missing):
-                if h_start > 0 and hyp_tok[h_start - 1] not in {".", ";"}:
+                if (
+                    h_start > 0
+                    and hyp_tok[h_start - 1] not in {".", ";"}
+                    and (h_start - 1) not in consumed_h
+                ):
                     h_start -= 1
                 else:
                     break
-            asr_line = " ".join(hyp_tok[h_start:h_end])
-            # Mark these hyp indices as “consumed” so future rows won’t reuse them
+
             consumed_h.update(range(h_start, h_end))
+            asr_line = " ".join(hyp_tok[h_start:h_end])
         else:
             asr_line = ""
 
@@ -187,9 +204,18 @@ def build_rows(ref: str, hyp: str) -> List[List]:
         hyp_tokens = asr_line.split()
         if hyp_tokens:
             wer_val = Levenshtein.normalized_distance(ref_tokens, hyp_tokens)
+            base_ref = [r.strip(".,;!") for r in ref_tokens]
+            base_hyp = [h.strip(".,;!") for h in hyp_tokens]
+            base_wer = Levenshtein.normalized_distance(base_ref, base_hyp)
         else:
             wer_val = 1.0
-        flag = "✅" if wer_val <= WARN_WER else ("⚠️" if wer_val <= 0.20 else "❌")
+            base_wer = 1.0
+
+        if base_wer <= 0.05:
+            flag = "✅"
+        else:
+            threshold = 0.20 if len(ref_tokens) < 5 else WARN_WER
+            flag = "✅" if wer_val <= threshold else ("⚠️" if wer_val <= 0.20 else "❌")
         dur = round(len(asr_line.split()) / 3.0, 2)
 
         rows.append([line_id, flag, round(wer_val * 100, 1), dur, orig_line, asr_line])
