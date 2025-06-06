@@ -41,6 +41,9 @@ STOP = {
     "coma",
 }
 
+# weight for mismatching stop words in DTW
+STOP_WEIGHT = 0.2
+
 DIGIT_NAMES = {
     "0": "cero",
     "1": "uno",
