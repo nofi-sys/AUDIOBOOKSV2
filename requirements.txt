@@ -1,3 +1,7 @@
 unidecode
 pdfplumber
 rapidfuzz
+
+faster-whisper
+torch
+tqdm
