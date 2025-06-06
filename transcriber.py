@@ -10,6 +10,8 @@ from pathlib import Path
 
 import torch
 
+from text_utils import read_script, extract_word_list
+
 try:
     from faster_whisper import WhisperModel
 except Exception as exc:  # pragma: no cover - dependency may not be installed
@@ -94,8 +96,16 @@ def _extract_audio(path: str) -> tuple[str, str]:
     return path, base
 
 
-def transcribe_file(file_path: str | None = None, model_size: str | None = None) -> Path:
-    """Transcribe ``file_path`` with Whisper and save ``.txt`` next to it."""
+def transcribe_file(
+    file_path: str | None = None,
+    model_size: str | None = None,
+    script_path: str | None = None,
+) -> Path:
+    """Transcribe ``file_path`` with Whisper and save ``.txt`` next to it.
+
+    If ``script_path`` is provided, extract a word list from the script and pass
+    it as hotwords to Whisper to improve recognition.
+    """
 
     if not file_path:
         file_path = _select_file()
@@ -107,12 +117,24 @@ def transcribe_file(file_path: str | None = None, model_size: str | None = None)
 
     audio_path, base = _extract_audio(file_path)
 
+    hotwords = None
+    if script_path:
+        try:
+            script_text = read_script(script_path)
+            words = extract_word_list(script_text)
+            if words:
+                hotwords = " ".join(words)
+        except Exception:
+            hotwords = None
+
     device = "cuda" if torch.cuda.is_available() else "cpu"
     compute_type = "float16" if device == "cuda" else "int8"
 
-    model = WhisperModel(model_size_or_path=model_size, device=device, compute_type=compute_type)
+    model = WhisperModel(
+        model_size_or_path=model_size, device=device, compute_type=compute_type
+    )
 
-    segments, _info = model.transcribe(audio_path, beam_size=5)
+    segments, _info = model.transcribe(audio_path, beam_size=5, hotwords=hotwords)
     text = ""
     for segment in tqdm(segments, desc="Transcribiendo", unit="segment"):
         text += segment.text
@@ -143,8 +165,12 @@ def main(argv: list[str] | None = None) -> None:
         default=None,
         help="Model size: tiny, base, small, medium, large",
     )
+    parser.add_argument(
+        "--script",
+        help="Optional script text (PDF or TXT) to guide transcription",
+    )
     args = parser.parse_args(argv)
-    transcribe_file(args.input, args.model)
+    transcribe_file(args.input, args.model, args.script)
 
 
 if __name__ == "__main__":  # pragma: no cover - manual invocation

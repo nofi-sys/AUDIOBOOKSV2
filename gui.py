@@ -22,6 +22,7 @@ class App(tk.Tk):
 
         self.v_ref = tk.StringVar()
         self.v_asr = tk.StringVar()
+        self.v_audio = tk.StringVar()
         self.v_json = tk.StringVar()
         self.q: queue.Queue = queue.Queue()
         self.ok_rows: set[int] = set()
@@ -46,16 +47,27 @@ class App(tk.Tk):
             command=lambda: self.browse(self.v_asr, ("TXT", "*.txt")),
         ).grid(row=1, column=2)
 
+        ttk.Label(top, text="Audio:").grid(row=2, column=0, sticky="e")
+        ttk.Entry(top, textvariable=self.v_audio, width=70).grid(row=2, column=1)
+        ttk.Button(
+            top,
+            text="…",
+            command=lambda: self.browse(
+                self.v_audio,
+                ("Media", "*.mp3;*.wav;*.m4a;*.flac;*.ogg;*.aac;*.mp4"),
+            ),
+        ).grid(row=2, column=2)
+        ttk.Button(top, text="Transcribir", command=self.transcribe).grid(
+            row=2, column=3, padx=6
+        )
+
         ttk.Button(top, text="Procesar", width=11, command=self.launch).grid(
             row=0, column=3, rowspan=2, padx=6
         )
-
-        ttk.Label(top, text="JSON:").grid(row=2, column=0, sticky="e")
-        ttk.Entry(top, textvariable=self.v_json, width=70).grid(
-            row=2, column=1
-        )
+        ttk.Label(top, text="JSON:").grid(row=3, column=0, sticky="e")
+        ttk.Entry(top, textvariable=self.v_json, width=70).grid(row=3, column=1)
         ttk.Button(top, text="Abrir JSON…", command=self.load_json).grid(
-            row=2, column=2
+            row=3, column=2
         )
 
         self.tree = ttk.Treeview(
@@ -112,6 +124,30 @@ class App(tk.Tk):
             self.ok_rows.add(line_id)
         else:
             self.ok_rows.discard(line_id)
+
+    def transcribe(self) -> None:
+        if not self.v_audio.get():
+            messagebox.showwarning("Falta info", "Selecciona archivo de audio")
+            return
+        if not self.v_ref.get():
+            messagebox.showwarning("Falta info", "Selecciona guion para guiar la transcripción")
+            return
+        self.log_msg("⏳ Transcribiendo…")
+        threading.Thread(target=self._transcribe_worker, daemon=True).start()
+
+    def _transcribe_worker(self) -> None:
+        try:
+            from transcriber import transcribe_file
+
+            out = transcribe_file(
+                self.v_audio.get(), script_path=self.v_ref.get()
+            )
+            self.q.put(("SET_ASR", str(out)))
+            self.q.put(f"✔ Transcripción guardada en {out}")
+        except Exception:
+            buf = io.StringIO()
+            traceback.print_exc(file=buf)
+            self.q.put(buf.getvalue())
 
     def launch(self) -> None:
         if not (self.v_ref.get() and self.v_asr.get()):
@@ -198,6 +234,8 @@ class App(tk.Tk):
                     for r in msg[1]:
                         vals = [r[0], r[1], "", r[2], r[3], r[4], r[5]]
                         self.tree.insert("", tk.END, values=vals)
+                elif isinstance(msg, tuple) and msg[0] == "SET_ASR":
+                    self.v_asr.set(msg[1])
                 else:
                     self.log_msg(str(msg))
         except queue.Empty:
