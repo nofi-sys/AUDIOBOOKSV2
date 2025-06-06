@@ -24,7 +24,15 @@ Run the GUI with:
 python qc_app.py
 ```
 
-The application lets you select a script (PDF or TXT) and an ASR transcript, performs alignment and saves a `.qc.json` file.
+The application lets you select a script (PDF or TXT) and an ASR transcript,
+performs alignment and saves a `.qc.json` file.
+
+## Manual review
+
+Double-click the **OK** column in the results table to mark or unmark a row as
+reviewed. Use the **Guardar JSON** button to save the current table so these
+marks persist. Loading a previously saved file that includes an **OK** column
+will restore the review status for each row.
 
 ## Implementation notes
 
