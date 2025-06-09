@@ -32,7 +32,7 @@ def test_token_equal_accents_case():
 
 
 def test_extract_word_list_basic():
-    txt = "hola mundo hola mundo raro" * 2
+    txt = ("hola mundo hola mundo raro " * 2).strip()
     words = text_utils.extract_word_list(txt)
     # 'raro' should appear before common stop words
     assert words[0] == "hola" and "raro" in words

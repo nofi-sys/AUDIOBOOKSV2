@@ -1,8 +1,14 @@
-import sys, os
+import sys
+import os
+import pytest
+
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
 import tkinter as tk
 import tempfile
+
+if not os.environ.get("DISPLAY"):
+    pytest.skip("no display", allow_module_level=True)
 
 from gui import App
 

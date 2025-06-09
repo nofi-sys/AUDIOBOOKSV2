@@ -223,4 +223,11 @@ def extract_word_list(text: str, max_words: int = 50) -> List[str]:
 
     tokens = normalize(text).split()
     counts = Counter(t for t in tokens if t not in STOP and len(t) > 3)
-    return [w for w, _ in counts.most_common(max_words)]
+    first_pos: Dict[str, int] = {}
+    for i, tok in enumerate(tokens):
+        if tok not in first_pos:
+            first_pos[tok] = i
+    ordered = sorted(
+        counts.items(), key=lambda x: (-x[1], first_pos.get(x[0], 0))
+    )
+    return [w for w, _ in ordered[:max_words]]
