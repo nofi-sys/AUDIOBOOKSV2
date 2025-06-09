@@ -7,6 +7,7 @@ import queue
 import threading
 import traceback
 from pathlib import Path
+import sys
 
 import tkinter as tk
 from tkinter import filedialog, messagebox, scrolledtext, ttk
@@ -18,7 +19,9 @@ import textwrap
 
 class App(tk.Tk):
     def __init__(self) -> None:
-        use_tk = bool(os.environ.get("DISPLAY"))
+        use_tk = True
+        if sys.platform.startswith("linux") and not os.environ.get("DISPLAY"):
+            use_tk = False
         super().__init__(useTk=use_tk)
         if use_tk:
             self.title("QC-Audiolibro  v5.1")
