@@ -12,6 +12,7 @@ from tkinter import filedialog, messagebox, scrolledtext, ttk
 
 from alignment import build_rows
 from text_utils import read_script
+import textwrap
 
 
 class App(tk.Tk):
@@ -70,8 +71,14 @@ class App(tk.Tk):
             row=3, column=2
         )
 
+        style = ttk.Style(self)
+        style.configure("Treeview", rowheight=45)
+
+        table_frame = ttk.Frame(self)
+        table_frame.pack(fill="both", expand=True, padx=3, pady=2)
+
         self.tree = ttk.Treeview(
-            self,
+            table_frame,
             columns=("ID", "✓", "OK", "WER", "dur", "Original", "ASR"),
             show="headings",
             height=27,
@@ -82,7 +89,10 @@ class App(tk.Tk):
         ):
             self.tree.heading(c, text=c)
             self.tree.column(c, width=w, anchor="w")
-        self.tree.pack(fill="both", expand=True, padx=3, pady=2)
+        self.tree.pack(fill="both", expand=True, side="left")
+        sb = ttk.Scrollbar(table_frame, orient="vertical", command=self.tree.yview)
+        self.tree.configure(yscrollcommand=sb.set)
+        sb.pack(side="right", fill="y")
 
         self.tree.bind("<Double-1>", self._toggle_ok)
 
@@ -221,6 +231,8 @@ class App(tk.Tk):
                     vals = [r[0], r[1], "", r[2], r[3], r[4], r[5]]
                 else:
                     vals = r
+                vals[5] = textwrap.fill(str(vals[5]), width=80)
+                vals[6] = textwrap.fill(str(vals[6]), width=80)
                 self.tree.insert("", tk.END, values=vals)
             self.log_msg(f"✔ Cargado {self.v_json.get()}")
         except Exception as e:
@@ -233,6 +245,8 @@ class App(tk.Tk):
                 if isinstance(msg, tuple) and msg[0] == "ROWS":
                     for r in msg[1]:
                         vals = [r[0], r[1], "", r[2], r[3], r[4], r[5]]
+                        vals[5] = textwrap.fill(str(vals[5]), width=80)
+                        vals[6] = textwrap.fill(str(vals[6]), width=80)
                         self.tree.insert("", tk.END, values=vals)
                 elif isinstance(msg, tuple) and msg[0] == "SET_ASR":
                     self.v_asr.set(msg[1])
