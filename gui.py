@@ -29,8 +29,13 @@ class App(tk.Tk):
         self.ok_rows: set[int] = set()
         self.undo_stack: list[str] = []
         self.redo_stack: list[str] = []
+
         self.selected_cell: tuple[str, str] | None = None
         self.tree_tag = "cell_sel"
+
+        self._menu_item: str | None = None
+        self._menu_col: str | None = None
+
 
         top = ttk.Frame(self)
         top.pack(fill="x", padx=3, pady=2)
@@ -98,6 +103,7 @@ class App(tk.Tk):
         self.tree.configure(yscrollcommand=sb.set)
         sb.pack(side="right", fill="y")
 
+
         self.tree.tag_configure(self.tree_tag, background="#d0e0ff")
 
         self.menu = tk.Menu(self, tearoff=0)
@@ -113,7 +119,7 @@ class App(tk.Tk):
         self.bind_all("<Control-z>", self.undo)
         self.bind_all("<Control-Shift-Z>", self.redo)
 
-        self.tree.bind("<Button-1>", self._cell_click)
+
         self.tree.bind("<Double-1>", self._toggle_ok)
 
         self.log_box = scrolledtext.ScrolledText(
@@ -204,6 +210,7 @@ class App(tk.Tk):
             self.tree.delete(item)
         self.selected_cell = None
         self.tree.tag_remove(self.tree_tag, *self.tree.get_children())
+
         self.save_json()
 
     def transcribe(self) -> None:
