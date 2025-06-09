@@ -94,6 +94,7 @@ class App(tk.Tk):
             columns=("ID", "✓", "OK", "WER", "dur", "Original", "ASR"),
             show="headings",
             height=27,
+            selectmode="extended",
         )
         for c, w in zip(
             ("ID", "✓", "OK", "WER", "dur", "Original", "ASR"),
@@ -134,6 +135,11 @@ class App(tk.Tk):
         self.menu.add_command(
             label="↓ primera palabra",
             command=lambda: self._move_word("down", "first"),
+        )
+        self.menu.add_separator()
+        self.menu.add_command(
+            label="Fusionar filas seleccionadas",
+            command=self._merge_selected_rows,
         )
         self.tree.bind("<Button-1>", self._cell_click)
         self.tree.bind("<Button-3>", self._popup_menu)
@@ -200,8 +206,14 @@ class App(tk.Tk):
         self.selected_cell = (item, col)
 
     def _popup_menu(self, event: tk.Event) -> None:
+        item = self.tree.identify_row(event.y)
         self._cell_click(event)
-        if self.selected_cell:
+        sel = self.tree.selection()
+        self.menu.entryconfig(
+            "Fusionar filas seleccionadas",
+            state="normal" if len(sel) > 1 else "disabled",
+        )
+        if item:
             self.menu.tk_popup(event.x_root, event.y_root)
 
     def _move_cell(self, direction: str) -> None:
@@ -282,6 +294,41 @@ class App(tk.Tk):
             if self.tree_tag in tags:
                 tags.remove(self.tree_tag)
                 self.tree.item(iid, tags=tuple(tags))
+
+        self.save_json()
+
+    def _merge_selected_rows(self) -> None:
+        sel = list(self.tree.selection())
+        if len(sel) < 2:
+            return
+        sel.sort(key=lambda iid: self.tree.index(iid))
+        first = sel[0]
+        originals: list[str] = []
+        asrs: list[str] = []
+        total_dur = 0.0
+
+        for iid in sel:
+            originals.append(self.tree.set(iid, "Original").strip())
+            asrs.append(self.tree.set(iid, "ASR").strip())
+            try:
+                total_dur += float(self.tree.set(iid, "dur"))
+            except ValueError:
+                pass
+
+        fuse = lambda parts: " ".join(p.rstrip(".,;") for p in parts if p)
+
+        self._snapshot()
+        self.tree.set(first, "Original", textwrap.fill(fuse(originals), width=80))
+        self.tree.set(first, "ASR", textwrap.fill(fuse(asrs), width=80))
+        self.tree.set(first, "dur", f"{total_dur:.2f}")
+        self.tree.set(first, "WER", "")
+
+        for iid in sel[1:]:
+            self.tree.delete(iid)
+
+        start_idx = self.tree.index(first)
+        for new_id, iid in enumerate(self.tree.get_children()[start_idx:], start_idx):
+            self.tree.set(iid, "ID", new_id)
 
         self.save_json()
 
