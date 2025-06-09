@@ -27,6 +27,10 @@ class App(tk.Tk):
         self.v_json = tk.StringVar()
         self.q: queue.Queue = queue.Queue()
         self.ok_rows: set[int] = set()
+        self.undo_stack: list[str] = []
+        self.redo_stack: list[str] = []
+        self.selected_cell: tuple[str, str] | None = None
+        self.tree_tag = "cell_sel"
 
         top = ttk.Frame(self)
         top.pack(fill="x", padx=3, pady=2)
@@ -94,6 +98,22 @@ class App(tk.Tk):
         self.tree.configure(yscrollcommand=sb.set)
         sb.pack(side="right", fill="y")
 
+        self.tree.tag_configure(self.tree_tag, background="#d0e0ff")
+
+        self.menu = tk.Menu(self, tearoff=0)
+        self.menu.add_command(
+            label="Mover ↑",
+            command=lambda: self._move_cell("up"),
+        )
+        self.menu.add_command(
+            label="Mover ↓",
+            command=lambda: self._move_cell("down"),
+        )
+        self.tree.bind("<Button-3>", self._popup_menu)
+        self.bind_all("<Control-z>", self.undo)
+        self.bind_all("<Control-Shift-Z>", self.redo)
+
+        self.tree.bind("<Button-1>", self._cell_click)
         self.tree.bind("<Double-1>", self._toggle_ok)
 
         self.log_box = scrolledtext.ScrolledText(
@@ -134,6 +154,49 @@ class App(tk.Tk):
             self.ok_rows.add(line_id)
         else:
             self.ok_rows.discard(line_id)
+
+    def _cell_click(self, event: tk.Event) -> None:
+        item = self.tree.identify_row(event.y)
+        col = self.tree.identify_column(event.x)
+        self.tree.tag_remove(self.tree_tag, *self.tree.get_children())
+        if col not in ("#6", "#7") or not item:
+            self.selected_cell = None
+            return
+        self.tree.tag_add(self.tree_tag, item)
+        self.selected_cell = (item, col)
+
+    def _popup_menu(self, event: tk.Event) -> None:
+        if self.selected_cell:
+            self.menu.tk_popup(event.x_root, event.y_root)
+
+    def _move_cell(self, direction: str) -> None:
+        if not self.selected_cell:
+            return
+        item, col_id = self.selected_cell
+        children = self.tree.get_children()
+        idx = children.index(item)
+        dst_idx = idx - 1 if direction == "up" else idx + 1
+        if dst_idx < 0 or dst_idx >= len(children):
+            return
+        dst_item = children[dst_idx]
+        col = "Original" if col_id == "#6" else "ASR"
+        src_text = self.tree.set(item, col)
+        if not src_text:
+            return
+        dst_text = self.tree.set(dst_item, col)
+        if direction == "up":
+            fused = (dst_text.rstrip().rstrip(".") + " " + src_text).strip()
+        else:
+            fused = (src_text.rstrip(".") + " " + dst_text).strip()
+        self._snapshot()
+        self.tree.set(dst_item, col, fused)
+        self.tree.set(item, col, "")
+        other_col = "ASR" if col == "Original" else "Original"
+        if not self.tree.set(item, col) and not self.tree.set(item, other_col):
+            self.tree.delete(item)
+        self.selected_cell = None
+        self.tree.tag_remove(self.tree_tag, *self.tree.get_children())
+        self.save_json()
 
     def transcribe(self) -> None:
         if not self.v_audio.get():
@@ -234,6 +297,7 @@ class App(tk.Tk):
                 vals[5] = textwrap.fill(str(vals[5]), width=80)
                 vals[6] = textwrap.fill(str(vals[6]), width=80)
                 self.tree.insert("", tk.END, values=vals)
+            self._snapshot()
             self.log_msg(f"✔ Cargado {self.v_json.get()}")
         except Exception as e:
             messagebox.showerror("Error", str(e))
@@ -248,6 +312,7 @@ class App(tk.Tk):
                         vals[5] = textwrap.fill(str(vals[5]), width=80)
                         vals[6] = textwrap.fill(str(vals[6]), width=80)
                         self.tree.insert("", tk.END, values=vals)
+                    self._snapshot()
                 elif isinstance(msg, tuple) and msg[0] == "SET_ASR":
                     self.v_asr.set(msg[1])
                 else:
@@ -255,6 +320,49 @@ class App(tk.Tk):
         except queue.Empty:
             pass
         self.after(250, self._poll)
+
+    def _snapshot(self) -> None:
+        rows = [list(self.tree.item(i)["values"]) for i in self.tree.get_children()]
+        self.undo_stack.append(json.dumps(rows, ensure_ascii=False))
+        if len(self.undo_stack) > 20:
+            self.undo_stack.pop(0)
+        self.redo_stack.clear()
+
+    def _restore(self, data: str) -> None:
+        rows = json.loads(data)
+        self.clear_table()
+        for r in rows:
+            if len(r) == 6:
+                vals = [r[0], r[1], "", r[2], r[3], r[4], r[5]]
+            else:
+                vals = r
+            vals[5] = textwrap.fill(str(vals[5]), width=80)
+            vals[6] = textwrap.fill(str(vals[6]), width=80)
+            self.tree.insert("", tk.END, values=vals)
+
+    def undo(self, event: tk.Event | None = None) -> None:
+        if not self.undo_stack:
+            return
+        state = self.undo_stack.pop()
+        current = json.dumps(
+            [list(self.tree.item(i)["values"]) for i in self.tree.get_children()],
+            ensure_ascii=False,
+        )
+        self.redo_stack.append(current)
+        self._restore(state)
+        self.save_json()
+
+    def redo(self, event: tk.Event | None = None) -> None:
+        if not self.redo_stack:
+            return
+        state = self.redo_stack.pop()
+        current = json.dumps(
+            [list(self.tree.item(i)["values"]) for i in self.tree.get_children()],
+            ensure_ascii=False,
+        )
+        self.undo_stack.append(current)
+        self._restore(state)
+        self.save_json()
 
 
 if __name__ == "__main__":
