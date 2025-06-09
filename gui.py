@@ -29,8 +29,8 @@ class App(tk.Tk):
         self.ok_rows: set[int] = set()
         self.undo_stack: list[str] = []
         self.redo_stack: list[str] = []
-        self._menu_item: str | None = None
-        self._menu_col: str | None = None
+        self.selected_cell: tuple[str, str] | None = None
+        self.tree_tag = "cell_sel"
 
         top = ttk.Frame(self)
         top.pack(fill="x", padx=3, pady=2)
@@ -98,19 +98,22 @@ class App(tk.Tk):
         self.tree.configure(yscrollcommand=sb.set)
         sb.pack(side="right", fill="y")
 
+        self.tree.tag_configure(self.tree_tag, background="#d0e0ff")
+
         self.menu = tk.Menu(self, tearoff=0)
         self.menu.add_command(
-            label="Mover arriba",
-            command=lambda: self._move_cell(-1),
+            label="Mover ↑",
+            command=lambda: self._move_cell("up"),
         )
         self.menu.add_command(
-            label="Mover abajo",
-            command=lambda: self._move_cell(1),
+            label="Mover ↓",
+            command=lambda: self._move_cell("down"),
         )
-        self.tree.bind("<Button-3>", self._show_menu)
+        self.tree.bind("<Button-3>", self._popup_menu)
         self.bind_all("<Control-z>", self.undo)
         self.bind_all("<Control-Shift-Z>", self.redo)
 
+        self.tree.bind("<Button-1>", self._cell_click)
         self.tree.bind("<Double-1>", self._toggle_ok)
 
         self.log_box = scrolledtext.ScrolledText(
@@ -152,39 +155,47 @@ class App(tk.Tk):
         else:
             self.ok_rows.discard(line_id)
 
-    def _show_menu(self, event: tk.Event) -> None:
+    def _cell_click(self, event: tk.Event) -> None:
         item = self.tree.identify_row(event.y)
         col = self.tree.identify_column(event.x)
-        if col not in {"#6", "#7"} or not item:
+        self.tree.tag_remove(self.tree_tag, *self.tree.get_children())
+        if col not in ("#6", "#7") or not item:
+            self.selected_cell = None
             return
-        self._menu_item = item
-        self._menu_col = "Original" if col == "#6" else "ASR"
-        self.menu.tk_popup(event.x_root, event.y_root)
+        self.tree.tag_add(self.tree_tag, item)
+        self.selected_cell = (item, col)
 
-    def _move_cell(self, direction: int) -> None:
-        if not self._menu_item or not self._menu_col:
+    def _popup_menu(self, event: tk.Event) -> None:
+        if self.selected_cell:
+            self.menu.tk_popup(event.x_root, event.y_root)
+
+    def _move_cell(self, direction: str) -> None:
+        if not self.selected_cell:
             return
-        item = self._menu_item
-        col = self._menu_col
-        target = self.tree.prev(item) if direction < 0 else self.tree.next(item)
-        if not target:
+        item, col_id = self.selected_cell
+        children = self.tree.get_children()
+        idx = children.index(item)
+        dst_idx = idx - 1 if direction == "up" else idx + 1
+        if dst_idx < 0 or dst_idx >= len(children):
             return
-        text = self.tree.set(item, col)
-        if not text:
+        dst_item = children[dst_idx]
+        col = "Original" if col_id == "#6" else "ASR"
+        src_text = self.tree.set(item, col)
+        if not src_text:
             return
+        dst_text = self.tree.set(dst_item, col)
+        if direction == "up":
+            fused = (dst_text.rstrip().rstrip(".") + " " + src_text).strip()
+        else:
+            fused = (src_text.rstrip(".") + " " + dst_text).strip()
         self._snapshot()
+        self.tree.set(dst_item, col, fused)
+        self.tree.set(item, col, "")
         other_col = "ASR" if col == "Original" else "Original"
-        target_text = self.tree.set(target, col)
-        if direction < 0:
-            merged = (target_text + " " + text).strip()
-        else:
-            merged = (text + " " + target_text).strip()
-        self.tree.set(target, col, merged)
-        other_text = self.tree.set(item, other_col)
-        if col == "Original" and not other_text.strip():
+        if not self.tree.set(item, col) and not self.tree.set(item, other_col):
             self.tree.delete(item)
-        else:
-            self.tree.set(item, col, "")
+        self.selected_cell = None
+        self.tree.tag_remove(self.tree_tag, *self.tree.get_children())
         self.save_json()
 
     def transcribe(self) -> None:
