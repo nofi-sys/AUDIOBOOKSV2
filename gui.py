@@ -162,11 +162,18 @@ class App(tk.Tk):
     def _cell_click(self, event: tk.Event) -> None:
         item = self.tree.identify_row(event.y)
         col = self.tree.identify_column(event.x)
-        self.tree.tag_remove(self.tree_tag, *self.tree.get_children())
+        for iid in self.tree.get_children():
+            tags = list(self.tree.item(iid, "tags"))
+            if self.tree_tag in tags:
+                tags.remove(self.tree_tag)
+                self.tree.item(iid, tags=tuple(tags))
         if col not in ("#6", "#7") or not item:
             self.selected_cell = None
             return
-        self.tree.tag_add(self.tree_tag, item)
+        tags = list(self.tree.item(item, "tags"))
+        if self.tree_tag not in tags:
+            tags.append(self.tree_tag)
+            self.tree.item(item, tags=tuple(tags))
         self.selected_cell = (item, col)
 
     def _popup_menu(self, event: tk.Event) -> None:
@@ -208,7 +215,11 @@ class App(tk.Tk):
         if not self.tree.set(item, col) and not self.tree.set(item, other_col):
             self.tree.delete(item)
         self.selected_cell = None
-        self.tree.tag_remove(self.tree_tag, *self.tree.get_children())
+        for iid in self.tree.get_children():
+            tags = list(self.tree.item(iid, "tags"))
+            if self.tree_tag in tags:
+                tags.remove(self.tree_tag)
+                self.tree.item(iid, tags=tuple(tags))
 
         self.save_json()
 
