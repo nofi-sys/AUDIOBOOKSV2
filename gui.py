@@ -159,14 +159,22 @@ class App(tk.Tk):
         else:
             self.ok_rows.discard(line_id)
 
+    def _clear_highlight(self) -> None:
+        if self.selected_cell:
+            prev_item, _ = self.selected_cell
+            tags = [t for t in self.tree.item(prev_item, "tags") if t != self.tree_tag]
+            self.tree.item(prev_item, tags=tags)
+
     def _cell_click(self, event: tk.Event) -> None:
         item = self.tree.identify_row(event.y)
         col = self.tree.identify_column(event.x)
-        self.tree.tag_remove(self.tree_tag, *self.tree.get_children())
+        self._clear_highlight()
         if col not in ("#6", "#7") or not item:
             self.selected_cell = None
             return
-        self.tree.tag_add(self.tree_tag, item)
+        tags = set(self.tree.item(item, "tags"))
+        tags.add(self.tree_tag)
+        self.tree.item(item, tags=tuple(tags))
         self.selected_cell = (item, col)
 
     def _popup_menu(self, event: tk.Event) -> None:
@@ -207,8 +215,10 @@ class App(tk.Tk):
         other_col = "ASR" if col == "Original" else "Original"
         if not self.tree.set(item, col) and not self.tree.set(item, other_col):
             self.tree.delete(item)
+        if self.selected_cell:
+            item, _ = self.selected_cell
+            self.tree.item(item, tags=[])
         self.selected_cell = None
-        self.tree.tag_remove(self.tree_tag, *self.tree.get_children())
 
         self.save_json()
 
