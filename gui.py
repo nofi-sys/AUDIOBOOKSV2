@@ -170,6 +170,14 @@ class App(tk.Tk):
             self.menu.tk_popup(event.x_root, event.y_root)
 
     def _move_cell(self, direction: str) -> None:
+        """Fuse the selected cell with the row above or below.
+
+        ``direction`` should be ``"up"`` or ``"down"``. Text from the source
+        cell is appended to the destination cell, respecting the desired order.
+        The source cell is cleared and the entire row removed if both columns
+        become empty. A snapshot of the table is taken so the operation can be
+        undone.
+        """
         if not self.selected_cell:
             return
         item, col_id = self.selected_cell
