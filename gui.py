@@ -33,9 +33,6 @@ class App(tk.Tk):
         self.selected_cell: tuple[str, str] | None = None
         self.tree_tag = "cell_sel"
 
-        self._menu_item: str | None = None
-        self._menu_col: str | None = None
-
 
         top = ttk.Frame(self)
         top.pack(fill="x", padx=3, pady=2)
@@ -115,6 +112,7 @@ class App(tk.Tk):
             label="Mover ↓",
             command=lambda: self._move_cell("down"),
         )
+        self.tree.bind("<Button-1>", self._cell_click)
         self.tree.bind("<Button-3>", self._popup_menu)
         self.bind_all("<Control-z>", self.undo)
         self.bind_all("<Control-Shift-Z>", self.redo)
@@ -172,6 +170,7 @@ class App(tk.Tk):
         self.selected_cell = (item, col)
 
     def _popup_menu(self, event: tk.Event) -> None:
+        self._cell_click(event)
         if self.selected_cell:
             self.menu.tk_popup(event.x_root, event.y_root)
 
