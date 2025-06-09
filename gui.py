@@ -1,6 +1,7 @@
 """Tkinter GUI for the QC application."""
 
 import io
+import os
 import json
 import queue
 import threading
@@ -17,14 +18,16 @@ import textwrap
 
 class App(tk.Tk):
     def __init__(self) -> None:
-        super().__init__()
-        self.title("QC-Audiolibro  v5.1")
-        self.geometry("1850x760")
+        use_tk = bool(os.environ.get("DISPLAY"))
+        super().__init__(useTk=use_tk)
+        if use_tk:
+            self.title("QC-Audiolibro  v5.1")
+            self.geometry("1850x760")
 
-        self.v_ref = tk.StringVar()
-        self.v_asr = tk.StringVar()
-        self.v_audio = tk.StringVar()
-        self.v_json = tk.StringVar()
+        self.v_ref = tk.StringVar(self)
+        self.v_asr = tk.StringVar(self)
+        self.v_audio = tk.StringVar(self)
+        self.v_json = tk.StringVar(self)
         self.q: queue.Queue = queue.Queue()
         self.ok_rows: set[int] = set()
         self.undo_stack: list[str] = []
@@ -111,6 +114,23 @@ class App(tk.Tk):
         self.menu.add_command(
             label="Mover ↓",
             command=lambda: self._move_cell("down"),
+        )
+        self.menu.add_separator()
+        self.menu.add_command(
+            label="↑ última palabra",
+            command=lambda: self._move_word("up", "last"),
+        )
+        self.menu.add_command(
+            label="↓ última palabra",
+            command=lambda: self._move_word("down", "last"),
+        )
+        self.menu.add_command(
+            label="↑ primera palabra",
+            command=lambda: self._move_word("up", "first"),
+        )
+        self.menu.add_command(
+            label="↓ primera palabra",
+            command=lambda: self._move_word("down", "first"),
         )
         self.tree.bind("<Button-1>", self._cell_click)
         self.tree.bind("<Button-3>", self._popup_menu)
@@ -211,6 +231,45 @@ class App(tk.Tk):
         self._snapshot()
         self.tree.set(dst_item, col, fused)
         self.tree.set(item, col, "")
+        other_col = "ASR" if col == "Original" else "Original"
+        if not self.tree.set(item, col) and not self.tree.set(item, other_col):
+            self.tree.delete(item)
+        self.selected_cell = None
+        for iid in self.tree.get_children():
+            tags = list(self.tree.item(iid, "tags"))
+            if self.tree_tag in tags:
+                tags.remove(self.tree_tag)
+                self.tree.item(iid, tags=tuple(tags))
+
+        self.save_json()
+
+    def _move_word(self, direction: str, which: str) -> None:
+        """Move the first or last word to the adjacent row."""
+        if not self.selected_cell:
+            return
+        item, col_id = self.selected_cell
+        children = self.tree.get_children()
+        idx = children.index(item)
+        dst_idx = idx - 1 if direction == "up" else idx + 1
+        if dst_idx < 0 or dst_idx >= len(children):
+            return
+        dst_item = children[dst_idx]
+        col = "Original" if col_id == "#6" else "ASR"
+        src_text = self.tree.set(item, col).strip()
+        if not src_text:
+            return
+        words = src_text.split()
+        if not words:
+            return
+        word = words.pop(0 if which == "first" else -1)
+        self._snapshot()
+        self.tree.set(item, col, " ".join(words))
+        dst_text = self.tree.set(dst_item, col).strip()
+        if direction == "up":
+            fused = (dst_text + " " + word).strip()
+        else:
+            fused = (word + " " + dst_text).strip()
+        self.tree.set(dst_item, col, fused)
         other_col = "ASR" if col == "Original" else "Original"
         if not self.tree.set(item, col) and not self.tree.set(item, other_col):
             self.tree.delete(item)

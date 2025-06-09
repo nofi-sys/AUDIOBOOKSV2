@@ -34,6 +34,10 @@ reviewed. Use the **Guardar JSON** button to save the current table so these
 marks persist. Loading a previously saved file that includes an **OK** column
 will restore the review status for each row.
 
+Right-click a cell under **Original** or **ASR** to open a menu. Besides moving
+the entire cell up or down, the menu includes options to send only the first or
+last word to the adjacent row.
+
 ## Implementation notes
 
 Alignment relies on dynamic time warping with anchor trigrams to keep the
