@@ -4,6 +4,7 @@ from pathlib import Path
 from unittest import mock
 
 import ai_review
+from alignment import build_rows
 
 
 def test_review_file_basic_skip_and_autofill():
@@ -44,3 +45,27 @@ def test_review_row_updates_list():
     assert row[2] == "OK"
     assert row[3] == "ok"
     assert m.called
+
+
+def test_review_file_on_six_column_rows(tmp_path):
+    rows = build_rows("hola", "hola")
+    for r in rows:
+        r[1] = ""  # ensure not skipped
+    path = tmp_path / "rows6.json"
+    path.write_text(json.dumps(rows, ensure_ascii=False), encoding="utf8")
+    with mock.patch("ai_review.ai_verdict", return_value="ok"):
+        ai_review.review_file(str(path))
+    data = json.loads(path.read_text())
+    assert len(data[0]) == 8
+    assert data[0][2] == "OK" and data[0][3] == "ok"
+
+
+def test_review_file_on_eight_column_rows(tmp_path):
+    rows = [[0, "", "", "", 10.0, 0.5, "hola", "hola"]]
+    path = tmp_path / "rows8.json"
+    path.write_text(json.dumps(rows, ensure_ascii=False), encoding="utf8")
+    with mock.patch("ai_review.ai_verdict", return_value="mal"):
+        ai_review.review_file(str(path))
+    data = json.loads(path.read_text())
+    assert len(data[0]) == 8
+    assert data[0][3] == "mal"
