@@ -49,3 +49,17 @@ word-level Levenshtein distance.
 With a JSON file loaded you can click **AI Review (o3)** to send unchecked lines
 to OpenAI and automatically fill the *AI* column with `ok`, `mal` or `dudoso`.
 Lines marked `ok` are also auto-approved.
+
+### OpenAI setup
+
+This project uses the OpenAI Python client (v1+) for AI review.
+Set your API key in the OPENAI_API_KEY environment variable.
+You can create a .env file with the key and optional debugging flag:
+
+```
+OPENAI_API_KEY=sk-yourkey
+AI_REVIEW_DEBUG=1
+```
+
+The .env file is ignored by git so your credentials remain private.
+

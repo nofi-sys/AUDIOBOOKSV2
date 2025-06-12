@@ -6,3 +6,4 @@ faster-whisper
 torch
 tqdm
 openai>=1.2.0
+python-dotenv
