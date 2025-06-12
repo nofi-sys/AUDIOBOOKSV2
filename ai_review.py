@@ -26,7 +26,8 @@ from openai import (
     OpenAIError,
 )
 
-MODEL = "o3-2025-04-16"
+#MODEL = "o3-2025-04-16"
+MODEL = "o3"
 
 _client_instance: OpenAI | None = None
 
@@ -101,8 +102,8 @@ def ai_verdict(original: str, asr: str, base_prompt: str | None = None) -> str:
             {"role": "system", "content": prompt},
             {"role": "user", "content": f"ORIGINAL:\n{original}\n\nASR:\n{asr}"},
         ],
-        max_tokens=1,
-        temperature=0,
+        max_completion_tokens=10,
+
     )
     word = resp.choices[0].message.content.strip().lower()
     if word not in {"ok", "mal", "dudoso"}:
