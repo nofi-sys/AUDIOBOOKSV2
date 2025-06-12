@@ -76,15 +76,22 @@ def ai_verdict(original: str, asr: str, base_prompt: str | None = None) -> str:
 def review_row(row: List, base_prompt: str | None = None) -> str:
     """Annotate a single QC row using OpenAI."""
     logger.info("Reviewing single row")
-    verdict = ai_verdict(str(row[5]), str(row[6]), base_prompt)
+
+    orig_idx = len(row) - 2
+    asr_idx = len(row) - 1
+
+    verdict = ai_verdict(str(row[orig_idx]), str(row[asr_idx]), base_prompt)
     if verdict not in {"ok", "mal", "dudoso"}:
         verdict = "dudoso"
+
     if len(row) == 6:
         row.insert(2, "")
-    if len(row) == 7:
+        row.insert(3, verdict)
+    elif len(row) == 7:
         row.insert(3, verdict)
     else:
         row[3] = verdict
+
     if verdict == "ok":
         row[2] = "OK"
     return verdict
@@ -104,12 +111,22 @@ def review_file(qc_json: str, prompt_path: str = "prompt.txt") -> None:
         if tick or ok:
             continue
         sent += 1
-        verdict = ai_verdict(str(row[5]), str(row[6]), prompt)
+
+        orig_idx = len(row) - 2
+        asr_idx = len(row) - 1
+
+        verdict = ai_verdict(str(row[orig_idx]), str(row[asr_idx]), prompt)
         if verdict not in {"ok", "mal", "dudoso"}:
             verdict = "dudoso"
+
         if len(row) == 6:
             row.insert(2, "")
-        row.insert(3, verdict)
+            row.insert(3, verdict)
+        elif len(row) == 7:
+            row.insert(3, verdict)
+        else:
+            row[3] = verdict
+
         if verdict == "ok":
             row[2] = "OK"
             approved += 1
