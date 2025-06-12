@@ -1,5 +1,4 @@
 import json
-import json
 import tempfile
 from pathlib import Path
 from unittest import mock
@@ -21,7 +20,7 @@ def test_review_file_basic_skip_and_autofill():
             approved, remaining = ai_review.review_file(str(path))
 
         data = json.loads(path.read_text(encoding="utf8"))
-        assert len(data[0]) == 7 + 1  # unchanged row should also get AI col
+        assert len(data[0]) == 7  # skipped rows are unchanged
         assert m.call_count == 1
         assert data[1][3] == "ok" and data[1][2] == "OK"
         assert approved == 1 and remaining == 0
@@ -37,3 +36,11 @@ def test_review_file_bad_response_mark_dudoso():
         out = json.loads(p.read_text())
         assert out[0][3] == "dudoso"
 
+
+def test_review_row_updates_list():
+    row = [0, "", "", 20.0, 0.5, "hola", "hola"]
+    with mock.patch("ai_review.ai_verdict", return_value="ok") as m:
+        ai_review.review_row(row)
+    assert row[2] == "OK"
+    assert row[3] == "ok"
+    assert m.called
