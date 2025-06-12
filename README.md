@@ -43,3 +43,9 @@ last word to the adjacent row.
 Alignment relies on dynamic time warping with anchor trigrams to keep the
 matching monotonic.  Each output row shows the WER of a chunk computed using
 word-level Levenshtein distance.
+
+### AI Review
+
+With a JSON file loaded you can click **AI Review (o3)** to send unchecked lines
+to OpenAI and automatically fill the *AI* column with `ok`, `mal` or `dudoso`.
+Lines marked `ok` are also auto-approved.
