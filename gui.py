@@ -30,6 +30,7 @@ class App(tk.Tk):
         self.v_asr = tk.StringVar(self)
         self.v_audio = tk.StringVar(self)
         self.v_json = tk.StringVar(self)
+        self.ai_one = tk.BooleanVar(self, value=False)
         self.q: queue.Queue = queue.Queue()
         self.ok_rows: set[int] = set()
         self.undo_stack: list[str] = []
@@ -87,6 +88,11 @@ class App(tk.Tk):
         ttk.Button(top, text="AI Review (o3)", command=self.ai_review).grid(
             row=3, column=3, padx=6
         )
+        ttk.Checkbutton(
+            top,
+            text="una fila",
+            variable=self.ai_one,
+        ).grid(row=3, column=4, padx=4)
 
         style = ttk.Style(self)
         style.configure("Treeview", rowheight=45)
@@ -406,8 +412,23 @@ class App(tk.Tk):
         if not self.v_json.get():
             messagebox.showwarning("Falta info", "Cargar JSON primero")
             return
-        self.log_msg("⏳ Revisión AI…")
-        threading.Thread(target=self._ai_review_worker, daemon=True).start()
+        if self.ai_one.get():
+            sel = self.tree.selection()
+            if not sel:
+                messagebox.showwarning("Falta info", "Selecciona una fila")
+                return
+            iid = sel[0]
+            original = self.tree.set(iid, "Original")
+            asr = self.tree.set(iid, "ASR")
+            self.log_msg("⏳ Revisión AI fila…")
+            threading.Thread(
+                target=self._ai_review_one_worker,
+                args=(iid, original, asr),
+                daemon=True,
+            ).start()
+        else:
+            self.log_msg("⏳ Revisión AI…")
+            threading.Thread(target=self._ai_review_worker, daemon=True).start()
 
     def _ai_review_worker(self) -> None:
         try:
@@ -416,6 +437,18 @@ class App(tk.Tk):
             approved, remaining = review_file(self.v_json.get())
             self.q.put(("RELOAD", None))
             self.q.put(f"✔ Auto-aprobadas {approved} / Restantes {remaining}")
+        except Exception:
+            buf = io.StringIO()
+            traceback.print_exc(file=buf)
+            self.q.put(buf.getvalue())
+
+    def _ai_review_one_worker(self, iid: str, original: str, asr: str) -> None:
+        try:
+            from ai_review import review_row
+
+            row = [0, "", "", 0.0, 0.0, original, asr]
+            review_row(row)
+            self.q.put(("AI_ROW", (iid, row[3], row[2])))
         except Exception:
             buf = io.StringIO()
             traceback.print_exc(file=buf)
@@ -510,6 +543,16 @@ class App(tk.Tk):
                     self.load_json()
                 elif isinstance(msg, tuple) and msg[0] == "SET_ASR":
                     self.v_asr.set(msg[1])
+                elif isinstance(msg, tuple) and msg[0] == "AI_ROW":
+                    iid, verdict, ok = msg[1]
+                    self.tree.set(iid, "AI", verdict)
+                    if ok:
+                        self.tree.set(iid, "OK", ok)
+                        try:
+                            line_id = int(self.tree.set(iid, "ID"))
+                            self.ok_rows.add(line_id)
+                        except Exception:
+                            pass
                 else:
                     self.log_msg(str(msg))
         except queue.Empty:

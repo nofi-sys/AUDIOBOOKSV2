@@ -8,7 +8,7 @@ import json
 
 from openai import OpenAI
 
-MODEL = "o3-turbo"
+MODEL = "o3-2025-04-16"
 
 _client_instance: OpenAI | None = None
 
@@ -56,6 +56,23 @@ def ai_verdict(original: str, asr: str, base_prompt: str | None = None) -> str:
     return word
 
 
+def review_row(row: List, base_prompt: str | None = None) -> str:
+    """Annotate a single QC row using OpenAI."""
+
+    verdict = ai_verdict(str(row[5]), str(row[6]), base_prompt)
+    if verdict not in {"ok", "mal", "dudoso"}:
+        verdict = "dudoso"
+    if len(row) == 6:
+        row.insert(2, "")
+    if len(row) == 7:
+        row.insert(3, verdict)
+    else:
+        row[3] = verdict
+    if verdict == "ok":
+        row[2] = "OK"
+    return verdict
+
+
 def review_file(qc_json: str, prompt_path: str = "prompt.txt") -> None:
     rows: List[List] = json.loads(Path(qc_json).read_text(encoding="utf8"))
     prompt = load_prompt(prompt_path)
@@ -70,6 +87,8 @@ def review_file(qc_json: str, prompt_path: str = "prompt.txt") -> None:
             continue
         sent += 1
         verdict = ai_verdict(str(row[5]), str(row[6]), prompt)
+        if verdict not in {"ok", "mal", "dudoso"}:
+            verdict = "dudoso"
         if len(row) == 6:
             row.insert(2, "")
         row.insert(3, verdict)
