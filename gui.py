@@ -84,6 +84,9 @@ class App(tk.Tk):
         ttk.Button(top, text="Abrir JSON…", command=self.load_json).grid(
             row=3, column=2
         )
+        ttk.Button(top, text="AI Review (o3)", command=self.ai_review).grid(
+            row=3, column=3, padx=6
+        )
 
         style = ttk.Style(self)
         style.configure("Treeview", rowheight=45)
@@ -93,14 +96,14 @@ class App(tk.Tk):
 
         self.tree = ttk.Treeview(
             table_frame,
-            columns=("ID", "✓", "OK", "WER", "dur", "Original", "ASR"),
+            columns=("ID", "✓", "OK", "AI", "WER", "dur", "Original", "ASR"),
             show="headings",
             height=27,
             selectmode="extended",
         )
         for c, w in zip(
-            ("ID", "✓", "OK", "WER", "dur", "Original", "ASR"),
-            (50, 30, 40, 60, 60, 800, 800),
+            ("ID", "✓", "OK", "AI", "WER", "dur", "Original", "ASR"),
+            (50, 30, 40, 40, 60, 60, 800, 800),
         ):
             self.tree.heading(c, text=c)
             self.tree.column(c, width=w, anchor="w")
@@ -205,7 +208,7 @@ class App(tk.Tk):
             if self.tree_tag in tags:
                 tags.remove(self.tree_tag)
                 self.tree.item(iid, tags=tuple(tags))
-        if col not in ("#6", "#7") or not item:
+        if col not in ("#7", "#8") or not item:
             self.selected_cell = None
             return
         tags = list(self.tree.item(item, "tags"))
@@ -243,7 +246,7 @@ class App(tk.Tk):
         if dst_idx < 0 or dst_idx >= len(children):
             return
         dst_item = children[dst_idx]
-        col = "Original" if col_id == "#6" else "ASR"
+        col = "Original" if col_id == "#7" else "ASR"
         src_text = self.tree.set(item, col)
         if not src_text:
             return
@@ -278,7 +281,7 @@ class App(tk.Tk):
         if dst_idx < 0 or dst_idx >= len(children):
             return
         dst_item = children[dst_idx]
-        col = "Original" if col_id == "#6" else "ASR"
+        col = "Original" if col_id == "#7" else "ASR"
         src_text = self.tree.set(item, col).strip()
         if not src_text:
             return
@@ -399,6 +402,25 @@ class App(tk.Tk):
         self.log_msg("⏳ Iniciando…")
         threading.Thread(target=self._worker, daemon=True).start()
 
+    def ai_review(self) -> None:
+        if not self.v_json.get():
+            messagebox.showwarning("Falta info", "Cargar JSON primero")
+            return
+        self.log_msg("⏳ Revisión AI…")
+        threading.Thread(target=self._ai_review_worker, daemon=True).start()
+
+    def _ai_review_worker(self) -> None:
+        try:
+            from ai_review import review_file
+
+            approved, remaining = review_file(self.v_json.get())
+            self.q.put(("RELOAD", None))
+            self.q.put(f"✔ Auto-aprobadas {approved} / Restantes {remaining}")
+        except Exception:
+            buf = io.StringIO()
+            traceback.print_exc(file=buf)
+            self.q.put(buf.getvalue())
+
     def _worker(self) -> None:
         try:
             self.q.put("→ Leyendo guion…")
@@ -460,11 +482,13 @@ class App(tk.Tk):
             self.clear_table()
             for r in rows:
                 if len(r) == 6:
-                    vals = [r[0], r[1], "", r[2], r[3], r[4], r[5]]
+                    vals = [r[0], r[1], "", "", r[2], r[3], r[4], r[5]]
+                elif len(r) == 7:
+                    vals = [r[0], r[1], r[2], "", r[3], r[4], r[5], r[6]]
                 else:
                     vals = r
-                vals[5] = str(vals[5])
                 vals[6] = str(vals[6])
+                vals[7] = str(vals[7])
                 self.tree.insert("", tk.END, values=vals)
             self._snapshot()
             self.log_msg(f"✔ Cargado {self.v_json.get()}")
@@ -477,11 +501,13 @@ class App(tk.Tk):
                 msg = self.q.get_nowait()
                 if isinstance(msg, tuple) and msg[0] == "ROWS":
                     for r in msg[1]:
-                        vals = [r[0], r[1], "", r[2], r[3], r[4], r[5]]
-                        vals[5] = str(vals[5])
+                        vals = [r[0], r[1], "", "", r[2], r[3], r[4], r[5]]
                         vals[6] = str(vals[6])
+                        vals[7] = str(vals[7])
                         self.tree.insert("", tk.END, values=vals)
                     self._snapshot()
+                elif isinstance(msg, tuple) and msg[0] == "RELOAD":
+                    self.load_json()
                 elif isinstance(msg, tuple) and msg[0] == "SET_ASR":
                     self.v_asr.set(msg[1])
                 else:
@@ -502,11 +528,13 @@ class App(tk.Tk):
         self.clear_table()
         for r in rows:
             if len(r) == 6:
-                vals = [r[0], r[1], "", r[2], r[3], r[4], r[5]]
+                vals = [r[0], r[1], "", "", r[2], r[3], r[4], r[5]]
+            elif len(r) == 7:
+                vals = [r[0], r[1], r[2], "", r[3], r[4], r[5], r[6]]
             else:
                 vals = r
-            vals[5] = str(vals[5])
             vals[6] = str(vals[6])
+            vals[7] = str(vals[7])
             self.tree.insert("", tk.END, values=vals)
 
     def undo(self, event: tk.Event | None = None) -> None:
