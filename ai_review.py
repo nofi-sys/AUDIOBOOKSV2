@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 """Automatic AI review of QC rows using OpenAI's o3 models."""
-
 from pathlib import Path
 from typing import List
 import json
@@ -10,11 +9,11 @@ import logging
 import time
 
 from dotenv import load_dotenv
-
 load_dotenv()
 
+# Enable debug logging if environment variable set
 logger = logging.getLogger(__name__)
-if os.environ.get("AI_REVIEW_DEBUG"):
+if os.getenv("AI_REVIEW_DEBUG", "").lower() in ("1","true","yes"):
     logging.basicConfig(level=logging.INFO)
 
 from openai import (
@@ -26,21 +25,20 @@ from openai import (
     OpenAIError,
 )
 
-#MODEL = "o3-2025-04-16"
+# Use o3 model family
 MODEL = "o3"
-
 _client_instance: OpenAI | None = None
 
-
 def _client() -> OpenAI:
+    """Singleton OpenAI client using env var for key."""
     global _client_instance
     if _client_instance is None:
-        key_present = bool(os.getenv("OPENAI_API_KEY"))
-        if not key_present:
-            logger.info("OPENAI_API_KEY not found in environment")
+        key = os.getenv("OPENAI_API_KEY")
+        if not key:
+            logger.error("OPENAI_API_KEY not found in environment")
         else:
             logger.info("OPENAI_API_KEY loaded")
-        _client_instance = OpenAI()  # API key from env vars
+        _client_instance = OpenAI()
     return _client_instance
 
 
@@ -58,134 +56,124 @@ def _chat_with_backoff(**kwargs):
             OpenAIError,
         ) as exc:
             status = getattr(exc, "status_code", 0)
-            if status == 429 or status >= 500 or not status:
-                logger.info(
+            if status == 429 or status >= 500 or status == 0:
+                logger.warning(
                     "OpenAI error %s on attempt %s, retrying in %.1fs",
                     exc,
-                    attempt + 1,
+                    attempt+1,
                     delay,
                 )
                 time.sleep(delay)
                 delay *= 2
                 continue
             raise
+    # Final attempt
     return _client().chat.completions.create(**kwargs)
 
 
 def load_prompt(path: str = "prompt.txt") -> str:
-    p = Path(path)
+    """Load user prompt from file, fallback to default."""
     try:
-        return p.read_text(encoding="utf8")
+        return Path(path).read_text(encoding="utf8")
     except Exception:
         logger.info("Using built-in prompt; failed to read %s", path)
         return DEFAULT_PROMPT
 
-
-DEFAULT_PROMPT = """You are an audiobook QA assistant. Compare the ORIGINAL line with the ASR line.
+# Default instruction prompt
+DEFAULT_PROMPT = """
+You are an audiobook QA assistant. Compare the ORIGINAL line with the ASR line.
 Accept differences in punctuation, accents, or abbreviations
-(e.g. \"dr.\" vs \"doctor\", \"1º\" vs \"primero\"). Ignore case.
+(e.g. "dr." vs "doctor", "1º" vs "primero"). Ignore case.
 
-If ASR faithfully renders the meaning: respond \"ok\".
-If clearly wrong: respond \"mal\".
-If uncertain or garbled: respond \"dudoso\".
+If ASR faithfully renders the meaning: respond "ok".
+If clearly wrong: respond "mal".
+If uncertain or garbled: respond "dudoso".
 
-Respond with **only** one of those words, nothing else.
+Respond with ONLY one of those words: ok, mal, or dudoso.
 """
 
 
 def ai_verdict(original: str, asr: str, base_prompt: str | None = None) -> str:
+    """Send a single comparison request and return the verdict."""
     prompt = base_prompt or DEFAULT_PROMPT
-    logger.info("Sending to OpenAI: %s | %s", original, asr)
+    logger.info("AI review request ORIGINAL=%s | ASR=%s", original, asr)
+    # Debug prints
+    print(f"DEBUG ai_verdict: ORIGINAL={original}")
+    print(f"DEBUG ai_verdict: ASR={asr}")
     resp = _chat_with_backoff(
         model=MODEL,
         messages=[
             {"role": "system", "content": prompt},
             {"role": "user", "content": f"ORIGINAL:\n{original}\n\nASR:\n{asr}"},
         ],
-        max_completion_tokens=10,
-
+        max_completion_tokens=1000,
+        stop=None,
     )
-    word = resp.choices[0].message.content.strip().lower()
+    # Debug full response
+    print("DEBUG: full response:", resp)
+    content = resp.choices[0].message.content
+    # Debug raw content
+    print("DEBUG: raw verdict repr:", repr(content))
+    word = content.strip().lower()
     if word not in {"ok", "mal", "dudoso"}:
-        logger.info("Unexpected response: %s", word)
+        logger.warning("Unexpected AI response '%s', defaulting to dudoso", word)
         return "dudoso"
     return word
 
 
 def review_row(row: List, base_prompt: str | None = None) -> str:
-    """Annotate a single QC row using OpenAI."""
-    logger.info("Reviewing single row")
-
-    orig_idx = len(row) - 2
-    asr_idx = len(row) - 1
-
-    verdict = ai_verdict(str(row[orig_idx]), str(row[asr_idx]), base_prompt)
-    if verdict not in {"ok", "mal", "dudoso"}:
-        verdict = "dudoso"
-
+    """Annotate a single QC row with AI verdict."""
+    orig, asr = row[-2], row[-1]
+    verdict = ai_verdict(str(orig), str(asr), base_prompt)
+    # Insert into row preserving structure
+    # Row formats: [ID, tick, OK?, WER, dur, original, asr]
     if len(row) == 6:
-        row.insert(2, "")
-        row.insert(3, verdict)
+        row.insert(2, "")         # OK column
+        row.insert(3, verdict)      # AI verdict column
     elif len(row) == 7:
         row.insert(3, verdict)
     else:
         row[3] = verdict
-
     if verdict == "ok":
         row[2] = "OK"
     return verdict
 
 
-def review_file(qc_json: str, prompt_path: str = "prompt.txt") -> None:
-    logger.info("Loading QC file: %s", qc_json)
-    path = Path(qc_json)
-    rows: List[List] = json.loads(path.read_text(encoding="utf8"))
-    bak = path.with_suffix(path.suffix + ".bak")
-    if not bak.exists():
-        bak.write_text(json.dumps(rows, ensure_ascii=False, indent=2), "utf8")
+def review_file(qc_json: str, prompt_path: str = "prompt.txt") -> tuple[int,int]:
+    """Batch review QC JSON file, auto-approve lines marked ok."""
+    rows = json.loads(Path(qc_json).read_text(encoding="utf8"))
+    bak = Path(qc_json + ".bak")
+    if not bak.exists(): bak.write_text(json.dumps(rows, ensure_ascii=False, indent=2), encoding="utf8")
     prompt = load_prompt(prompt_path)
-
-    sent = 0
-    approved = 0
-
-    for row in rows:
-        tick = row[1]
-        ok = row[2] if len(row) > 2 else ""
+    sent = approved = 0
+    for i, row in enumerate(rows):
+        tick, ok = row[1], (row[2] if len(row)>2 else "")
         if tick or ok:
             continue
         sent += 1
-
-        orig_idx = len(row) - 2
-        asr_idx = len(row) - 1
-
-        verdict = ai_verdict(str(row[orig_idx]), str(row[asr_idx]), prompt)
-        if verdict not in {"ok", "mal", "dudoso"}:
-            verdict = "dudoso"
-
+        verdict = ai_verdict(str(row[-2]), str(row[-1]), prompt)
+        # Insert verdict column
         if len(row) == 6:
-            row.insert(2, "")
+            row.insert(2,"")
             row.insert(3, verdict)
-        elif len(row) == 7:
+        elif len(row)==7:
             row.insert(3, verdict)
         else:
-            row[3] = verdict
-
-        if verdict == "ok":
-            row[2] = "OK"
-            approved += 1
-
-        path.write_text(json.dumps(rows, ensure_ascii=False, indent=2), "utf8")
-    logger.info("Approved %s / Remaining %s", approved, sent - approved)
-    return approved, sent - approved
+            row[3]=verdict
+        if verdict=="ok":
+            row[2]="OK"
+            approved+=1
+        # Save update
+        Path(qc_json).write_text(json.dumps(rows, ensure_ascii=False, indent=2), encoding="utf8")
+    logger.info("Approved %d / Remaining %d", approved, sent-approved)
+    return approved, sent-approved
 
 
 if __name__ == "__main__":
     import argparse
-
-    parser = argparse.ArgumentParser(description="Batch review QC JSON using o3")
-    parser.add_argument("file", help="QC JSON file")
-    parser.add_argument("--prompt", default="prompt.txt", help="Prompt file path")
+    parser = argparse.ArgumentParser(description="Batch review QC JSON using o3 model")
+    parser.add_argument("file", help="QC JSON file path")
+    parser.add_argument("--prompt", default="prompt.txt")
     args = parser.parse_args()
-    a, b = review_file(args.file, args.prompt)
-    logger.info("Auto-approved %s / Remaining %s", a, b)
+    a,b = review_file(args.file, args.prompt)
     print(f"Auto-approved {a} / Remaining {b}")
