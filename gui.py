@@ -121,7 +121,8 @@ class App(tk.Tk):
 
         self.tree.tag_configure(self.tree_tag, background="#d0e0ff")
         self.tree.tag_configure(
-            self.merged_tag, background="#f5f5f5", relief="solid", borderwidth=2
+            self.merged_tag,
+            background="#f5f5f5",
         )
 
         self.menu = tk.Menu(self, tearoff=0)
