@@ -7,6 +7,7 @@ from typing import List
 import json
 import os
 import logging
+import time
 
 from dotenv import load_dotenv
 
@@ -16,7 +17,14 @@ logger = logging.getLogger(__name__)
 if os.environ.get("AI_REVIEW_DEBUG"):
     logging.basicConfig(level=logging.INFO)
 
-from openai import OpenAI
+from openai import (
+    OpenAI,
+    APIStatusError,
+    RateLimitError,
+    APIConnectionError,
+    APITimeoutError,
+    OpenAIError,
+)
 
 MODEL = "o3-2025-04-16"
 
@@ -35,10 +43,40 @@ def _client() -> OpenAI:
     return _client_instance
 
 
+def _chat_with_backoff(**kwargs):
+    """Call chat.completions.create with basic exponential backoff."""
+    delay = 1.0
+    for attempt in range(5):
+        try:
+            return _client().chat.completions.create(**kwargs)
+        except (
+            RateLimitError,
+            APIStatusError,
+            APIConnectionError,
+            APITimeoutError,
+            OpenAIError,
+        ) as exc:
+            status = getattr(exc, "status_code", 0)
+            if status == 429 or status >= 500 or not status:
+                logger.info(
+                    "OpenAI error %s on attempt %s, retrying in %.1fs",
+                    exc,
+                    attempt + 1,
+                    delay,
+                )
+                time.sleep(delay)
+                delay *= 2
+                continue
+            raise
+    return _client().chat.completions.create(**kwargs)
+
+
 def load_prompt(path: str = "prompt.txt") -> str:
+    p = Path(path)
     try:
-        return Path(path).read_text(encoding="utf8")
+        return p.read_text(encoding="utf8")
     except Exception:
+        logger.info("Using built-in prompt; failed to read %s", path)
         return DEFAULT_PROMPT
 
 
@@ -57,7 +95,7 @@ Respond with **only** one of those words, nothing else.
 def ai_verdict(original: str, asr: str, base_prompt: str | None = None) -> str:
     prompt = base_prompt or DEFAULT_PROMPT
     logger.info("Sending to OpenAI: %s | %s", original, asr)
-    resp = _client().chat.completions.create(
+    resp = _chat_with_backoff(
         model=MODEL,
         messages=[
             {"role": "system", "content": prompt},
@@ -99,7 +137,11 @@ def review_row(row: List, base_prompt: str | None = None) -> str:
 
 def review_file(qc_json: str, prompt_path: str = "prompt.txt") -> None:
     logger.info("Loading QC file: %s", qc_json)
-    rows: List[List] = json.loads(Path(qc_json).read_text(encoding="utf8"))
+    path = Path(qc_json)
+    rows: List[List] = json.loads(path.read_text(encoding="utf8"))
+    bak = path.with_suffix(path.suffix + ".bak")
+    if not bak.exists():
+        bak.write_text(json.dumps(rows, ensure_ascii=False, indent=2), "utf8")
     prompt = load_prompt(prompt_path)
 
     sent = 0
@@ -131,7 +173,7 @@ def review_file(qc_json: str, prompt_path: str = "prompt.txt") -> None:
             row[2] = "OK"
             approved += 1
 
-    Path(qc_json).write_text(json.dumps(rows, ensure_ascii=False, indent=2), "utf8")
+        path.write_text(json.dumps(rows, ensure_ascii=False, indent=2), "utf8")
     logger.info("Approved %s / Remaining %s", approved, sent - approved)
     return approved, sent - approved
 

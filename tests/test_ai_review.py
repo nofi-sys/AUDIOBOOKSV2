@@ -2,6 +2,7 @@ import json
 import tempfile
 from pathlib import Path
 from unittest import mock
+import pytest
 
 import ai_review
 from alignment import build_rows
@@ -69,3 +70,28 @@ def test_review_file_on_eight_column_rows(tmp_path):
     data = json.loads(path.read_text())
     assert len(data[0]) == 8
     assert data[0][3] == "mal"
+
+
+def test_backup_created_and_partial_save(tmp_path):
+    rows = [
+        [0, "", "", 0, 0, "hola", "hola"],
+        [1, "", "", 0, 0, "adios", "adios"],
+    ]
+    path = tmp_path / "rows.json"
+    path.write_text(json.dumps(rows, ensure_ascii=False), encoding="utf8")
+    with mock.patch(
+        "ai_review.ai_verdict",
+        side_effect=["ok", Exception("boom")],
+    ):
+        with pytest.raises(Exception):
+            ai_review.review_file(str(path))
+    data = json.loads(path.read_text())
+    assert data[0][2] == "OK" and data[0][3] == "ok"
+    bak = path.with_suffix(path.suffix + ".bak")
+    assert bak.exists()
+    assert json.loads(bak.read_text()) == rows
+
+
+def test_load_prompt_fallback(tmp_path):
+    missing = tmp_path / "no.txt"
+    assert ai_review.load_prompt(str(missing)) == ai_review.DEFAULT_PROMPT
