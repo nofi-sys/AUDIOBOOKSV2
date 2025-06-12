@@ -399,7 +399,9 @@ class App(tk.Tk):
         except Exception:
             buf = io.StringIO()
             traceback.print_exc(file=buf)
-            self.q.put(buf.getvalue())
+            err = buf.getvalue()
+            print(err)
+            self.q.put(err)
 
     def launch(self) -> None:
         if not (self.v_ref.get() and self.v_asr.get()):
@@ -428,7 +430,9 @@ class App(tk.Tk):
                 daemon=True,
             ).start()
         else:
-            self.log_msg("⏳ Revisión AI…")
+            self.log_msg(
+                "⏳ Solicitando revisión AI (esto puede tardar unos segundos)…"
+            )
             threading.Thread(target=self._ai_review_worker, daemon=True).start()
 
     def _ai_review_worker(self) -> None:
@@ -441,7 +445,9 @@ class App(tk.Tk):
         except Exception:
             buf = io.StringIO()
             traceback.print_exc(file=buf)
-            self.q.put(buf.getvalue())
+            err = buf.getvalue()
+            print(err)
+            self.q.put(err)
 
     def _ai_review_one_worker(self, iid: str, original: str, asr: str) -> None:
         try:
@@ -453,7 +459,9 @@ class App(tk.Tk):
         except Exception:
             buf = io.StringIO()
             traceback.print_exc(file=buf)
-            self.q.put(buf.getvalue())
+            err = buf.getvalue()
+            print(err)
+            self.q.put(err)
 
     def _worker(self) -> None:
         try:
