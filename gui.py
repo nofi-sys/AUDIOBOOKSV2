@@ -415,6 +415,12 @@ class App(tk.Tk):
         if not self.v_json.get():
             messagebox.showwarning("Falta info", "Cargar JSON primero")
             return
+        if not os.getenv("OPENAI_API_KEY"):
+            messagebox.showwarning(
+                "Falta OPENAI_API_KEY",
+                "Configura la variable OPENAI_API_KEY antes de continuar",
+            )
+            return
         if self.ai_one.get():
             sel = self.tree.selection()
             if not sel:
