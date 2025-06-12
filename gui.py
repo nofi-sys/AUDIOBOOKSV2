@@ -14,7 +14,6 @@ from tkinter import filedialog, messagebox, scrolledtext, ttk
 
 from alignment import build_rows
 from text_utils import read_script
-import textwrap
 
 
 class App(tk.Tk):
@@ -36,8 +35,11 @@ class App(tk.Tk):
         self.undo_stack: list[str] = []
         self.redo_stack: list[str] = []
 
+        self.merged_rows: dict[str, list[list[str]]] = {}
+
         self.selected_cell: tuple[str, str] | None = None
         self.tree_tag = "cell_sel"
+        self.merged_tag = "merged"
 
 
         top = ttk.Frame(self)
@@ -109,6 +111,9 @@ class App(tk.Tk):
 
 
         self.tree.tag_configure(self.tree_tag, background="#d0e0ff")
+        self.tree.tag_configure(
+            self.merged_tag, background="#f5f5f5", relief="solid", borderwidth=2
+        )
 
         self.menu = tk.Menu(self, tearoff=0)
         self.menu.add_command(
@@ -140,6 +145,10 @@ class App(tk.Tk):
         self.menu.add_command(
             label="Fusionar filas seleccionadas",
             command=self._merge_selected_rows,
+        )
+        self.menu.add_command(
+            label="Desagrupar fila",
+            command=self._unmerge_row,
         )
         self.tree.bind("<Button-1>", self._cell_click)
         self.tree.bind("<Button-3>", self._popup_menu)
@@ -318,18 +327,44 @@ class App(tk.Tk):
         fuse = lambda parts: " ".join(p.rstrip(".,;") for p in parts if p)
 
         self._snapshot()
-        self.tree.set(first, "Original", textwrap.fill(fuse(originals), width=80))
-        self.tree.set(first, "ASR", textwrap.fill(fuse(asrs), width=80))
+        self.merged_rows[first] = [list(self.tree.item(i)["values"]) for i in sel]
+
+        self.tree.set(first, "Original", fuse(originals))
+        self.tree.set(first, "ASR", fuse(asrs))
         self.tree.set(first, "dur", f"{total_dur:.2f}")
         self.tree.set(first, "WER", "")
 
         for iid in sel[1:]:
             self.tree.delete(iid)
+            self.merged_rows.pop(iid, None)
+
+        tags = list(self.tree.item(first, "tags"))
+        if self.merged_tag not in tags:
+            tags.append(self.merged_tag)
+        self.tree.item(first, tags=tuple(tags))
 
         start_idx = self.tree.index(first)
         for new_id, iid in enumerate(self.tree.get_children()[start_idx:], start_idx):
             self.tree.set(iid, "ID", new_id)
 
+        self.save_json()
+
+    def _unmerge_row(self) -> None:
+        sel = list(self.tree.selection())
+        if len(sel) != 1:
+            return
+        item = sel[0]
+        if item not in self.merged_rows:
+            return
+        rows = self.merged_rows.pop(item)
+        idx = self.tree.index(item)
+        self._snapshot()
+        self.tree.delete(item)
+        for r in rows:
+            iid = self.tree.insert("", idx, values=r)
+            idx += 1
+        for new_id, iid in enumerate(self.tree.get_children()):
+            self.tree.set(iid, "ID", new_id)
         self.save_json()
 
     def transcribe(self) -> None:
@@ -428,8 +463,8 @@ class App(tk.Tk):
                     vals = [r[0], r[1], "", r[2], r[3], r[4], r[5]]
                 else:
                     vals = r
-                vals[5] = textwrap.fill(str(vals[5]), width=80)
-                vals[6] = textwrap.fill(str(vals[6]), width=80)
+                vals[5] = str(vals[5])
+                vals[6] = str(vals[6])
                 self.tree.insert("", tk.END, values=vals)
             self._snapshot()
             self.log_msg(f"✔ Cargado {self.v_json.get()}")
@@ -443,8 +478,8 @@ class App(tk.Tk):
                 if isinstance(msg, tuple) and msg[0] == "ROWS":
                     for r in msg[1]:
                         vals = [r[0], r[1], "", r[2], r[3], r[4], r[5]]
-                        vals[5] = textwrap.fill(str(vals[5]), width=80)
-                        vals[6] = textwrap.fill(str(vals[6]), width=80)
+                        vals[5] = str(vals[5])
+                        vals[6] = str(vals[6])
                         self.tree.insert("", tk.END, values=vals)
                     self._snapshot()
                 elif isinstance(msg, tuple) and msg[0] == "SET_ASR":
@@ -470,8 +505,8 @@ class App(tk.Tk):
                 vals = [r[0], r[1], "", r[2], r[3], r[4], r[5]]
             else:
                 vals = r
-            vals[5] = textwrap.fill(str(vals[5]), width=80)
-            vals[6] = textwrap.fill(str(vals[6]), width=80)
+            vals[5] = str(vals[5])
+            vals[6] = str(vals[6])
             self.tree.insert("", tk.END, values=vals)
 
     def undo(self, event: tk.Event | None = None) -> None:
