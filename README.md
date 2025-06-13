@@ -27,6 +27,18 @@ python qc_app.py
 The application lets you select a script (PDF or TXT) and an ASR transcript,
 performs alignment and saves a `.qc.json` file.
 
+### Transcribing audio
+
+You can transcribe media files from the command line:
+
+```bash
+python -m transcriber myaudio.mp3 --model base
+```
+
+Add the `--word-json` flag to generate a `.word.json` file with timestamps for
+every word. You may pass a previous transcript using `--prompt file.txt` to help
+Whisper keep the same wording.
+
 ## Manual review
 
 Double-click the **OK** column in the results table to mark or unmark a row as

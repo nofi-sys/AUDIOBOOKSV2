@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import subprocess
 import tempfile
@@ -96,6 +97,56 @@ def _extract_audio(path: str) -> tuple[str, str]:
     return path, base
 
 
+def transcribe_wordlevel(
+    audio_path: str,
+    model_name: str = "large-v3",
+    script_path: str | None = None,
+    initial_prompt: str | None = None,
+) -> Path:
+    """Transcribe ``audio_path`` with word timestamps and save ``.word.json``."""
+
+    hotwords = None
+    if script_path:
+        try:
+            script_text = read_script(script_path)
+            words = extract_word_list(script_text)
+            if words:
+                hotwords = " ".join(words)
+        except Exception:
+            hotwords = None
+
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    compute_type = "int8_float16" if device == "cuda" else "int8"
+    model = WhisperModel(model_name, device=device, compute_type=compute_type)
+
+    segments, _info = model.transcribe(
+        audio_path,
+        word_timestamps=True,
+        vad_filter=True,
+        vad_parameters=dict(min_silence_duration_ms=500),
+        hotwords=hotwords,
+        initial_prompt=initial_prompt,
+    )
+
+    out = Path(audio_path).with_suffix(".word.json")
+    payload = {"segments": []}
+    for seg in segments:
+        payload["segments"].append(
+            {
+                "seg_start": seg.start,
+                "seg_end": seg.end,
+                "text": seg.text,
+                "words": [
+                    {"word": w.word, "start": w.start, "end": w.end}
+                    for w in seg.words
+                ],
+            }
+        )
+
+    out.write_text(json.dumps(payload, ensure_ascii=False, indent=2), "utf8")
+    return out
+
+
 def transcribe_file(
     file_path: str | None = None,
     model_size: str | None = None,
@@ -169,8 +220,23 @@ def main(argv: list[str] | None = None) -> None:
         "--script",
         help="Optional script text (PDF or TXT) to guide transcription",
     )
+    parser.add_argument(
+        "--word-json",
+        action="store_true",
+        help="Output JSON with word timestamps instead of plain text",
+    )
+    parser.add_argument(
+        "--prompt",
+        help="Text file with previous transcription to use as initial prompt",
+    )
     args = parser.parse_args(argv)
-    transcribe_file(args.input, args.model, args.script)
+    if args.word_json:
+        prompt_text = (
+            Path(args.prompt).read_text(encoding="utf8") if args.prompt else None
+        )
+        transcribe_wordlevel(args.input or "", args.model or "base", args.script, prompt_text)
+    else:
+        transcribe_file(args.input, args.model, args.script)
 
 
 if __name__ == "__main__":  # pragma: no cover - manual invocation
