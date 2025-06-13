@@ -1,6 +1,7 @@
 """Alignment routines used by the QC application."""
 
 from typing import List, Tuple
+import json
 import re
 
 from rapidfuzz.distance import Levenshtein
@@ -285,4 +286,87 @@ def refine_segments(rows: List[List], max_shift: int = 2) -> List[List]:
         r[1] = flag
         r[2] = round(wer_val * 100, 1)
         r[3] = round(len(hyp_tokens) / 3.0, 2)
+    return rows
+
+
+def build_rows_wordlevel(ref: str, asr_word_json: str) -> List[List]:
+    """Align using word-level timestamps and compute real durations."""
+
+    data = json.loads(asr_word_json)
+    segments = data.get("segments", data)
+    words = []
+    for seg in segments:
+        for w in seg.get("words", []):
+            tok = w.get("word", w.get("text", ""))
+            words.append(
+                {
+                    "word": tok,
+                    "norm": normalize(tok, strip_punct=False),
+                    "start": float(w.get("start", seg.get("start", 0.0))),
+                    "end": float(w.get("end", seg.get("end", 0.0))),
+                }
+            )
+
+    hyp_tok = [w["norm"] for w in words]
+    ref_tok = normalize(ref, strip_punct=False).split()
+
+    pairs = safe_dtw(ref_tok, hyp_tok, COARSE_W)
+    map_h = [-1] * len(ref_tok)
+    prev_i = prev_j = -1
+    for i, j in pairs:
+        if i > prev_i and j > prev_j:
+            map_h[i] = j
+        prev_i, prev_j = i, j
+
+    rows = []
+    consumed_h = set()
+    line_id = 0
+
+    text_norm = normalize(ref, strip_punct=False)
+    sentences = re.split(r"(?<=[\.\?\!])\s+", text_norm)
+    spans: List[Tuple[int, int]] = []
+    pos = 0
+    for sent in sentences:
+        tokens_sent = sent.split()
+        length = len(tokens_sent)
+        if length > 0:
+            spans.append((pos, pos + length))
+            pos += length
+
+    for span_start, span_end in spans:
+        block = ref_tok[span_start:span_end]
+        h_idxs = [map_h[k] for k in range(span_start, span_end) if map_h[k] != -1 and map_h[k] not in consumed_h]
+        if h_idxs:
+            h_start = min(h_idxs)
+            h_end = max(h_idxs) + 1
+            consumed_h.update(range(h_start, h_end))
+            asr_line = " ".join(w["norm"] for w in words[h_start:h_end])
+            start_time = words[h_start]["start"]
+            end_time = words[h_end - 1]["end"]
+            dur = round(end_time - start_time, 2)
+        else:
+            asr_line = ""
+            dur = 0.0
+
+        orig_line = " ".join(block)
+        ref_tokens = orig_line.split()
+        hyp_tokens = asr_line.split()
+        if hyp_tokens:
+            wer_val = Levenshtein.normalized_distance(ref_tokens, hyp_tokens)
+            base_ref = [r.strip(".,;!") for r in ref_tokens]
+            base_hyp = [h.strip(".,;!") for h in hyp_tokens]
+            base_wer = Levenshtein.normalized_distance(base_ref, base_hyp)
+        else:
+            wer_val = 1.0
+            base_wer = 1.0
+
+        if base_wer <= 0.05:
+            flag = "✅"
+        else:
+            threshold = 0.20 if len(ref_tokens) < 5 else WARN_WER
+            flag = "✅" if wer_val <= threshold else ("⚠️" if wer_val <= 0.20 else "❌")
+
+        rows.append([line_id, flag, round(wer_val * 100, 1), dur, orig_line, asr_line])
+        line_id += 1
+
     return rows

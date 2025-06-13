@@ -1,4 +1,6 @@
-from alignment import build_rows
+import json
+
+from alignment import build_rows, build_rows_wordlevel
 
 
 def test_build_rows_basic():
@@ -14,3 +16,22 @@ def test_build_rows_sentence_split():
     rows = build_rows(ref, hyp)
     assert len(rows) == 2
     assert all(r[1] == "✅" for r in rows)
+
+
+def test_build_rows_wordlevel_basic():
+    ref = "Hola mundo"
+    data = {
+        "segments": [
+            {
+                "start": 0.0,
+                "end": 1.0,
+                "words": [
+                    {"word": "Hola", "start": 0.0, "end": 0.5},
+                    {"word": "mundo", "start": 0.5, "end": 1.0},
+                ],
+            }
+        ]
+    }
+    rows = build_rows_wordlevel(ref, json.dumps(data))
+    assert rows[0][1] == "✅"
+    assert rows[0][3] == 1.0
