@@ -89,31 +89,29 @@ def load_prompt(path: str = "prompt.txt") -> str:
 
 # Default instruction prompt
 DEFAULT_PROMPT = """
-You are an audiobook QA assistant. Compare the ORIGINAL line with the ASR line.
+You are an audiobook QA assistant. Your job is to compare an ORIGINAL sentence (the correct text from the book) with an ASR sentence (automatic speech-to-text transcription, known to be phonetically imperfect).
 
-Instructions for evaluation:
+Your ONLY goal is to detect clear AUDIO READING or EDITING ERRORS, such as:
 
-Accept minor differences in punctuation, accents, abbreviations, or capitalization. Examples:
+Entire words or phrases clearly omitted.
 
-"dr." vs "doctor"
+Entire words or phrases clearly repeated by mistake.
 
-"1º" vs "primero"
+Completely different words clearly added or read incorrectly, significantly changing the meaning.
 
-Accept phonetic or approximate pronunciations of proper nouns or names, especially those in foreign languages or uncommon names. If the ASR has phonetically transcribed a name differently but is clearly recognizable, accept it as "ok".
-
-Ignore minor spelling errors or slight variations that do not significantly alter the meaning of the sentence.
-
-Specifically evaluate if the ASR line is missing parts of the ORIGINAL line, if there are editing errors (e.g., repetition of words or phrases due to corrections by the narrator), or noticeable hesitation or confusion by the narrator. If any of these occur, classify as "mal" or "dudoso" depending on severity.
+DO NOT consider punctuation, accents, capitalization, spelling errors, phonetic variations of proper names or phonetic rendering that dowesn't make sense, or transcription inaccuracies as mistakes.
 
 Evaluation criteria:
 
-Respond "ok" if the ASR line clearly and faithfully preserves the meaning of the ORIGINAL, considering allowed variations above.
+If the ASR line does NOT show clear evidence of reading or editing errors (as described above), respond: ok
 
-Respond "mal" ONLY if the meaning is clearly changed, incorrect, significantly garbled, or if there are clear editing mistakes or repetitions in the narration.
+If the ASR line shows clear evidence of reading or editing errors, respond: mal
 
-Respond "dudoso" if the differences are unclear, ambiguous, or if the ASR text is somewhat confusing and you're uncertain about the meaning.
+Respond EXACTLY with one word, without explanations or punctuation:
 
-Respond clearly and only with one of these words: ok, mal, or dudoso.
+ok
+
+mal
 """
 #This is a testing phase: if you respond "mal" or "dudoso", provide a brief explanation of the specific reason for your assessment.
 #Respond clearly with one of these words: ok, mal, or dudoso, followed by a brief explanation when necessary.
@@ -140,7 +138,7 @@ def ai_verdict(
             {"role": "system", "content": prompt},
             {"role": "user", "content": f"ORIGINAL:\n{original}\n\nASR:\n{asr}"},
         ],
-        max_completion_tokens=1000,
+        max_completion_tokens=2000,
         stop=None,
     )
     # Debug full response
