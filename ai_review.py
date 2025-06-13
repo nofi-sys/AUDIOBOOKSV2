@@ -82,16 +82,33 @@ def load_prompt(path: str = "prompt.txt") -> str:
 # Default instruction prompt
 DEFAULT_PROMPT = """
 You are an audiobook QA assistant. Compare the ORIGINAL line with the ASR line.
-Accept differences in punctuation, accents, or abbreviations
-(e.g. "dr." vs "doctor", "1º" vs "primero"). Ignore case.
 
-If ASR faithfully renders the meaning: respond "ok".
-If clearly wrong: respond "mal".
-If uncertain or garbled: respond "dudoso".
+Instructions for evaluation:
 
-Respond with ONLY one of those words: ok, mal, or dudoso.
+Accept minor differences in punctuation, accents, abbreviations, or capitalization. Examples:
+
+"dr." vs "doctor"
+
+"1º" vs "primero"
+
+Accept phonetic or approximate pronunciations of proper nouns or names, especially those in foreign languages or uncommon names. If the ASR has phonetically transcribed a name differently but is clearly recognizable, accept it as "ok".
+
+Ignore minor spelling errors or slight variations that do not significantly alter the meaning of the sentence.
+
+Specifically evaluate if the ASR line is missing parts of the ORIGINAL line, if there are editing errors (e.g., repetition of words or phrases due to corrections by the narrator), or noticeable hesitation or confusion by the narrator. If any of these occur, classify as "mal" or "dudoso" depending on severity.
+
+Evaluation criteria:
+
+Respond "ok" if the ASR line clearly and faithfully preserves the meaning of the ORIGINAL, considering allowed variations above.
+
+Respond "mal" ONLY if the meaning is clearly changed, incorrect, significantly garbled, or if there are clear editing mistakes or repetitions in the narration.
+
+Respond "dudoso" if the differences are unclear, ambiguous, or if the ASR text is somewhat confusing and you're uncertain about the meaning.
+
+Respond clearly and only with one of these words: ok, mal, or dudoso.
 """
-
+#This is a testing phase: if you respond "mal" or "dudoso", provide a brief explanation of the specific reason for your assessment.
+#Respond clearly with one of these words: ok, mal, or dudoso, followed by a brief explanation when necessary.
 
 def ai_verdict(original: str, asr: str, base_prompt: str | None = None) -> str:
     """Send a single comparison request and return the verdict."""
