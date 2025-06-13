@@ -118,8 +118,17 @@ Respond clearly and only with one of these words: ok, mal, or dudoso.
 #This is a testing phase: if you respond "mal" or "dudoso", provide a brief explanation of the specific reason for your assessment.
 #Respond clearly with one of these words: ok, mal, or dudoso, followed by a brief explanation when necessary.
 
-def ai_verdict(original: str, asr: str, base_prompt: str | None = None) -> str:
-    """Send a single comparison request and return the verdict."""
+def ai_verdict(
+    original: str,
+    asr: str,
+    base_prompt: str | None = None,
+    return_feedback: bool = False,
+) -> str | tuple[str, str]:
+    """Send a single comparison request and return the verdict.
+
+    If ``return_feedback`` is ``True`` the full response text from the model is
+    also returned as a second element of the tuple.
+    """
     prompt = base_prompt or DEFAULT_PROMPT
     logger.info("AI review request ORIGINAL=%s | ASR=%s", original, asr)
     # Debug prints
@@ -139,10 +148,15 @@ def ai_verdict(original: str, asr: str, base_prompt: str | None = None) -> str:
     content = resp.choices[0].message.content
     # Debug raw content
     print("DEBUG: raw verdict repr:", repr(content))
-    word = content.strip().lower()
+    trimmed = content.strip()
+    word = trimmed.split()[0].lower() if trimmed else ""
     if word not in {"ok", "mal", "dudoso"}:
-        logger.warning("Unexpected AI response '%s', defaulting to dudoso", word)
-        return "dudoso"
+        logger.warning(
+            "Unexpected AI response '%s', defaulting to dudoso", trimmed
+        )
+        word = "dudoso"
+    if return_feedback:
+        return word, trimmed
     return word
 
 
@@ -164,6 +178,30 @@ def review_row(row: List, base_prompt: str | None = None) -> str:
     if verdict == "ok":
         row[2] = "OK"
     return verdict
+
+
+def review_row_feedback(row: List, base_prompt: str | None = None) -> tuple[str, str]:
+    """Like :func:`review_row` but also return the model feedback text."""
+
+    orig, asr = row[-2], row[-1]
+    verdict, feedback = ai_verdict(
+        str(orig),
+        str(asr),
+        base_prompt,
+        return_feedback=True,
+    )
+    if verdict not in {"ok", "mal", "dudoso"}:
+        verdict = "dudoso"
+    if len(row) == 6:
+        row.insert(2, "")
+        row.insert(3, verdict)
+    elif len(row) == 7:
+        row.insert(3, verdict)
+    else:
+        row[3] = verdict
+    if verdict == "ok":
+        row[2] = "OK"
+    return verdict, feedback
 
 
 def review_file(qc_json: str, prompt_path: str = "prompt.txt") -> tuple[int,int]:
@@ -201,6 +239,55 @@ def review_file(qc_json: str, prompt_path: str = "prompt.txt") -> tuple[int,int]
         Path(qc_json).write_text(json.dumps(rows, ensure_ascii=False, indent=2), encoding="utf8")
     logger.info("Approved %d / Remaining %d", approved, sent-approved)
     return approved, sent-approved
+
+
+def review_file_feedback(
+    qc_json: str, prompt_path: str = "prompt.txt"
+) -> tuple[int, int, List[str]]:
+    """Batch review returning feedback strings for each processed row."""
+
+    global _stop_review
+    _stop_review = False
+    rows = json.loads(Path(qc_json).read_text(encoding="utf8"))
+    bak = Path(qc_json + ".bak")
+    if not bak.exists():
+        bak.write_text(json.dumps(rows, ensure_ascii=False, indent=2), encoding="utf8")
+    prompt = load_prompt(prompt_path)
+    sent = approved = 0
+    feedback: List[str] = []
+    for i, row in enumerate(rows):
+        if _stop_review:
+            break
+        tick = row[1] if len(row) >= 8 else ""
+        ok = row[2] if len(row) >= 7 else ""
+        if tick or ok:
+            continue
+        sent += 1
+        verdict, fb = ai_verdict(
+            str(row[-2]),
+            str(row[-1]),
+            prompt,
+            return_feedback=True,
+        )
+        feedback.append(fb)
+        if verdict not in {"ok", "mal", "dudoso"}:
+            verdict = "dudoso"
+        if len(row) == 6:
+            row.insert(2, "")
+            row.insert(3, verdict)
+        elif len(row) == 7:
+            row.insert(3, verdict)
+        else:
+            row[3] = verdict
+        if verdict == "ok":
+            row[2] = "OK"
+            approved += 1
+        Path(qc_json).write_text(
+            json.dumps(rows, ensure_ascii=False, indent=2),
+            encoding="utf8",
+        )
+    logger.info("Approved %d / Remaining %d", approved, sent - approved)
+    return approved, sent - approved, feedback
 
 
 if __name__ == "__main__":
