@@ -124,3 +124,29 @@ def test_stop_review_midway(tmp_path):
     assert data[0][2] == "OK"
     assert len(data[1]) == 6
     assert approved == 1 and remaining == 0
+
+
+def test_review_row_feedback_returns_tuple():
+    row = [0, "", "", 0.0, 0.0, "hola", "hola"]
+    with mock.patch(
+        "ai_review.ai_verdict",
+        return_value=("ok", "ok porque coincide"),
+    ):
+        verdict, info = ai_review.review_row_feedback(row)
+    assert verdict == "ok" and info == "ok porque coincide"
+    assert row[2] == "OK" and row[3] == "ok"
+
+
+def test_review_file_feedback_collects_messages(tmp_path):
+    rows = [[0, "", "", 0.0, 0.0, "hola", "hola"]]
+    path = tmp_path / "rows.json"
+    path.write_text(json.dumps(rows, ensure_ascii=False), encoding="utf8")
+    with mock.patch(
+        "ai_review.ai_verdict",
+        return_value=("mal", "mal por error"),
+    ):
+        approved, remaining, logs = ai_review.review_file_feedback(str(path))
+    assert approved == 0 and remaining == 1
+    assert logs == ["mal por error"]
+    data = json.loads(path.read_text())
+    assert data[0][3] == "mal"
