@@ -97,3 +97,30 @@ def test_backup_created_and_partial_save(tmp_path):
 def test_load_prompt_fallback(tmp_path):
     missing = tmp_path / "no.txt"
     assert ai_review.load_prompt(str(missing)) == ai_review.DEFAULT_PROMPT
+
+
+def test_stop_review_midway(tmp_path):
+    rows = [
+        [0, "", 10.0, 0.5, "hola", "hola"],
+        [1, "", 20.0, 0.5, "adios", "adios"],
+    ]
+    path = tmp_path / "rows.json"
+    path.write_text(json.dumps(rows, ensure_ascii=False), encoding="utf8")
+
+    calls = 0
+
+    def _verdict(*args, **kwargs):
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            ai_review.stop_review()
+        return "ok"
+
+    with mock.patch("ai_review.ai_verdict", side_effect=_verdict):
+        approved, remaining = ai_review.review_file(str(path))
+
+    data = json.loads(path.read_text())
+    assert calls == 1
+    assert data[0][2] == "OK"
+    assert len(data[1]) == 6
+    assert approved == 1 and remaining == 0
