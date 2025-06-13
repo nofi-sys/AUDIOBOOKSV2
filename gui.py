@@ -9,11 +9,64 @@ import traceback
 from pathlib import Path
 import sys
 
+import pygame
+
 import tkinter as tk
 from tkinter import filedialog, messagebox, scrolledtext, ttk
 
 from alignment import build_rows
 from text_utils import read_script
+
+
+class ClipWindow(tk.Toplevel):
+    """Simple audio clip player with approval buttons."""
+
+    def __init__(
+        self,
+        master: tk.Tk,
+        audio_path: str,
+        start: float,
+        duration: float,
+        on_ok: callable,
+        on_bad: callable,
+    ) -> None:
+        super().__init__(master)
+        self.title("Revisar audio")
+        self.geometry("300x120")
+        self.audio_path = audio_path
+        self.start = start
+        self.duration = duration
+        self.on_ok = on_ok
+        self.on_bad = on_bad
+
+        ttk.Button(self, text="▶", command=self.play).pack(pady=4)
+        btn_frame = ttk.Frame(self)
+        btn_frame.pack(pady=4)
+        ttk.Button(btn_frame, text="OK", command=self._ok).pack(side="left", padx=4)
+        ttk.Button(btn_frame, text="mal", command=self._bad).pack(side="left", padx=4)
+
+        self.protocol("WM_DELETE_WINDOW", self._close)
+
+    def play(self) -> None:
+        pygame.mixer.init()
+        pygame.mixer.music.load(self.audio_path)
+        pygame.mixer.music.play(start=self.start)
+        self.after(int(self.duration * 1000), pygame.mixer.music.stop)
+
+    def _ok(self) -> None:
+        self.on_ok()
+        self._close()
+
+    def _bad(self) -> None:
+        self.on_bad()
+        self._close()
+
+    def _close(self) -> None:
+        try:
+            pygame.mixer.music.stop()
+        except Exception:
+            pass
+        self.destroy()
 
 
 class App(tk.Tk):
@@ -171,7 +224,7 @@ class App(tk.Tk):
         self.bind_all("<Control-Shift-Z>", self.redo)
 
 
-        self.tree.bind("<Double-1>", self._toggle_ok)
+        self.tree.bind("<Double-1>", self._handle_double)
 
         self.log_box = scrolledtext.ScrolledText(
             self, height=5, state="disabled"
@@ -195,11 +248,7 @@ class App(tk.Tk):
         self.tree.delete(*self.tree.get_children())
         self.ok_rows.clear()
 
-    def _toggle_ok(self, event: tk.Event) -> None:
-        item = self.tree.identify_row(event.y)
-        col = self.tree.identify_column(event.x)
-        if col != "#3" or not item:
-            return
+    def _toggle_ok(self, item: str) -> None:
         current = self.tree.set(item, "OK")
         new_val = "" if current == "OK" else "OK"
         self.tree.set(item, "OK", new_val)
@@ -211,6 +260,44 @@ class App(tk.Tk):
             self.ok_rows.add(line_id)
         else:
             self.ok_rows.discard(line_id)
+
+    def _handle_double(self, event: tk.Event) -> None:
+        item = self.tree.identify_row(event.y)
+        col = self.tree.identify_column(event.x)
+        if not item:
+            return
+        if col == "#3":
+            self._toggle_ok(item)
+            return
+        self._play_clip(item)
+
+    def _play_clip(self, item: str) -> None:
+        if not self.v_audio.get():
+            messagebox.showwarning("Falta info", "Selecciona archivo de audio")
+            return
+        start = 0.0
+        children = self.tree.get_children()
+        for iid in children:
+            if iid == item:
+                break
+            try:
+                start += float(self.tree.set(iid, "dur"))
+            except ValueError:
+                pass
+        try:
+            dur = float(self.tree.set(item, "dur"))
+        except ValueError:
+            dur = 0.0
+
+        def ok_cb() -> None:
+            self.tree.set(item, "AI", "ok")
+            self.save_json()
+
+        def bad_cb() -> None:
+            self.tree.set(item, "AI", "mal")
+            self.save_json()
+
+        ClipWindow(self, self.v_audio.get(), start, dur, ok_cb, bad_cb)
 
     def _cell_click(self, event: tk.Event) -> None:
         item = self.tree.identify_row(event.y)
