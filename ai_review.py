@@ -28,6 +28,14 @@ from openai import (
 # Use o3 model family
 MODEL = "o3"
 _client_instance: OpenAI | None = None
+# Global flag to allow cancelling a long batch review
+_stop_review = False
+
+
+def stop_review() -> None:
+    """Signal any running :func:`review_file` loop to exit early."""
+    global _stop_review
+    _stop_review = True
 
 def _client() -> OpenAI:
     """Singleton OpenAI client using env var for key."""
@@ -160,12 +168,16 @@ def review_row(row: List, base_prompt: str | None = None) -> str:
 
 def review_file(qc_json: str, prompt_path: str = "prompt.txt") -> tuple[int,int]:
     """Batch review QC JSON file, auto-approve lines marked ok."""
+    global _stop_review
+    _stop_review = False
     rows = json.loads(Path(qc_json).read_text(encoding="utf8"))
     bak = Path(qc_json + ".bak")
     if not bak.exists(): bak.write_text(json.dumps(rows, ensure_ascii=False, indent=2), encoding="utf8")
     prompt = load_prompt(prompt_path)
     sent = approved = 0
     for i, row in enumerate(rows):
+        if _stop_review:
+            break
         tick = row[1] if len(row) >= 8 else ""
         ok = row[2] if len(row) >= 7 else ""
         if tick or ok:
