@@ -241,7 +241,8 @@ def review_file(qc_json: str, prompt_path: str = "prompt.txt") -> tuple[int,int]
         tick = row[1] if len(row) > 1 else ""
         ok = row[2] if len(row) >= 7 else ""
         ai = row[3] if len(row) >= 8 else ""
-        if tick == "✅" or ok.lower() == "ok" or ai.lower() == "ok":
+        # Skip rows already reviewed by AI regardless of verdict
+        if tick == "✅" or ok.lower() == "ok" or ai:
             continue
         sent += 1
         try:
@@ -294,7 +295,8 @@ def review_file_feedback(
         tick = row[1] if len(row) > 1 else ""
         ok = row[2] if len(row) >= 7 else ""
         ai = row[3] if len(row) >= 8 else ""
-        if tick == "✅" or ok.lower() == "ok" or ai.lower() == "ok":
+        # Skip rows already reviewed by AI regardless of verdict
+        if tick == "✅" or ok.lower() == "ok" or ai:
             continue
         sent += 1
         try:

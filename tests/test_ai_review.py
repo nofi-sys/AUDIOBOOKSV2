@@ -76,6 +76,18 @@ def test_review_file_on_eight_column_rows(tmp_path):
     assert data[0][3] == "mal"
 
 
+def test_review_file_skips_existing_ai_verdict(tmp_path):
+    rows = [[0, "", "", "mal", 10.0, 0.5, "hola", "hola"]]
+    path = tmp_path / "rows_skip.json"
+    path.write_text(json.dumps(rows, ensure_ascii=False), encoding="utf8")
+    with mock.patch("ai_review.ai_verdict") as m:
+        approved, remaining = ai_review.review_file(str(path))
+    assert m.call_count == 0
+    out = json.loads(path.read_text())
+    assert out[0][3] == "mal"
+    assert approved == 0 and remaining == 0
+
+
 def test_backup_created_and_partial_save(tmp_path):
     rows = [
         [0, "", "", 0, 0, "hola", "hola"],
