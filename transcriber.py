@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import subprocess
 import tempfile
@@ -96,6 +97,56 @@ def _extract_audio(path: str) -> tuple[str, str]:
         )
         return tmp_path, base
     return path, base
+
+
+def transcribe_wordlevel(
+    audio_path: str,
+    model_name: str = "large-v3",
+    script_path: str | None = None,
+    initial_prompt: str | None = None,
+) -> Path:
+    """Transcribe ``audio_path`` with word timestamps and save ``.word.json``."""
+
+    hotwords = None
+    if script_path:
+        try:
+            script_text = read_script(script_path)
+            words = extract_word_list(script_text)
+            if words:
+                hotwords = " ".join(words)
+        except Exception:
+            hotwords = None
+
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    compute_type = "int8_float16" if device == "cuda" else "int8"
+    model = WhisperModel(model_name, device=device, compute_type=compute_type)
+
+    segments, _info = model.transcribe(
+        audio_path,
+        word_timestamps=True,
+        vad_filter=True,
+        vad_parameters=dict(min_silence_duration_ms=500),
+        hotwords=hotwords,
+        initial_prompt=initial_prompt,
+    )
+
+    out = Path(audio_path).with_suffix(".word.json")
+    payload = {"segments": []}
+    for seg in segments:
+        payload["segments"].append(
+            {
+                "seg_start": seg.start,
+                "seg_end": seg.end,
+                "text": seg.text,
+                "words": [
+                    {"word": w.word, "start": w.start, "end": w.end}
+                    for w in seg.words
+                ],
+            }
+        )
+
+    out.write_text(json.dumps(payload, ensure_ascii=False, indent=2), "utf8")
+    return out
 
 
 def transcribe_file(
@@ -223,6 +274,8 @@ def main(argv: list[str] | None = None) -> None:
         out = base.with_suffix(".word.qc.json")
         out.write_text(json.dumps(rows, ensure_ascii=False, indent=2), encoding="utf8")
         print(out)
+
+
     else:
         transcribe_file(args.input, args.model, args.script)
 
