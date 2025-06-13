@@ -623,6 +623,14 @@ class App(tk.Tk):
             rows = build_rows(ref, hyp)
 
             out = Path(self.v_asr.get()).with_suffix(".qc.json")
+            if out.exists():
+                try:
+                    old = json.loads(out.read_text(encoding="utf8"))
+                    from qc_utils import merge_qc_metadata
+
+                    rows = merge_qc_metadata(old, rows)
+                except Exception:
+                    pass
             out.write_text(
                 json.dumps(rows, ensure_ascii=False, indent=2), encoding="utf8"
             )
@@ -689,7 +697,10 @@ class App(tk.Tk):
                 msg = self.q.get_nowait()
                 if isinstance(msg, tuple) and msg[0] == "ROWS":
                     for r in msg[1]:
-                        vals = [r[0], r[1], "", "", r[2], r[3], r[4], r[5]]
+                        if len(r) == 6:
+                            vals = [r[0], r[1], "", "", r[2], r[3], r[4], r[5]]
+                        else:
+                            vals = r
                         vals[6] = str(vals[6])
                         vals[7] = str(vals[7])
                         self.tree.insert("", tk.END, values=vals)
