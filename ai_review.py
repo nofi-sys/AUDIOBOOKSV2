@@ -166,7 +166,8 @@ def review_file(qc_json: str, prompt_path: str = "prompt.txt") -> tuple[int,int]
     prompt = load_prompt(prompt_path)
     sent = approved = 0
     for i, row in enumerate(rows):
-        tick, ok = row[1], (row[2] if len(row)>2 else "")
+        tick = row[1] if len(row) >= 8 else ""
+        ok = row[2] if len(row) >= 7 else ""
         if tick or ok:
             continue
         sent += 1
