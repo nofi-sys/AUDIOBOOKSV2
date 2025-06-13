@@ -27,6 +27,22 @@ python qc_app.py
 The application lets you select a script (PDF or TXT) and an ASR transcript,
 performs alignment and saves a `.qc.json` file.
 
+### Command line usage
+
+You can also transcribe from the command line:
+
+```bash
+python -m transcriber myaudio.mp3 --script book.txt
+```
+
+To generate a word-level QC file in one step use `--word-align`:
+
+```bash
+python -m transcriber myaudio.mp3 --script book.txt --word-align
+```
+
+This creates `myaudio.words.qc.json` without overwriting the regular QC file.
+
 ## Manual review
 
 Double-click the **OK** column in the results table to mark or unmark a row as
