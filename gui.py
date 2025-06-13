@@ -187,6 +187,16 @@ class App(tk.Tk):
             self.play_frame, text="▶", command=self._play_current_clip
         )
         self.play_button.pack(side="left", padx=4, pady=4)
+        ttk.Button(
+            self.play_frame,
+            text="←",
+            command=self._prev_bad_row,
+        ).pack(side="left", padx=4)
+        ttk.Button(
+            self.play_frame,
+            text="→",
+            command=self._next_bad_row,
+        ).pack(side="left", padx=4)
         ttk.Button(self.play_frame, text="OK", command=self._clip_ok).pack(
             side="left", padx=4
         )
@@ -282,6 +292,39 @@ class App(tk.Tk):
             self.tree.set(self._clip_item, "AI", "mal")
             self.save_json()
         self._hide_clip()
+
+    def _next_bad_row(self) -> None:
+        """Jump to the next row where the AI column is ``"mal"``."""
+        children = list(self.tree.get_children())
+        if not children:
+            return
+        start = 0
+        if self._clip_item and self._clip_item in children:
+            start = children.index(self._clip_item) + 1
+        for iid in children[start:] + children[:start]:
+            if self.tree.set(iid, "AI") == "mal":
+                self.tree.see(iid)
+                self._play_clip(iid)
+                return
+
+    def _prev_bad_row(self) -> None:
+        """Jump to the previous row where the AI column is ``"mal"``."""
+        children = list(self.tree.get_children())
+        if not children:
+            return
+        start = len(children) - 1
+        if self._clip_item and self._clip_item in children:
+            start = children.index(self._clip_item) - 1
+        for iid in reversed(children[: start + 1]):
+            if self.tree.set(iid, "AI") == "mal":
+                self.tree.see(iid)
+                self._play_clip(iid)
+                return
+        for iid in reversed(children[start + 1 :]):
+            if self.tree.set(iid, "AI") == "mal":
+                self.tree.see(iid)
+                self._play_clip(iid)
+                return
 
     def _hide_clip(self) -> None:
         try:
