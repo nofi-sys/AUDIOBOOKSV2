@@ -106,6 +106,29 @@ class App(tk.Tk):
         style = ttk.Style(self)
         style.configure("Treeview", rowheight=45)
 
+        self.play_frame = ttk.Frame(self)
+        self.play_button = ttk.Button(
+            self.play_frame, text="▶", command=self._play_current_clip
+        )
+        self.play_button.pack(side="left", padx=4, pady=4)
+        ttk.Button(
+            self.play_frame,
+            text="←",
+            command=self._prev_bad_row,
+        ).pack(side="left", padx=4)
+        ttk.Button(
+            self.play_frame,
+            text="→",
+            command=self._next_bad_row,
+        ).pack(side="left", padx=4)
+        ttk.Button(self.play_frame, text="OK", command=self._clip_ok).pack(
+            side="left", padx=4
+        )
+        ttk.Button(self.play_frame, text="mal", command=self._clip_bad).pack(
+            side="left", padx=4
+        )
+        self.play_frame.pack(side="top", anchor="ne", padx=4, pady=4)
+
         table_frame = ttk.Frame(self)
         table_frame.pack(fill="both", expand=True, padx=3, pady=2)
 
@@ -182,29 +205,6 @@ class App(tk.Tk):
         )
         self.log_box.pack(fill="x", padx=3, pady=2)
 
-        self.play_frame = ttk.Frame(self)
-        self.play_button = ttk.Button(
-            self.play_frame, text="▶", command=self._play_current_clip
-        )
-        self.play_button.pack(side="left", padx=4, pady=4)
-        ttk.Button(
-            self.play_frame,
-            text="←",
-            command=self._prev_bad_row,
-        ).pack(side="left", padx=4)
-        ttk.Button(
-            self.play_frame,
-            text="→",
-            command=self._next_bad_row,
-        ).pack(side="left", padx=4)
-        ttk.Button(self.play_frame, text="OK", command=self._clip_ok).pack(
-            side="left", padx=4
-        )
-        ttk.Button(self.play_frame, text="mal", command=self._clip_bad).pack(
-            side="left", padx=4
-        )
-        self.play_frame.pack(pady=4)
-        self.play_frame.pack_forget()
         self._clip_item: str | None = None
         self._clip_start = 0.0
         self._clip_dur = 0.0
@@ -270,7 +270,6 @@ class App(tk.Tk):
         self._clip_item = item
         self._clip_start = start
         self._clip_dur = dur
-        self.play_frame.pack(pady=4)
 
     def _play_current_clip(self) -> None:
         if not self.v_audio.get() or self._clip_item is None:
@@ -331,7 +330,6 @@ class App(tk.Tk):
             pygame.mixer.music.stop()
         except Exception:
             pass
-        self.play_frame.pack_forget()
         self._clip_item = None
 
     def _cell_click(self, event: tk.Event) -> None:
