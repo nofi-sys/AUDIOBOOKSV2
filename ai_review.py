@@ -216,9 +216,10 @@ def review_file(qc_json: str, prompt_path: str = "prompt.txt") -> tuple[int,int]
     for i, row in enumerate(rows):
         if _stop_review:
             break
-        tick = row[1] if len(row) >= 8 else ""
+        tick = row[1] if len(row) > 1 else ""
         ok = row[2] if len(row) >= 7 else ""
-        if tick or ok:
+        ai = row[3] if len(row) >= 8 else ""
+        if tick == "✅" or ok.lower() == "ok" or ai.lower() == "ok":
             continue
         sent += 1
         verdict = ai_verdict(str(row[-2]), str(row[-1]), prompt)
@@ -258,9 +259,10 @@ def review_file_feedback(
     for i, row in enumerate(rows):
         if _stop_review:
             break
-        tick = row[1] if len(row) >= 8 else ""
+        tick = row[1] if len(row) > 1 else ""
         ok = row[2] if len(row) >= 7 else ""
-        if tick or ok:
+        ai = row[3] if len(row) >= 8 else ""
+        if tick == "✅" or ok.lower() == "ok" or ai.lower() == "ok":
             continue
         sent += 1
         verdict, fb = ai_verdict(
