@@ -3,6 +3,8 @@ import tempfile
 from pathlib import Path
 from unittest import mock
 import pytest
+import httpx
+import openai
 
 import ai_review
 from alignment import build_rows
@@ -150,3 +152,21 @@ def test_review_file_feedback_collects_messages(tmp_path):
     assert logs == ["mal por error"]
     data = json.loads(path.read_text())
     assert data[0][3] == "mal"
+
+
+def test_review_file_handles_badrequest_error(tmp_path):
+    rows = [[0, "", "", 0.0, 0.0, "hola", "hola"]]
+    path = tmp_path / "rows.json"
+    path.write_text(json.dumps(rows, ensure_ascii=False), encoding="utf8")
+    req = httpx.Request("POST", "http://test")
+    resp = httpx.Response(400, request=req, json={})
+    exc = openai.BadRequestError(
+        "Could not finish the message because max_tokens or model output limit was reached.",
+        response=resp,
+        body=None,
+    )
+    with mock.patch("ai_review.ai_verdict", side_effect=exc):
+        approved, remaining = ai_review.review_file(str(path))
+    data = json.loads(path.read_text())
+    assert approved == 0 and remaining == 1
+    assert data[0][3] == "error"

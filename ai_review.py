@@ -23,6 +23,7 @@ from openai import (
     APIConnectionError,
     APITimeoutError,
     OpenAIError,
+    BadRequestError,
 )
 
 # Use o3 model family
@@ -86,6 +87,17 @@ def load_prompt(path: str = "prompt.txt") -> str:
     except Exception:
         logger.info("Using built-in prompt; failed to read %s", path)
         return DEFAULT_PROMPT
+
+
+def _mark_error(row: List) -> None:
+    """Insert or update the AI verdict column with 'error'."""
+    if len(row) == 6:
+        row.insert(2, "")
+        row.insert(3, "error")
+    elif len(row) == 7:
+        row.insert(3, "error")
+    else:
+        row[3] = "error"
 
 # Default instruction prompt
 DEFAULT_PROMPT = """
@@ -161,7 +173,13 @@ def ai_verdict(
 def review_row(row: List, base_prompt: str | None = None) -> str:
     """Annotate a single QC row with AI verdict."""
     orig, asr = row[-2], row[-1]
-    verdict = ai_verdict(str(orig), str(asr), base_prompt)
+    try:
+        verdict = ai_verdict(str(orig), str(asr), base_prompt)
+    except BadRequestError as exc:
+        if "max_tokens" in str(exc) or "model output limit" in str(exc):
+            _mark_error(row)
+            return "error"
+        raise
     if verdict not in {"ok", "mal", "dudoso"}:
         verdict = "dudoso"
     # Insert into row preserving structure
@@ -182,12 +200,18 @@ def review_row_feedback(row: List, base_prompt: str | None = None) -> tuple[str,
     """Like :func:`review_row` but also return the model feedback text."""
 
     orig, asr = row[-2], row[-1]
-    verdict, feedback = ai_verdict(
-        str(orig),
-        str(asr),
-        base_prompt,
-        return_feedback=True,
-    )
+    try:
+        verdict, feedback = ai_verdict(
+            str(orig),
+            str(asr),
+            base_prompt,
+            return_feedback=True,
+        )
+    except BadRequestError as exc:
+        if "max_tokens" in str(exc) or "model output limit" in str(exc):
+            _mark_error(row)
+            return "error", ""
+        raise
     if verdict not in {"ok", "mal", "dudoso"}:
         verdict = "dudoso"
     if len(row) == 6:
@@ -220,7 +244,17 @@ def review_file(qc_json: str, prompt_path: str = "prompt.txt") -> tuple[int,int]
         if tick == "✅" or ok.lower() == "ok" or ai.lower() == "ok":
             continue
         sent += 1
-        verdict = ai_verdict(str(row[-2]), str(row[-1]), prompt)
+        try:
+            verdict = ai_verdict(str(row[-2]), str(row[-1]), prompt)
+        except BadRequestError as exc:
+            if "max_tokens" in str(exc) or "model output limit" in str(exc):
+                _mark_error(row)
+                Path(qc_json).write_text(
+                    json.dumps(rows, ensure_ascii=False, indent=2),
+                    encoding="utf8",
+                )
+                continue
+            raise
         if verdict not in {"ok", "mal", "dudoso"}:
             verdict = "dudoso"
         # Insert verdict column
@@ -263,12 +297,23 @@ def review_file_feedback(
         if tick == "✅" or ok.lower() == "ok" or ai.lower() == "ok":
             continue
         sent += 1
-        verdict, fb = ai_verdict(
-            str(row[-2]),
-            str(row[-1]),
-            prompt,
-            return_feedback=True,
-        )
+        try:
+            verdict, fb = ai_verdict(
+                str(row[-2]),
+                str(row[-1]),
+                prompt,
+                return_feedback=True,
+            )
+        except BadRequestError as exc:
+            if "max_tokens" in str(exc) or "model output limit" in str(exc):
+                _mark_error(row)
+                Path(qc_json).write_text(
+                    json.dumps(rows, ensure_ascii=False, indent=2),
+                    encoding="utf8",
+                )
+                feedback.append("")
+                continue
+            raise
         feedback.append(fb)
         if verdict not in {"ok", "mal", "dudoso"}:
             verdict = "dudoso"
