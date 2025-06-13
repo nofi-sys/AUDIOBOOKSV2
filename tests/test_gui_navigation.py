@@ -1,13 +1,13 @@
-import sys
 import os
+import sys
 import pytest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
+from gui import App  # noqa: E402
+
 if not os.environ.get("DISPLAY"):
     pytest.skip("no display", allow_module_level=True)
-
-from gui import App
 
 
 def test_navigation_bad_rows():

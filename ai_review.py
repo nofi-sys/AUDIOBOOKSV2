@@ -9,13 +9,6 @@ import logging
 import time
 
 from dotenv import load_dotenv
-load_dotenv()
-
-# Enable debug logging if environment variable set
-logger = logging.getLogger(__name__)
-if os.getenv("AI_REVIEW_DEBUG", "").lower() in ("1","true","yes"):
-    logging.basicConfig(level=logging.INFO)
-
 from openai import (
     OpenAI,
     APIStatusError,
@@ -25,6 +18,13 @@ from openai import (
     OpenAIError,
     BadRequestError,
 )
+
+# Enable debug logging if environment variable set
+logger = logging.getLogger(__name__)
+if os.getenv("AI_REVIEW_DEBUG", "").lower() in ("1", "true", "yes"):
+    logging.basicConfig(level=logging.INFO)
+
+load_dotenv()
 
 # Use o3 model family
 MODEL = "o3"
@@ -37,6 +37,7 @@ def stop_review() -> None:
     """Signal any running :func:`review_file` loop to exit early."""
     global _stop_review
     _stop_review = True
+
 
 def _client() -> OpenAI:
     """Singleton OpenAI client using env var for key."""
@@ -99,9 +100,12 @@ def _mark_error(row: List) -> None:
     else:
         row[3] = "error"
 
+
 # Default instruction prompt
 DEFAULT_PROMPT = """
-You are an audiobook QA assistant. Your job is to compare an ORIGINAL sentence (the correct text from the book) with an ASR sentence (automatic speech-to-text transcription, known to be phonetically imperfect).
+You are an audiobook QA assistant. Your job is to compare an ORIGINAL sentence \
+(the correct text from the book) with an ASR sentence (automatic speech-to-text \
+transcription, known to be phonetically imperfect).
 
 Your ONLY goal is to detect clear AUDIO READING or EDITING ERRORS, such as:
 
@@ -109,13 +113,17 @@ Entire words or phrases clearly omitted.
 
 Entire words or phrases clearly repeated by mistake.
 
-Completely different words clearly added or read incorrectly, significantly changing the meaning.
+Completely different words clearly added or read incorrectly, significantly \
+changing the meaning.
 
-DO NOT consider punctuation, accents, capitalization, spelling errors, phonetic variations of proper names or phonetic rendering that dowesn't make sense, or transcription inaccuracies as mistakes.
+DO NOT consider punctuation, accents, capitalization, spelling errors, phonetic \
+variations of proper names or phonetic rendering that dowesn't make sense, or \
+transcription inaccuracies as mistakes.
 
 Evaluation criteria:
 
-If the ASR line does NOT show clear evidence of reading or editing errors (as described above), respond: ok
+If the ASR line does NOT show clear evidence of reading or editing errors \
+(as described above), respond: ok
 
 If the ASR line shows clear evidence of reading or editing errors, respond: mal
 
@@ -125,8 +133,11 @@ ok
 
 mal
 """
-#This is a testing phase: if you respond "mal" or "dudoso", provide a brief explanation of the specific reason for your assessment.
-#Respond clearly with one of these words: ok, mal, or dudoso, followed by a brief explanation when necessary.
+# This is a testing phase: if you respond "mal" or "dudoso", provide a brief
+# explanation of the specific reason for your assessment.
+# Respond clearly with one of these words: ok, mal, or dudoso, followed by a
+# brief explanation when necessary.
+
 
 def ai_verdict(
     original: str,
@@ -226,13 +237,17 @@ def review_row_feedback(row: List, base_prompt: str | None = None) -> tuple[str,
     return verdict, feedback
 
 
-def review_file(qc_json: str, prompt_path: str = "prompt.txt") -> tuple[int,int]:
+def review_file(qc_json: str, prompt_path: str = "prompt.txt") -> tuple[int, int]:
     """Batch review QC JSON file, auto-approve lines marked ok."""
     global _stop_review
     _stop_review = False
     rows = json.loads(Path(qc_json).read_text(encoding="utf8"))
     bak = Path(qc_json + ".bak")
-    if not bak.exists(): bak.write_text(json.dumps(rows, ensure_ascii=False, indent=2), encoding="utf8")
+    if not bak.exists():
+        bak.write_text(
+            json.dumps(rows, ensure_ascii=False, indent=2),
+            encoding="utf8",
+        )
     prompt = load_prompt(prompt_path)
     sent = approved = 0
     for i, row in enumerate(rows):
@@ -260,17 +275,20 @@ def review_file(qc_json: str, prompt_path: str = "prompt.txt") -> tuple[int,int]
             verdict = "dudoso"
         # Insert verdict column
         if len(row) == 6:
-            row.insert(2,"")
+            row.insert(2, "")
             row.insert(3, verdict)
-        elif len(row)==7:
+        elif len(row) == 7:
             row.insert(3, verdict)
         else:
-            row[3]=verdict
-        if verdict=="ok":
-            row[2]="OK"
-            approved+=1
+            row[3] = verdict
+        if verdict == "ok":
+            row[2] = "OK"
+            approved += 1
         # Save update
-        Path(qc_json).write_text(json.dumps(rows, ensure_ascii=False, indent=2), encoding="utf8")
+        Path(qc_json).write_text(
+            json.dumps(rows, ensure_ascii=False, indent=2),
+            encoding="utf8",
+        )
     logger.info("Approved %d / Remaining %d", approved, sent-approved)
     return approved, sent-approved
 
@@ -343,5 +361,5 @@ if __name__ == "__main__":
     parser.add_argument("file", help="QC JSON file path")
     parser.add_argument("--prompt", default="prompt.txt")
     args = parser.parse_args()
-    a,b = review_file(args.file, args.prompt)
+    a, b = review_file(args.file, args.prompt)
     print(f"Auto-approved {a} / Remaining {b}")

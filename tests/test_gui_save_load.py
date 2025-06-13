@@ -1,16 +1,14 @@
-import sys
 import os
+import sys
+import tempfile
 import pytest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
-import tkinter as tk
-import tempfile
+from gui import App  # noqa: E402
 
 if not os.environ.get("DISPLAY"):
     pytest.skip("no display", allow_module_level=True)
-
-from gui import App
 
 
 def test_save_load_ok_status():
