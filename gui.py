@@ -270,6 +270,8 @@ class App(tk.Tk):
         self._clip_item = item
         self._clip_start = start
         self._clip_dur = dur
+        self.tree.selection_set(item)
+        self.tree.focus(item)
 
     def _play_current_clip(self) -> None:
         if not self.v_audio.get() or self._clip_item is None:
