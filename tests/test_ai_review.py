@@ -22,12 +22,12 @@ def test_review_file_basic_skip_and_autofill():
             approved, remaining = ai_review.review_file(str(path))
 
         data = json.loads(path.read_text(encoding="utf8"))
-        assert len(data[0]) == 8
+        assert len(data[0]) == 7  # skipped due to tick ✅
         assert len(data[1]) == 8
-        assert m.call_count == 2
-        assert data[0][3] == "ok" and data[0][2] == "OK"
+        assert m.call_count == 1
         assert data[1][3] == "ok" and data[1][2] == "OK"
-        assert approved == 2 and remaining == 0
+        assert data[0][2] == ""
+        assert approved == 1 and remaining == 0
 
 
 def test_review_file_bad_response_mark_dudoso():
