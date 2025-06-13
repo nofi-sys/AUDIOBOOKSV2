@@ -18,55 +18,6 @@ from alignment import build_rows
 from text_utils import read_script
 
 
-class ClipWindow(tk.Toplevel):
-    """Simple audio clip player with approval buttons."""
-
-    def __init__(
-        self,
-        master: tk.Tk,
-        audio_path: str,
-        start: float,
-        duration: float,
-        on_ok: callable,
-        on_bad: callable,
-    ) -> None:
-        super().__init__(master)
-        self.title("Revisar audio")
-        self.geometry("300x120")
-        self.audio_path = audio_path
-        self.start = start
-        self.duration = duration
-        self.on_ok = on_ok
-        self.on_bad = on_bad
-
-        ttk.Button(self, text="▶", command=self.play).pack(pady=4)
-        btn_frame = ttk.Frame(self)
-        btn_frame.pack(pady=4)
-        ttk.Button(btn_frame, text="OK", command=self._ok).pack(side="left", padx=4)
-        ttk.Button(btn_frame, text="mal", command=self._bad).pack(side="left", padx=4)
-
-        self.protocol("WM_DELETE_WINDOW", self._close)
-
-    def play(self) -> None:
-        pygame.mixer.init()
-        pygame.mixer.music.load(self.audio_path)
-        pygame.mixer.music.play(start=self.start)
-        self.after(int(self.duration * 1000), pygame.mixer.music.stop)
-
-    def _ok(self) -> None:
-        self.on_ok()
-        self._close()
-
-    def _bad(self) -> None:
-        self.on_bad()
-        self._close()
-
-    def _close(self) -> None:
-        try:
-            pygame.mixer.music.stop()
-        except Exception:
-            pass
-        self.destroy()
 
 
 class App(tk.Tk):
@@ -231,6 +182,23 @@ class App(tk.Tk):
         )
         self.log_box.pack(fill="x", padx=3, pady=2)
 
+        self.play_frame = ttk.Frame(self)
+        self.play_button = ttk.Button(
+            self.play_frame, text="▶", command=self._play_current_clip
+        )
+        self.play_button.pack(side="left", padx=4, pady=4)
+        ttk.Button(self.play_frame, text="OK", command=self._clip_ok).pack(
+            side="left", padx=4
+        )
+        ttk.Button(self.play_frame, text="mal", command=self._clip_bad).pack(
+            side="left", padx=4
+        )
+        self.play_frame.pack(pady=4)
+        self.play_frame.pack_forget()
+        self._clip_item: str | None = None
+        self._clip_start = 0.0
+        self._clip_dur = 0.0
+
         self.after(250, self._poll)
 
     def browse(self, var: tk.StringVar, ft: tuple[str, str]) -> None:
@@ -289,15 +257,39 @@ class App(tk.Tk):
         except ValueError:
             dur = 0.0
 
-        def ok_cb() -> None:
-            self.tree.set(item, "AI", "ok")
-            self.save_json()
+        self._clip_item = item
+        self._clip_start = start
+        self._clip_dur = dur
+        self.play_frame.pack(pady=4)
 
-        def bad_cb() -> None:
-            self.tree.set(item, "AI", "mal")
-            self.save_json()
+    def _play_current_clip(self) -> None:
+        if not self.v_audio.get() or self._clip_item is None:
+            return
+        pygame.mixer.init()
+        pygame.mixer.music.load(self.v_audio.get())
+        pygame.mixer.music.play(start=self._clip_start)
+        if self._clip_dur:
+            self.after(int(self._clip_dur * 1000), pygame.mixer.music.stop)
 
-        ClipWindow(self, self.v_audio.get(), start, dur, ok_cb, bad_cb)
+    def _clip_ok(self) -> None:
+        if self._clip_item:
+            self.tree.set(self._clip_item, "AI", "ok")
+            self.save_json()
+        self._hide_clip()
+
+    def _clip_bad(self) -> None:
+        if self._clip_item:
+            self.tree.set(self._clip_item, "AI", "mal")
+            self.save_json()
+        self._hide_clip()
+
+    def _hide_clip(self) -> None:
+        try:
+            pygame.mixer.music.stop()
+        except Exception:
+            pass
+        self.play_frame.pack_forget()
+        self._clip_item = None
 
     def _cell_click(self, event: tk.Event) -> None:
         item = self.tree.identify_row(event.y)
