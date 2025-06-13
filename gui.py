@@ -568,6 +568,7 @@ class App(tk.Tk):
                             self.ok_rows.add(line_id)
                         except Exception:
                             pass
+                    self.save_json()
                 else:
                     self.log_msg(str(msg))
         except queue.Empty:

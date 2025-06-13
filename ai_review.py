@@ -125,6 +125,8 @@ def review_row(row: List, base_prompt: str | None = None) -> str:
     """Annotate a single QC row with AI verdict."""
     orig, asr = row[-2], row[-1]
     verdict = ai_verdict(str(orig), str(asr), base_prompt)
+    if verdict not in {"ok", "mal", "dudoso"}:
+        verdict = "dudoso"
     # Insert into row preserving structure
     # Row formats: [ID, tick, OK?, WER, dur, original, asr]
     if len(row) == 6:
@@ -152,6 +154,8 @@ def review_file(qc_json: str, prompt_path: str = "prompt.txt") -> tuple[int,int]
             continue
         sent += 1
         verdict = ai_verdict(str(row[-2]), str(row[-1]), prompt)
+        if verdict not in {"ok", "mal", "dudoso"}:
+            verdict = "dudoso"
         # Insert verdict column
         if len(row) == 6:
             row.insert(2,"")
