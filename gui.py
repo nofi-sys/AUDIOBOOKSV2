@@ -93,6 +93,11 @@ class App(tk.Tk):
             text="una fila",
             variable=self.ai_one,
         ).grid(row=3, column=4, padx=4)
+        ttk.Button(
+            top,
+            text="Detener análisis",
+            command=self.stop_ai_review,
+        ).grid(row=3, column=5, padx=6)
 
         style = ttk.Style(self)
         style.configure("Treeview", rowheight=45)
@@ -441,13 +446,28 @@ class App(tk.Tk):
             )
             threading.Thread(target=self._ai_review_worker, daemon=True).start()
 
+    def stop_ai_review(self) -> None:
+        """Signal the AI review thread to stop."""
+        try:
+            from ai_review import stop_review
+
+            stop_review()
+            self.log_msg("⏹ Deteniendo análisis AI…")
+        except Exception as exc:
+            self.log_msg(str(exc))
+
     def _ai_review_worker(self) -> None:
         try:
-            from ai_review import review_file
+            import ai_review
 
-            approved, remaining = review_file(self.v_json.get())
+            approved, remaining = ai_review.review_file(self.v_json.get())
             self.q.put(("RELOAD", None))
-            self.q.put(f"✔ Auto-aprobadas {approved} / Restantes {remaining}")
+            if ai_review._stop_review:
+                self.q.put("⚠ Revisión detenida")
+            else:
+                self.q.put(
+                    f"✔ Auto-aprobadas {approved} / Restantes {remaining}"
+                )
         except Exception:
             buf = io.StringIO()
             traceback.print_exc(file=buf)

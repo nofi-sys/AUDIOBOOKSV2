@@ -48,7 +48,8 @@ word-level Levenshtein distance.
 
 With a JSON file loaded you can click **AI Review (o3)** to send unchecked lines
 to OpenAI and automatically fill the *AI* column with `ok`, `mal` or `dudoso`.
-Lines marked `ok` are also auto-approved.
+Lines marked `ok` are also auto-approved. Use **Detener análisis** to interrupt
+the batch review if needed.
 
 ### OpenAI setup
 
