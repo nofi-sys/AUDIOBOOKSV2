@@ -8,10 +8,12 @@ import os
 import subprocess
 import tempfile
 from pathlib import Path
+import json
 
 import torch
 
 from text_utils import read_script, extract_word_list
+from alignment import build_rows
 
 try:
     from faster_whisper import WhisperModel
@@ -206,6 +208,41 @@ def transcribe_file(
     return out_path
 
 
+def transcribe_wordlevel(
+    file_path: str | None = None,
+    model_size: str | None = None,
+    script_path: str | None = None,
+) -> Path:
+    """Transcribe with word timestamps and save ``.words.json`` next to ``file_path``."""
+
+    out_txt = transcribe_file(file_path, model_size, script_path)
+    audio_path = out_txt.with_suffix("")
+    # remove extension from .txt path to build json file path
+    base = str(audio_path)
+
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    compute_type = "float16" if device == "cuda" else "int8"
+
+    model = WhisperModel(model_size_or_path=model_size or "base", device=device, compute_type=compute_type)
+
+    segments, _info = model.transcribe(str(file_path or out_txt), word_timestamps=True)
+    words: list[dict] = []
+    for seg in segments:
+        for w in getattr(seg, "words", []) or []:
+            words.append({"word": w.word, "start": w.start, "end": w.end})
+
+    out_json = Path(base + ".words.json")
+    out_json.write_text(json.dumps(words, ensure_ascii=False, indent=2), encoding="utf8")
+    return out_json
+
+
+def build_rows_wordlevel(ref: str, words: list[dict]) -> list[list]:
+    """Build QC rows using ``words`` from :func:`transcribe_wordlevel`."""
+
+    text = " ".join(w.get("word", "") for w in words)
+    return build_rows(ref, text)
+
+
 def main(argv: list[str] | None = None) -> None:
     """CLI entry point."""
 
@@ -221,20 +258,24 @@ def main(argv: list[str] | None = None) -> None:
         help="Optional script text (PDF or TXT) to guide transcription",
     )
     parser.add_argument(
-        "--word-json",
+        "--word-align",
         action="store_true",
-        help="Output JSON with word timestamps instead of plain text",
-    )
-    parser.add_argument(
-        "--prompt",
-        help="Text file with previous transcription to use as initial prompt",
+        help="Output QC JSON using word level alignment",
     )
     args = parser.parse_args(argv)
-    if args.word_json:
-        prompt_text = (
-            Path(args.prompt).read_text(encoding="utf8") if args.prompt else None
-        )
-        transcribe_wordlevel(args.input or "", args.model or "base", args.script, prompt_text)
+    if args.word_align:
+        if not args.script:
+            parser.error("--word-align requires --script")
+        words_json = transcribe_wordlevel(args.input, args.model, args.script)
+        ref = read_script(args.script)
+        words = json.loads(Path(words_json).read_text(encoding="utf8"))
+        rows = build_rows_wordlevel(ref, words)
+        base = Path(args.input).with_suffix("")
+        out = base.with_suffix(".word.qc.json")
+        out.write_text(json.dumps(rows, ensure_ascii=False, indent=2), encoding="utf8")
+        print(out)
+
+
     else:
         transcribe_file(args.input, args.model, args.script)
 
