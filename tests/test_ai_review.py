@@ -182,3 +182,19 @@ def test_review_file_handles_badrequest_error(tmp_path):
     data = json.loads(path.read_text())
     assert approved == 0 and remaining == 1
     assert data[0][3] == "error"
+
+
+def test_client_singleton(monkeypatch):
+    created = []
+
+    class Dummy:
+        pass
+
+    def dummy_openai():
+        created.append(1)
+        return Dummy()
+
+    monkeypatch.setattr(ai_review, "OpenAI", dummy_openai)
+    c1 = ai_review._client()
+    c2 = ai_review._client()
+    assert c1 is c2 and len(created) == 1

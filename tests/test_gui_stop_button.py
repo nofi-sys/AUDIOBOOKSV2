@@ -1,15 +1,14 @@
-import sys
 import os
 import threading
 import time
-import pytest
 from unittest import mock
+
+import pytest
+from gui import App
+import ai_review
 
 if not os.environ.get("DISPLAY"):
     pytest.skip("no display", allow_module_level=True)
-
-from gui import App
-import ai_review
 
 
 def test_stop_button_interrupts_review():
