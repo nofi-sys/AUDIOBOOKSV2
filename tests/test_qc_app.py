@@ -1,13 +1,11 @@
 import os
 import sys
 import json
-from unittest import mock
-import tempfile
 import pytest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
-from qc_app import App, play_interval  # noqa: E402
+from qc_app import App  # noqa: E402
 
 if not os.environ.get("DISPLAY"):
     pytest.skip("no display", allow_module_level=True)
@@ -24,16 +22,19 @@ def test_navigation_bad_rows_qc():
         rows = [
             [0, "", "", "", "0.0", "uno", "uno"],
             [1, "", "mal", "", "1.0", "dos", "dos"],
-            [2, "", "", "", "2.0", "tres", "tres"],
+            [2, "", "mal", "", "2.0", "tres", "tres"],
         ]
         _insert_rows(app, rows)
+        # mark first bad row as OK
+        first_bad = app.tree.get_children()[1]
+        app.tree.set(first_bad, "OK", "OK")
         first = app.tree.get_children()[0]
         app._play_clip(first)
         app._next_bad_row()
-        bad = app.tree.get_children()[1]
-        assert app._clip_item == bad
+        target = app.tree.get_children()[2]
+        assert app._clip_item == target
         app._prev_bad_row()
-        assert app._clip_item == bad
+        assert app._clip_item == target
     finally:
         app.destroy()
 

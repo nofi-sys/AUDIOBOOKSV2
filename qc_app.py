@@ -422,29 +422,38 @@ class App(tk.Tk):
         self._clip_item = None
 
     def _next_bad_row(self):
-        """Jump to the next row where the AI column is ``"mal"``."""
+        """Jump to the next row marked ``"mal"`` and not already ``"OK"``."""
         children = list(self.tree.get_children())
         if not children:
             return
         start = 0
         if self._clip_item and self._clip_item in children:
             start = children.index(self._clip_item) + 1
-        for iid in children[start:] + children[:start]:
-            if self.tree.set(iid, "AI") == "mal":
+        sequence = children[start:] + children[:start]
+        for iid in sequence:
+            if (
+                self.tree.set(iid, "AI") == "mal"
+                and self.tree.set(iid, "OK") != "OK"
+            ):
                 self.tree.see(iid)
                 self._play_clip(iid)
                 return
 
     def _prev_bad_row(self):
-        """Jump to the previous row where the AI column is ``"mal"``."""
+        """Jump to the previous row marked ``"mal"`` and not ``"OK"``."""
         children = list(self.tree.get_children())
         if not children:
             return
         start = len(children) - 1
         if self._clip_item and self._clip_item in children:
             start = children.index(self._clip_item) - 1
-        for iid in reversed(children[: start + 1]):
-            if self.tree.set(iid, "AI") == "mal":
+        first_part = list(reversed(children[: start + 1]))
+        second_part = list(reversed(children[start + 1:]))
+        for iid in first_part + second_part:
+            if (
+                self.tree.set(iid, "AI") == "mal"
+                and self.tree.set(iid, "OK") != "OK"
+            ):
                 self.tree.see(iid)
                 self._play_clip(iid)
                 return
