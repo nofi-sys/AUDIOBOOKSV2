@@ -1,6 +1,6 @@
 # Audiobook QC
 
-This project provides a Tkinter application to align audiobook scripts with ASR transcripts.
+This project provides a Tkinter application (`qc_app.py`) to align audiobook scripts with ASR transcripts.
 
 ## Requirements
 
@@ -22,6 +22,13 @@ Run the GUI with:
 
 ```bash
 python qc_app.py
+```
+
+You can also import the GUI directly:
+
+```python
+from qc_app import App
+App().mainloop()
 ```
 
 The application lets you select a script (PDF or TXT) and an ASR transcript,
