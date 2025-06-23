@@ -18,11 +18,17 @@ def test_cli_word_align(tmp_path, monkeypatch):
     audio.write_text("a")
     script = tmp_path / "book.txt"
     script.write_text("hola")
-    words_json = tmp_path / "aud.words.json"
+    words_json = tmp_path / "aud.word.json"
 
     tr = _get_transcriber()
 
-    def fake_transcribe_wordlevel(fp, model_size=None, script_path=None):
+    def fake_transcribe_wordlevel(
+        fp,
+        model_size=None,
+        script_path=None,
+        *,
+        detailed=False,
+    ):
         words_json.write_text('[{"word": "hola"}]', encoding="utf8")
         return words_json
 
