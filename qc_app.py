@@ -236,14 +236,73 @@ class App(tk.Tk):
             self.tree.set(self._clip_item, "AI", "mal")
 
     def _next_bad_row(self):
-        pass
+        """Jump to the next row where the AI column is ``"mal"``."""
+        children = list(self.tree.get_children())
+        if not children:
+            return
+        start = 0
+        if self._clip_item and self._clip_item in children:
+            start = children.index(self._clip_item) + 1
+        for iid in children[start:] + children[:start]:
+            if self.tree.set(iid, "AI") == "mal":
+                self.tree.see(iid)
+                self._play_clip(iid)
+                return
+
     def _prev_bad_row(self):
-        pass
+        """Jump to the previous row where the AI column is ``"mal"``."""
+        children = list(self.tree.get_children())
+        if not children:
+            return
+        start = len(children) - 1
+        if self._clip_item and self._clip_item in children:
+            start = children.index(self._clip_item) - 1
+        for iid in reversed(children[: start + 1]):
+            if self.tree.set(iid, "AI") == "mal":
+                self.tree.see(iid)
+                self._play_clip(iid)
+                return
+        for iid in reversed(children[start + 1 :]):
+            if self.tree.set(iid, "AI") == "mal":
+                self.tree.see(iid)
+                self._play_clip(iid)
+                return
 
     # ---------------------------------------------------------------------------------
     # hilo worker (alinear) -----------------------------------------------------------
     def _worker(self):
-        pass
+        try:
+            self.q.put("→ Leyendo guion…")
+            ref = read_script(self.v_ref.get())
+
+            self.q.put("→ TXT externo cargado")
+            hyp = Path(self.v_asr.get()).read_text(
+                encoding="utf8", errors="ignore"
+            )
+
+            self.q.put("→ Alineando…")
+            rows = build_rows(ref, hyp)
+
+            out = Path(self.v_asr.get()).with_suffix(".qc.json")
+            if out.exists():
+                try:
+                    old = json.loads(out.read_text(encoding="utf8"))
+                    from qc_utils import merge_qc_metadata
+
+                    rows = merge_qc_metadata(old, rows)
+                except Exception:
+                    pass
+            out.write_text(
+                json.dumps(rows, ensure_ascii=False, indent=2), encoding="utf8"
+            )
+
+            self.q.put(("ROWS", rows))
+            self.q.put(f"✔ Listo. Guardado en {out}")
+            self.v_json.set(str(out))
+        except Exception:
+            buf = io.StringIO()
+            traceback.print_exc(file=buf)
+            self.q.put(buf.getvalue())
 
     # ---------------------------------------------------------------------------------
     # cola de mensajes Tk -------------------------------------------------------------
