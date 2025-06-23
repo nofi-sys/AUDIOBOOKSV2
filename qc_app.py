@@ -63,6 +63,10 @@ class App(tk.Tk):
         self.redo_stack: list[str] = []
         self.merged_rows: dict[str, list[list[str]]] = {}
 
+        self.selected_cell: tuple[str, str] | None = None
+        self.tree_tag = "sel_cell"
+        self.merged_tag = "merged"
+
         # Repro
         self._clip_item: str | None = None
         self._clip_start = 0.0
@@ -97,8 +101,50 @@ class App(tk.Tk):
         self._build_table()
         self._build_player_bar()
 
+        # Menu contextual y atajos -------------------------------------------
+        self.menu = tk.Menu(self, tearoff=0)
+        self.menu.add_command(
+            label="Mover ↑", command=lambda: self._move_cell("up")
+        )
+        self.menu.add_command(
+            label="Mover ↓", command=lambda: self._move_cell("down")
+        )
+        self.menu.add_separator()
+        self.menu.add_command(
+            label="↑ última palabra", command=lambda: self._move_word("up", "last")
+        )
+        self.menu.add_command(
+            label="↓ última palabra", command=lambda: self._move_word("down", "last")
+        )
+        self.menu.add_command(
+            label="↑ primera palabra", command=lambda: self._move_word("up", "first")
+        )
+        self.menu.add_command(
+            label="↓ primera palabra", command=lambda: self._move_word("down", "first")
+        )
+        self.menu.add_separator()
+        self.menu.add_command(
+            label="Fusionar filas seleccionadas", command=self._merge_selected_rows
+        )
+        self.menu.add_command(label="Desagrupar fila", command=self._unmerge_row)
+
+        self.bind_all("<Control-z>", self.undo)
+        self.bind_all("<Control-Shift-Z>", self.redo)
+
+        # Cuadro de log -------------------------------------------------------
+        self.log_box = scrolledtext.ScrolledText(self, height=5, state="disabled")
+        self.log_box.pack(fill="x", padx=3, pady=2)
+
+        # Eventos de tabla ----------------------------------------------------
+        self.tree.bind("<Button-1>", self._cell_click)
+        self.tree.bind("<Button-3>", self._popup_menu)
+        self.tree.bind("<Double-1>", self._handle_double)
+
         style = ttk.Style(self)
         style.configure("Treeview", rowheight=45)
+
+        # instantánea inicial para undo --------------------------------------
+        self._snapshot()
 
     def _lbl_entry(self, parent, text, var, row, ft):
         ttk.Label(parent, text=text).grid(row=row, column=0, sticky="e")
@@ -126,7 +172,7 @@ class App(tk.Tk):
         self.tree.tag_configure("merged", background="#f5f5f5")
 
         # bindings
-        self.tree.bind("<Double-1>", self._on_double_click)
+        self.tree.bind("<Double-1>", self._handle_double)
 
     # ------------------------------------------------------------- player bar -------
     def _build_player_bar(self) -> None:
@@ -145,15 +191,64 @@ class App(tk.Tk):
         if p:
             var.set(p)
 
+    # ------------------------------------------------------------------ utils
+    def clear_table(self) -> None:
+        self.tree.delete(*self.tree.get_children())
+        self.ok_rows.clear()
+
+    def save_json(self) -> None:
+        if not self.v_json.get():
+            p = filedialog.asksaveasfilename(
+                filetypes=[("QC JSON", "*.qc.json;*.json")],
+                defaultextension=".json",
+            )
+            if not p:
+                return
+            self.v_json.set(p)
+        try:
+            rows = [list(self.tree.item(i)["values"]) for i in self.tree.get_children()]
+            Path(self.v_json.get()).write_text(
+                json.dumps(rows, ensure_ascii=False, indent=2), encoding="utf8"
+            )
+            self._log(f"✔ Guardado {self.v_json.get()}")
+        except Exception as e:
+            messagebox.showerror("Error", str(e))
+
     # ---------------------------------------------------------------------------------
     # mensajes log ---------------------------------------------------------------------
     def _log(self, msg: str):
-        print(msg)
+        self.log_box.configure(state="normal")
+        self.log_box.insert("end", msg + "\n")
+        self.log_box.configure(state="disabled")
+        self.log_box.see("end")
 
     # ---------------------------------------------------------------------------------
     # Transcripción -------------------------------------------------------------------
     def transcribe(self):
-        messagebox.showinfo("Info", "Funcionalidad de transcripción no modificada (placeholder).")
+        if not self.v_audio.get():
+            messagebox.showwarning("Falta info", "Selecciona archivo de audio")
+            return
+        if not self.v_ref.get():
+            messagebox.showwarning(
+                "Falta info", "Selecciona guion para guiar la transcripción"
+            )
+            return
+        self._log("⏳ Transcribiendo…")
+        threading.Thread(target=self._transcribe_worker, daemon=True).start()
+
+    def _transcribe_worker(self) -> None:
+        try:
+            from transcriber import transcribe_file
+
+            out = transcribe_file(self.v_audio.get(), script_path=self.v_ref.get())
+            self.q.put(("SET_ASR", str(out)))
+            self.q.put(f"✔ Transcripción guardada en {out}")
+        except Exception:
+            buf = io.StringIO()
+            traceback.print_exc(file=buf)
+            err = buf.getvalue()
+            print(err)
+            self.q.put(err)
 
     # ---------------------------------------------------------------------------------
     # Procesar align ------------------------------------------------------------------
@@ -166,10 +261,74 @@ class App(tk.Tk):
     # ---------------------------------------------------------------------------------
     # AI review -----------------------------------------------------------------------
     def ai_review(self):
-        messagebox.showinfo("Info", "Funcionalidad AI‑review no modificada.")
+        if not self.v_json.get():
+            messagebox.showwarning("Falta info", "Cargar JSON primero")
+            return
+        if not os.getenv("OPENAI_API_KEY"):
+            messagebox.showwarning(
+                "Falta OPENAI_API_KEY",
+                "Configura la variable OPENAI_API_KEY antes de continuar",
+            )
+            return
+        if self.ai_one.get():
+            sel = self.tree.selection()
+            if not sel:
+                messagebox.showwarning("Falta info", "Selecciona una fila")
+                return
+            iid = sel[0]
+            original = self.tree.set(iid, "Original")
+            asr = self.tree.set(iid, "ASR")
+            self._log("⏳ Revisión AI fila…")
+            threading.Thread(
+                target=self._ai_review_one_worker,
+                args=(iid, original, asr),
+                daemon=True,
+            ).start()
+        else:
+            self._log(
+                "⏳ Solicitando revisión AI (esto puede tardar unos segundos)…"
+            )
+            threading.Thread(target=self._ai_review_worker, daemon=True).start()
 
     def stop_ai_review(self):
-        pass
+        try:
+            from ai_review import stop_review
+
+            stop_review()
+            self._log("⏹ Deteniendo análisis AI…")
+        except Exception as exc:
+            self._log(str(exc))
+
+    def _ai_review_worker(self) -> None:
+        try:
+            import ai_review
+
+            approved, remaining = ai_review.review_file(self.v_json.get())
+            self.q.put(("RELOAD", None))
+            if ai_review._stop_review:
+                self.q.put("⚠ Revisión detenida")
+            else:
+                self.q.put(f"✔ Auto-aprobadas {approved} / Restantes {remaining}")
+        except Exception:
+            buf = io.StringIO()
+            traceback.print_exc(file=buf)
+            err = buf.getvalue()
+            print(err)
+            self.q.put(err)
+
+    def _ai_review_one_worker(self, iid: str, original: str, asr: str) -> None:
+        try:
+            from ai_review import review_row
+
+            row = [0, "", "", 0.0, 0.0, original, asr]
+            review_row(row)
+            self.q.put(("AI_ROW", (iid, row[3], row[2])))
+        except Exception:
+            buf = io.StringIO()
+            traceback.print_exc(file=buf)
+            err = buf.getvalue()
+            print(err)
+            self.q.put(err)
 
     # ---------------------------------------------------------------------------------
     # JSON ---------------------------------------------------------------------------
@@ -181,27 +340,32 @@ class App(tk.Tk):
             self.v_json.set(p)
         try:
             rows = json.loads(Path(self.v_json.get()).read_text(encoding="utf8"))
-        except Exception as exc:
-            messagebox.showerror("Error", str(exc)); return
-
-        self.tree.delete(*self.tree.get_children())
-        for r in rows:
-            if len(r) == 6:
-                vals = [r[0], r[1], "", "", r[2], r[3], r[4], r[5]]
-            elif len(r) == 7:
-                vals = [r[0], r[1], r[2], "", r[3], r[4], r[5], r[6]]
-            else:
-                vals = r
-            # aseguramos string
-            vals[6], vals[7] = str(vals[6]), str(vals[7])
-            self.tree.insert("", tk.END, values=vals)
+            self.clear_table()
+            for r in rows:
+                if len(r) == 6:
+                    vals = [r[0], r[1], "", "", r[2], r[3], r[4], r[5]]
+                elif len(r) == 7:
+                    vals = [r[0], r[1], r[2], "", r[3], r[4], r[5], r[6]]
+                else:
+                    vals = r
+                vals[6], vals[7] = str(vals[6]), str(vals[7])
+                self.tree.insert("", tk.END, values=vals)
+            self._snapshot()
+            self._log(f"✔ Cargado {self.v_json.get()}")
+        except Exception as e:
+            messagebox.showerror("Error", str(e))
 
     # ---------------------------------------------------------------------------------
     # Reproducción -------------------------------------------------------------------
-    def _on_double_click(self, ev):
-        item = self.tree.identify_row(ev.y)
-        if item:
-            self._play_clip(item)
+    def _handle_double(self, event: tk.Event) -> None:
+        item = self.tree.identify_row(event.y)
+        col = self.tree.identify_column(event.x)
+        if not item:
+            return
+        if col == "#3":
+            self._toggle_ok(item)
+            return
+        self._play_clip(item)
 
     def _play_clip(self, iid: str):
         """Calcula tc inicio ‑ fin y prepara _clip_*"""
@@ -228,12 +392,34 @@ class App(tk.Tk):
         if self._clip_item and self.v_audio.get():
             play_interval(self.v_audio.get(), self._clip_start, self._clip_end)
 
+    def _toggle_ok(self, item: str) -> None:
+        current = self.tree.set(item, "OK")
+        new_val = "" if current == "OK" else "OK"
+        self.tree.set(item, "OK", new_val)
+        try:
+            line_id = int(self.tree.set(item, "ID"))
+        except Exception:
+            return
+        if new_val:
+            self.ok_rows.add(line_id)
+        else:
+            self.ok_rows.discard(line_id)
+
     def _clip_ok(self):
         if self._clip_item:
             self.tree.set(self._clip_item, "AI", "ok")
+        self._hide_clip()
     def _clip_bad(self):
         if self._clip_item:
             self.tree.set(self._clip_item, "AI", "mal")
+        self._hide_clip()
+
+    def _hide_clip(self) -> None:
+        try:
+            pygame.mixer.music.stop()
+        except Exception:
+            pass
+        self._clip_item = None
 
     def _next_bad_row(self):
         """Jump to the next row where the AI column is ``"mal"``."""
@@ -262,11 +448,162 @@ class App(tk.Tk):
                 self.tree.see(iid)
                 self._play_clip(iid)
                 return
-        for iid in reversed(children[start + 1 :]):
-            if self.tree.set(iid, "AI") == "mal":
-                self.tree.see(iid)
-                self._play_clip(iid)
-                return
+
+    # --------------------------------------------------------------- cell utils
+    def _cell_click(self, event: tk.Event) -> None:
+        item = self.tree.identify_row(event.y)
+        col = self.tree.identify_column(event.x)
+        for iid in self.tree.get_children():
+            tags = list(self.tree.item(iid, "tags"))
+            if self.tree_tag in tags:
+                tags.remove(self.tree_tag)
+                self.tree.item(iid, tags=tuple(tags))
+        if col not in ("#7", "#8") or not item:
+            self.selected_cell = None
+            return
+        tags = list(self.tree.item(item, "tags"))
+        if self.tree_tag not in tags:
+            tags.append(self.tree_tag)
+            self.tree.item(item, tags=tuple(tags))
+        self.selected_cell = (item, col)
+
+    def _popup_menu(self, event: tk.Event) -> None:
+        item = self.tree.identify_row(event.y)
+        self._cell_click(event)
+        sel = self.tree.selection()
+        self.menu.entryconfig(
+            "Fusionar filas seleccionadas",
+            state="normal" if len(sel) > 1 else "disabled",
+        )
+        if item:
+            self.menu.tk_popup(event.x_root, event.y_root)
+
+    def _move_cell(self, direction: str) -> None:
+        if not self.selected_cell:
+            return
+        item, col_id = self.selected_cell
+        children = self.tree.get_children()
+        idx = children.index(item)
+        dst_idx = idx - 1 if direction == "up" else idx + 1
+        if dst_idx < 0 or dst_idx >= len(children):
+            return
+        dst_item = children[dst_idx]
+        col = "Original" if col_id == "#7" else "ASR"
+        src_text = self.tree.set(item, col)
+        if not src_text:
+            return
+        dst_text = self.tree.set(dst_item, col)
+        fused = (
+            (dst_text.rstrip().rstrip(".") + " " + src_text).strip()
+            if direction == "up"
+            else (src_text.rstrip(".") + " " + dst_text).strip()
+        )
+        self._snapshot()
+        self.tree.set(dst_item, col, fused)
+        self.tree.set(item, col, "")
+        other_col = "ASR" if col == "Original" else "Original"
+        if not self.tree.set(item, col) and not self.tree.set(item, other_col):
+            self.tree.delete(item)
+        self.selected_cell = None
+        for iid in self.tree.get_children():
+            tags = list(self.tree.item(iid, "tags"))
+            if self.tree_tag in tags:
+                tags.remove(self.tree_tag)
+                self.tree.item(iid, tags=tuple(tags))
+        self.save_json()
+
+    def _move_word(self, direction: str, which: str) -> None:
+        if not self.selected_cell:
+            return
+        item, col_id = self.selected_cell
+        children = self.tree.get_children()
+        idx = children.index(item)
+        dst_idx = idx - 1 if direction == "up" else idx + 1
+        if dst_idx < 0 or dst_idx >= len(children):
+            return
+        dst_item = children[dst_idx]
+        col = "Original" if col_id == "#7" else "ASR"
+        src_text = self.tree.set(item, col).strip()
+        if not src_text:
+            return
+        words = src_text.split()
+        if not words:
+            return
+        word = words.pop(0 if which == "first" else -1)
+        self._snapshot()
+        self.tree.set(item, col, " ".join(words))
+        dst_text = self.tree.set(dst_item, col).strip()
+        fused = (
+            (dst_text + " " + word).strip()
+            if direction == "up"
+            else (word + " " + dst_text).strip()
+        )
+        self.tree.set(dst_item, col, fused)
+        other_col = "ASR" if col == "Original" else "Original"
+        if not self.tree.set(item, col) and not self.tree.set(item, other_col):
+            self.tree.delete(item)
+        self.selected_cell = None
+        for iid in self.tree.get_children():
+            tags = list(self.tree.item(iid, "tags"))
+            if self.tree_tag in tags:
+                tags.remove(self.tree_tag)
+                self.tree.item(iid, tags=tuple(tags))
+        self.save_json()
+
+    def _merge_selected_rows(self) -> None:
+        sel = list(self.tree.selection())
+        if len(sel) < 2:
+            return
+        sel.sort(key=lambda iid: self.tree.index(iid))
+        first = sel[0]
+        originals: list[str] = []
+        asrs: list[str] = []
+
+        for iid in sel:
+            originals.append(self.tree.set(iid, "Original").strip())
+            asrs.append(self.tree.set(iid, "ASR").strip())
+
+        fuse = lambda parts: " ".join(p.rstrip(".,;") for p in parts if p)
+
+        self._snapshot()
+        self.merged_rows[first] = [list(self.tree.item(i)["values"]) for i in sel]
+
+        self.tree.set(first, "Original", fuse(originals))
+        self.tree.set(first, "ASR", fuse(asrs))
+        self.tree.set(first, "WER", "")
+
+        for iid in sel[1:]:
+            self.tree.delete(iid)
+            self.merged_rows.pop(iid, None)
+
+        tags = list(self.tree.item(first, "tags"))
+        if self.merged_tag not in tags:
+            tags.append(self.merged_tag)
+        self.tree.item(first, tags=tuple(tags))
+
+        start_idx = self.tree.index(first)
+        for new_id, iid in enumerate(self.tree.get_children()[start_idx:], start_idx):
+            self.tree.set(iid, "ID", new_id)
+
+        self.save_json()
+
+    def _unmerge_row(self) -> None:
+        sel = list(self.tree.selection())
+        if len(sel) != 1:
+            return
+        item = sel[0]
+        if item not in self.merged_rows:
+            return
+        rows = self.merged_rows.pop(item)
+        idx = self.tree.index(item)
+        self._snapshot()
+        self.tree.delete(item)
+        for r in rows:
+            iid = self.tree.insert("", idx, values=r)
+            idx += 1
+        for new_id, iid in enumerate(self.tree.get_children()):
+            self.tree.set(iid, "ID", new_id)
+        self.save_json()
 
     # ---------------------------------------------------------------------------------
     # hilo worker (alinear) -----------------------------------------------------------
@@ -309,10 +646,79 @@ class App(tk.Tk):
     def _poll(self):
         try:
             while True:
-                self.q.get_nowait()
+                msg = self.q.get_nowait()
+                if isinstance(msg, tuple) and msg[0] == "ROWS":
+                    for r in msg[1]:
+                        if len(r) == 6:
+                            vals = [r[0], r[1], "", "", r[2], r[3], r[4], r[5]]
+                        else:
+                            vals = r
+                        vals[6], vals[7] = str(vals[6]), str(vals[7])
+                        self.tree.insert("", tk.END, values=vals)
+                    self._snapshot()
+                elif isinstance(msg, tuple) and msg[0] == "RELOAD":
+                    self.load_json()
+                elif isinstance(msg, tuple) and msg[0] == "SET_ASR":
+                    self.v_asr.set(msg[1])
+                elif isinstance(msg, tuple) and msg[0] == "AI_ROW":
+                    iid, verdict, ok = msg[1]
+                    self.tree.set(iid, "AI", verdict)
+                    if ok:
+                        self.tree.set(iid, "OK", ok)
+                        try:
+                            line_id = int(self.tree.set(iid, "ID"))
+                            self.ok_rows.add(line_id)
+                        except Exception:
+                            pass
+                    self.save_json()
+                else:
+                    self._log(str(msg))
         except queue.Empty:
             pass
         self.after(250, self._poll)
+
+    # ------------------------------------------------------------- undo/redo --
+    def _snapshot(self) -> None:
+        rows = [list(self.tree.item(i)["values"]) for i in self.tree.get_children()]
+        self.undo_stack.append(json.dumps(rows, ensure_ascii=False))
+        if len(self.undo_stack) > 20:
+            self.undo_stack.pop(0)
+        self.redo_stack.clear()
+
+    def _restore(self, data: str) -> None:
+        rows = json.loads(data)
+        self.clear_table()
+        for r in rows:
+            if len(r) == 6:
+                vals = [r[0], r[1], "", "", r[2], r[3], r[4], r[5]]
+            elif len(r) == 7:
+                vals = [r[0], r[1], r[2], "", r[3], r[4], r[5], r[6]]
+            else:
+                vals = r
+            vals[6], vals[7] = str(vals[6]), str(vals[7])
+            self.tree.insert("", tk.END, values=vals)
+
+    def undo(self, event: tk.Event | None = None) -> None:
+        if not self.undo_stack:
+            return
+        state = self.undo_stack.pop()
+        current = json.dumps([
+            list(self.tree.item(i)["values"]) for i in self.tree.get_children()
+        ], ensure_ascii=False)
+        self.redo_stack.append(current)
+        self._restore(state)
+        self.save_json()
+
+    def redo(self, event: tk.Event | None = None) -> None:
+        if not self.redo_stack:
+            return
+        state = self.redo_stack.pop()
+        current = json.dumps([
+            list(self.tree.item(i)["values"]) for i in self.tree.get_children()
+        ], ensure_ascii=False)
+        self.undo_stack.append(current)
+        self._restore(state)
+        self.save_json()
 
 # --------------------------------------------------------------------------------------
 if __name__ == "__main__":
