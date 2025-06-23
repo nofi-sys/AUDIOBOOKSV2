@@ -262,7 +262,23 @@ def main(argv: list[str] | None = None) -> None:
         action="store_true",
         help="Output QC JSON using word level alignment",
     )
+    parser.add_argument(
+        "--resync-csv",
+        metavar="CSV",
+        help="Update an existing QC JSON using a word timed CSV",
+    )
     args = parser.parse_args(argv)
+    if args.resync_csv:
+        if not args.input:
+            parser.error("--resync-csv requires a QC JSON path")
+        from utils.resync import resync_file
+
+        rows = resync_file(args.input, args.resync_csv)
+        base = Path(args.input).with_suffix("")
+        out = base.with_suffix(".resync.json")
+        out.write_text(json.dumps(rows, ensure_ascii=False, indent=2), encoding="utf8")
+        print(out)
+        return
     if args.word_align:
         if not args.script:
             parser.error("--word-align requires --script")

@@ -44,6 +44,15 @@ python -m transcriber myaudio.mp3 --script book.txt --word-align
 
 This creates `myaudio.words.qc.json` without overwriting the regular QC file.
 
+If you already have a QC JSON and a CSV with word times you can resync the
+timecodes directly:
+
+```bash
+python -m transcriber myaudio.qc.json --resync-csv myaudio.words.csv
+```
+
+The updated rows are written to `myaudio.resync.json` next to the original file.
+
 
 ## Manual review
 
