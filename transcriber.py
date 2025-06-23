@@ -8,7 +8,6 @@ import os
 import subprocess
 import tempfile
 from pathlib import Path
-import json
 
 import torch
 
@@ -104,8 +103,14 @@ def transcribe_wordlevel(
     model_name: str = "large-v3",
     script_path: str | None = None,
     initial_prompt: str | None = None,
+    *,
+    detailed: bool = False,
 ) -> Path:
-    """Transcribe ``audio_path`` with word timestamps and save ``.word.json``."""
+    """Transcribe ``audio_path`` with word timestamps.
+
+    If ``detailed`` is ``True`` save ``.word.json`` with segment metadata,
+    otherwise produce a flat ``.words.json`` list.
+    """
 
     hotwords = None
     if script_path:
@@ -130,22 +135,29 @@ def transcribe_wordlevel(
         initial_prompt=initial_prompt,
     )
 
-    out = Path(audio_path).with_suffix(".word.json")
-    payload = {"segments": []}
-    for seg in segments:
-        payload["segments"].append(
-            {
-                "seg_start": seg.start,
-                "seg_end": seg.end,
-                "text": seg.text,
-                "words": [
-                    {"word": w.word, "start": w.start, "end": w.end}
-                    for w in seg.words
-                ],
-            }
-        )
-
-    out.write_text(json.dumps(payload, ensure_ascii=False, indent=2), "utf8")
+    if detailed:
+        out = Path(audio_path).with_suffix(".word.json")
+        payload = {"segments": []}
+        for seg in segments:
+            payload["segments"].append(
+                {
+                    "seg_start": seg.start,
+                    "seg_end": seg.end,
+                    "text": seg.text,
+                    "words": [
+                        {"word": w.word, "start": w.start, "end": w.end}
+                        for w in seg.words
+                    ],
+                }
+            )
+        out.write_text(json.dumps(payload, ensure_ascii=False, indent=2), "utf8")
+    else:
+        out = Path(audio_path).with_suffix(".words.json")
+        words: list[dict] = []
+        for seg in segments:
+            for w in seg.words:
+                words.append({"word": w.word, "start": w.start, "end": w.end})
+        out.write_text(json.dumps(words, ensure_ascii=False, indent=2), "utf8")
     return out
 
 
@@ -208,34 +220,6 @@ def transcribe_file(
     return out_path
 
 
-def transcribe_wordlevel(
-    file_path: str | None = None,
-    model_size: str | None = None,
-    script_path: str | None = None,
-) -> Path:
-    """Transcribe with word timestamps and save ``.words.json`` next to ``file_path``."""
-
-    out_txt = transcribe_file(file_path, model_size, script_path)
-    audio_path = out_txt.with_suffix("")
-    # remove extension from .txt path to build json file path
-    base = str(audio_path)
-
-    device = "cuda" if torch.cuda.is_available() else "cpu"
-    compute_type = "float16" if device == "cuda" else "int8"
-
-    model = WhisperModel(model_size_or_path=model_size or "base", device=device, compute_type=compute_type)
-
-    segments, _info = model.transcribe(str(file_path or out_txt), word_timestamps=True)
-    words: list[dict] = []
-    for seg in segments:
-        for w in getattr(seg, "words", []) or []:
-            words.append({"word": w.word, "start": w.start, "end": w.end})
-
-    out_json = Path(base + ".words.json")
-    out_json.write_text(json.dumps(words, ensure_ascii=False, indent=2), encoding="utf8")
-    return out_json
-
-
 def build_rows_wordlevel(ref: str, words: list[dict]) -> list[list]:
     """Build QC rows using ``words`` from :func:`transcribe_wordlevel`."""
 
@@ -266,7 +250,12 @@ def main(argv: list[str] | None = None) -> None:
     if args.word_align:
         if not args.script:
             parser.error("--word-align requires --script")
-        words_json = transcribe_wordlevel(args.input, args.model, args.script)
+        words_json = transcribe_wordlevel(
+            args.input,
+            args.model,
+            args.script,
+            detailed=True,
+        )
         ref = read_script(args.script)
         words = json.loads(Path(words_json).read_text(encoding="utf8"))
         rows = build_rows_wordlevel(ref, words)
