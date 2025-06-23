@@ -97,9 +97,9 @@ class App(tk.Tk):
         ttk.Checkbutton(top, text="una fila", variable=self.ai_one).grid(row=3, column=4, padx=4)
         ttk.Button(top, text="Detener análisis", command=self.stop_ai_review).grid(row=3, column=5, padx=6)
 
-        # Tabla principal -----------------------------------------------------------
-        self._build_table()
+        # Barra de reproducción y tabla principal 
         self._build_player_bar()
+        self._build_table()
 
         # Menu contextual y atajos -------------------------------------------
         self.menu = tk.Menu(self, tearoff=0)
