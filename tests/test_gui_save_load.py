@@ -5,7 +5,7 @@ import pytest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
-from gui import App  # noqa: E402
+from qc_app import App  # noqa: E402
 
 if not os.environ.get("DISPLAY"):
     pytest.skip("no display", allow_module_level=True)

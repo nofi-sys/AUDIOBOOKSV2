@@ -4,7 +4,7 @@ import time
 from unittest import mock
 
 import pytest
-from gui import App
+from qc_app import App
 import ai_review
 
 if not os.environ.get("DISPLAY"):
