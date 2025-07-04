@@ -23,6 +23,8 @@ import pygame
 import tkinter as tk
 from tkinter import filedialog, messagebox, scrolledtext, ttk
 
+from utils.gui_errors import show_error
+
 from alignment import build_rows
 from text_utils import read_script
 
@@ -220,7 +222,7 @@ class App(tk.Tk):
             )
             self._log(f"✔ Guardado {self.v_json.get()}")
         except Exception as e:
-            messagebox.showerror("Error", str(e))
+            show_error("Error", e)
 
     # ---------------------------------------------------------------------------------
     # mensajes log ---------------------------------------------------------------------
@@ -251,12 +253,8 @@ class App(tk.Tk):
             out = transcribe_file(self.v_audio.get(), script_path=self.v_ref.get())
             self.q.put(("SET_ASR", str(out)))
             self.q.put(f"✔ Transcripción guardada en {out}")
-        except Exception:
-            buf = io.StringIO()
-            traceback.print_exc(file=buf)
-            err = buf.getvalue()
-            print(err)
-            self.q.put(err)
+        except BaseException as exc:  # noqa: BLE001 - catch SystemExit too
+            show_error("Error", exc)
 
     # ---------------------------------------------------------------------------------
     # Procesar align ------------------------------------------------------------------
@@ -426,7 +424,7 @@ class App(tk.Tk):
             self._snapshot()
             self._log(f"✔ Cargado {self.v_json.get()}")
         except Exception as e:
-            messagebox.showerror("Error", str(e))
+            show_error("Error", e)
 
     # ---------------------------------------------------------------------------------
     # Reproducción -------------------------------------------------------------------

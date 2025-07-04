@@ -14,6 +14,8 @@ from __future__ import annotations
 import json, re, sys, threading, tkinter as tk
 from pathlib import Path
 from tkinter import filedialog, scrolledtext, ttk, messagebox
+
+from utils.gui_errors import show_error
 from typing import List, Tuple
 
 ###########################################################################
@@ -135,7 +137,7 @@ class ResyncApp(tk.Tk):
     def launch(self):
         pj, pc = self.v_json.get(), self.v_csv.get()
         if not (pj and pc):
-            messagebox.showerror("Falta info", "Selecciona JSON y CSV")
+            show_error("Falta info", ValueError("Selecciona JSON y CSV"))
             return
         threading.Thread(target=self.worker, args=(Path(pj), Path(pc)), daemon=True).start()
 
@@ -149,7 +151,7 @@ class ResyncApp(tk.Tk):
             self.log_msg("Leyendo CSV word‑timings…")
             words, starts = load_words_csv(csv_path)
             if not words:
-                messagebox.showerror("Error", "CSV no contiene datos utilizables")
+                show_error("Error", ValueError("CSV no contiene datos utilizables"))
                 return
             self.log_msg(f"→ {len(words)} palabras cargadas")
 
