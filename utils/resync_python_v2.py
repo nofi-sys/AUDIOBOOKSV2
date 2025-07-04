@@ -10,6 +10,8 @@ from __future__ import annotations
 import json, re, sys, threading, tkinter as tk
 from pathlib import Path
 from tkinter import filedialog, scrolledtext, ttk, messagebox
+
+from utils.gui_errors import show_error
 from typing import List, Tuple
 import unicodedata
 from difflib import SequenceMatcher
@@ -209,7 +211,7 @@ class ResyncApp(tk.Tk):
     def launch(self):
         pj,pc=self.v_json.get(),self.v_csv.get()
         if not (pj and pc):
-            messagebox.showerror("Falta info","Selecciona JSON y CSV"); return
+            show_error("Falta info", ValueError("Selecciona JSON y CSV")); return
         threading.Thread(target=self.worker,args=(Path(pj),Path(pc)),daemon=True).start()
 
     def worker(self,json_path:Path,csv_path:Path):
@@ -219,7 +221,7 @@ class ResyncApp(tk.Tk):
 
             self.log_msg("Leyendo CSV word-timings…")
             csv_words,csv_tcs=load_words_csv(csv_path)
-            if not csv_words: messagebox.showerror("Error","CSV vacío"); return
+            if not csv_words: show_error("Error", ValueError("CSV vacío")); return
             self.log_msg(f"→ {len(csv_words)} palabras en CSV")
 
             resync_rows(rows,csv_words,csv_tcs,

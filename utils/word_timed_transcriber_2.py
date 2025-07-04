@@ -124,6 +124,7 @@ USE_GUI = not (sys.platform.startswith("linux") and not os.environ.get("DISPLAY"
 if USE_GUI:
     import tkinter as tk
     from tkinter import filedialog, messagebox, scrolledtext, ttk
+    from utils.gui_errors import show_error
 
     class App(tk.Tk):
         def __init__(self):
@@ -176,7 +177,7 @@ if USE_GUI:
                 messagebox.showwarning("Falta archivo", "Selecciona audio")
                 return
             if self.v_test.get() and not have_ffmpeg():
-                messagebox.showerror("FFmpeg requerido", "Instala FFmpeg o desactiva modo prueba")
+                show_error("FFmpeg requerido", RuntimeError("Instala FFmpeg o desactiva modo prueba"))
                 return
 
             self.pb["value"] = 0
