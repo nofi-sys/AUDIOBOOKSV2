@@ -141,13 +141,15 @@ REREVIEW_PROMPT = (
     + "where 1 means mal and 5 means ok."
 )
 
-# Prompt used when re-transcribing problematic lines. The ASR text may include
-# one or more extra lines for context. The model must evaluate **only the first
-# line** against the provided ORIGINAL text.
+# Prompt used when re-transcribing problematic lines. The ASR text is provided
+# line by line and numbered as -1, 0 and 1. Line 0 corresponds to the new
+# transcription of the target segment. Lines -1 and 1 contain surrounding
+# context. The model must judge ONLY line 0 against the ORIGINAL text.
 RETRANS_PROMPT = (
     DEFAULT_PROMPT
-    + "\n\nThe ASR text may include extra lines for context. "
-    + "Judge ONLY the first line against the ORIGINAL text."
+    + "\n\nThe ASR text is numbered by lines as -1, 0 and 1. "
+    + "Line 0 must be compared with the ORIGINAL text. The other lines are"
+    + " context."
 )
 # This is a testing phase: if you respond "mal" or "dudoso", provide a brief
 # explanation of the specific reason for your assessment.
