@@ -386,16 +386,7 @@ class App(tk.Tk):
         except Exception:
             row_start = 0.0
 
-        # Include previous row for context if it has a valid, earlier tc
         start = row_start
-        for j in range(idx - 1, -1, -1):
-            try:
-                prev_tc = float(self.tree.set(children[j], "tc"))
-            except Exception:
-                continue
-            if prev_tc < row_start:
-                start = prev_tc
-                break
 
         # Search next valid tc strictly greater than current row
         end = None
@@ -425,11 +416,27 @@ class App(tk.Tk):
         self.prev_asr[iid] = self.tree.set(iid, "ASR")
         self.tree.set(iid, "ASR", new_text)
 
+        prev_asr = (
+            self.tree.set(children[idx - 1], "ASR") if idx - 1 >= 0 else ""
+        )
+        next_asr = (
+            self.tree.set(children[idx + 1], "ASR")
+            if idx + 1 < len(children)
+            else ""
+        )
+        enumerated = []
+        if prev_asr:
+            enumerated.append(f"-1: {prev_asr}")
+        enumerated.append(f"0: {new_text}")
+        if next_asr:
+            enumerated.append(f"1: {next_asr}")
+        ai_text = "\n".join(enumerated)
+
         # AI re-review using new transcription
         try:
             from ai_review import review_row, score_row, RETRANS_PROMPT
 
-            row = [0, "", "", 0.0, 0.0, words, new_text]
+            row = [0, "", "", 0.0, 0.0, words, ai_text]
             review_row(row, RETRANS_PROMPT)
             rating = score_row(row, RETRANS_PROMPT)
             self.tree.set(iid, "Score", rating)
