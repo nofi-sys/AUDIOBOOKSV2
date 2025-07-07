@@ -165,6 +165,8 @@ def transcribe_file(
     file_path: str | None = None,
     model_size: str | None = None,
     script_path: str | None = None,
+    *,
+    show_messagebox: bool = True,
 ) -> Path:
     """Transcribe ``file_path`` with Whisper and save ``.txt`` next to it.
 
@@ -213,7 +215,7 @@ def transcribe_file(
         except OSError:
             pass
 
-    if tk is not None:
+    if tk is not None and show_messagebox:
         messagebox.showinfo(
             title="Transcripción finalizada", message=f"Guardado en:\n{out_path}"
         )

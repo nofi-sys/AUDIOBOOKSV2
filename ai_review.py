@@ -133,6 +133,13 @@ ok
 
 mal
 """
+
+# Extra prompt for re-review scoring from 1 (mal) to 5 (ok)
+REREVIEW_PROMPT = (
+    DEFAULT_PROMPT
+    + "\n\nAfter your assessment respond ONLY with a single number from 1 to 5 "
+    + "where 1 means mal and 5 means ok."
+)
 # This is a testing phase: if you respond "mal" or "dudoso", provide a brief
 # explanation of the specific reason for your assessment.
 # Respond clearly with one of these words: ok, mal, or dudoso, followed by a
@@ -235,6 +242,50 @@ def review_row_feedback(row: List, base_prompt: str | None = None) -> tuple[str,
     if verdict == "ok":
         row[2] = "OK"
     return verdict, feedback
+
+
+def ai_score(
+    original: str,
+    asr: str,
+    base_prompt: str | None = None,
+    return_feedback: bool = False,
+) -> str | tuple[str, str]:
+    """Send a single re-review request and return a 1-5 score."""
+
+    prompt = base_prompt or REREVIEW_PROMPT
+    logger.info("AI score request ORIGINAL=%s | ASR=%s", original, asr)
+    resp = _chat_with_backoff(
+        model=MODEL,
+        messages=[
+            {"role": "system", "content": prompt},
+            {"role": "user", "content": f"ORIGINAL:\n{original}\n\nASR:\n{asr}"},
+        ],
+        max_completion_tokens=2000,
+        stop=None,
+    )
+    content = resp.choices[0].message.content
+    trimmed = content.strip()
+    rating = trimmed.split()[0]
+    if rating not in {"1", "2", "3", "4", "5"}:
+        logger.warning("Unexpected AI score '%s', defaulting to 3", trimmed)
+        rating = "3"
+    if return_feedback:
+        return rating, trimmed
+    return rating
+
+
+def score_row(row: List, base_prompt: str | None = None) -> str:
+    """Return 1-5 score for a single QC row."""
+
+    orig, asr = row[-2], row[-1]
+    try:
+        rating = ai_score(str(orig), str(asr), base_prompt)
+    except BadRequestError as exc:
+        if "max_tokens" in str(exc) or "model output limit" in str(exc):
+            _mark_error(row)
+            return "0"
+        raise
+    return rating
 
 
 def review_file(qc_json: str, prompt_path: str = "prompt.txt") -> tuple[int, int]:

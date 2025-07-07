@@ -378,17 +378,37 @@ class App(tk.Tk):
         tmp_prompt = Path(clip_path).with_suffix(".prompt.txt")
         tmp_prompt.write_text(prompt, encoding="utf8")
 
-        out = transcribe_file(clip_path, model_size="large-v3", script_path=str(tmp_prompt))
+        out = transcribe_file(
+            clip_path,
+            model_size="large-v3",
+            script_path=str(tmp_prompt),
+            show_messagebox=False,
+        )
         new_text = Path(out).read_text(encoding="utf8").strip()
         self.prev_asr[iid] = self.tree.set(iid, "ASR")
         self.tree.set(iid, "ASR", new_text)
-        self.asr_confidence[iid] = 1.0  # placeholder
+
+        # AI re-review using new transcription
+        try:
+            from ai_review import review_row, score_row
+
+            row = [0, "", "", 0.0, 0.0, words, new_text]
+            review_row(row)
+            rating = score_row(row)
+            self.tree.set(iid, "AI", row[3])
+            if row[2]:
+                self.tree.set(iid, "OK", row[2])
+            self.asr_confidence[iid] = float(rating)
+        except Exception:
+            self.asr_confidence[iid] = 0.0
 
         try:
             os.remove(clip_path)
             os.remove(tmp_prompt)
         except OSError:
             pass
+
+        self.save_json()
 
     def _extract_clip(self, path: str, start: float, end: float | None) -> str:
         """Return temporary audio clip from start to end using ffmpeg."""
