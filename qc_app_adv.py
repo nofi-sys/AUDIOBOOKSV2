@@ -380,18 +380,33 @@ class App(tk.Tk):
 
         children = list(self.tree.get_children())
         idx = children.index(iid)
-        start = 0.0
-        if idx > 0:
-            try:
-                start = float(self.tree.set(children[idx - 1], "tc"))
-            except Exception:
-                start = 0.0
+
         try:
-            end = float(self.tree.set(children[idx + 1], "tc")) if idx + 1 < len(children) else None
+            row_start = float(self.tree.set(iid, "tc"))
         except Exception:
-            end = None
-        if end is not None and end <= start:
-            end = None
+            row_start = 0.0
+
+        # Include previous row for context if it has a valid, earlier tc
+        start = row_start
+        for j in range(idx - 1, -1, -1):
+            try:
+                prev_tc = float(self.tree.set(children[j], "tc"))
+            except Exception:
+                continue
+            if prev_tc < row_start:
+                start = prev_tc
+                break
+
+        # Search next valid tc strictly greater than current row
+        end = None
+        for j in range(idx + 1, len(children)):
+            try:
+                next_tc = float(self.tree.set(children[j], "tc"))
+            except Exception:
+                continue
+            if next_tc > row_start:
+                end = next_tc
+                break
 
         clip_path = self._extract_clip(self.v_audio.get(), start, end)
 
