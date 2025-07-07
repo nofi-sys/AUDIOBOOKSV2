@@ -140,6 +140,15 @@ REREVIEW_PROMPT = (
     + "\n\nAfter your assessment respond ONLY with a single number from 1 to 5 "
     + "where 1 means mal and 5 means ok."
 )
+
+# Prompt used when re-transcribing problematic lines. The ASR text may include
+# one or more extra lines for context. The model must evaluate **only the first
+# line** against the provided ORIGINAL text.
+RETRANS_PROMPT = (
+    DEFAULT_PROMPT
+    + "\n\nThe ASR text may include extra lines for context. "
+    + "Judge ONLY the first line against the ORIGINAL text."
+)
 # This is a testing phase: if you respond "mal" or "dudoso", provide a brief
 # explanation of the specific reason for your assessment.
 # Respond clearly with one of these words: ok, mal, or dudoso, followed by a
