@@ -427,11 +427,11 @@ class App(tk.Tk):
 
         # AI re-review using new transcription
         try:
-            from ai_review import review_row, score_row
+            from ai_review import review_row, score_row, RETRANS_PROMPT
 
             row = [0, "", "", 0.0, 0.0, words, new_text]
-            review_row(row)
-            rating = score_row(row)
+            review_row(row, RETRANS_PROMPT)
+            rating = score_row(row, RETRANS_PROMPT)
             self.tree.set(iid, "Score", rating)
             if float(rating) >= 4:
                 self.tree.set(iid, "AI", "ok")
