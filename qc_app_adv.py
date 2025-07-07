@@ -70,6 +70,10 @@ class App(tk.Tk):
         self.prev_asr: dict[str, str] = {}
         self.asr_confidence: dict[str, float] = {}
 
+        # Control re-transcription
+        self._stop_reprocess = False
+        self._reprocess_row = None
+
         self.selected_cell: tuple[str, str] | None = None
         self.tree_tag = "sel_cell"
         self.merged_tag = "merged"
@@ -104,6 +108,7 @@ class App(tk.Tk):
         ttk.Checkbutton(top, text="una fila", variable=self.ai_one).grid(row=3, column=4, padx=4)
         ttk.Button(top, text="Detener análisis", command=self.stop_ai_review).grid(row=3, column=5, padx=6)
         ttk.Button(top, text="Re-transcribir mal", command=self.reprocess_bad).grid(row=2, column=4, padx=6)
+        ttk.Button(top, text="Pausar re-transc.", command=self.pause_reprocess).grid(row=2, column=5, padx=6)
 
         # Tabla principal -----------------------------------------------------------
         self._build_table()
@@ -163,8 +168,8 @@ class App(tk.Tk):
 
     # ---------------------------------------------------------------- table ----------
     def _build_table(self) -> None:
-        cols = ("ID", "✓", "OK", "AI", "WER", "tc", "Original", "ASR")
-        widths = (50, 30, 40, 40, 60, 60, 800, 800)
+        cols = ("ID", "✓", "OK", "AI", "Score", "WER", "tc", "Original", "ASR")
+        widths = (50, 30, 40, 40, 50, 60, 60, 800, 800)
 
         table_frame = ttk.Frame(self)
         table_frame.pack(fill="both", expand=True, padx=3, pady=2)
@@ -180,6 +185,7 @@ class App(tk.Tk):
 
         self.tree.tag_configure("sel_cell", background="#d0e0ff")
         self.tree.tag_configure("merged", background="#f5f5f5")
+        self.tree.tag_configure("processing", background="#fff2ab")
 
         # bindings
         self.tree.bind("<Double-1>", self._handle_double)
@@ -342,11 +348,27 @@ class App(tk.Tk):
         if not self.v_audio.get():
             messagebox.showwarning("Falta audio", "Selecciona archivo de audio")
             return
+        self._stop_reprocess = False
         for iid in self.tree.get_children():
             ai = self.tree.set(iid, "AI").lower()
             ok = self.tree.set(iid, "OK").lower()
             if ai == "mal" and ok != "ok" and iid not in self.prev_asr:
+                tags = list(self.tree.item(iid, "tags"))
+                if "processing" not in tags:
+                    tags.append("processing")
+                    self.tree.item(iid, tags=tuple(tags))
+                self.update_idletasks()
                 self._retranscribe_row(iid)
+                tags = list(self.tree.item(iid, "tags"))
+                if "processing" in tags:
+                    tags.remove("processing")
+                    self.tree.item(iid, tags=tuple(tags))
+                if self._stop_reprocess:
+                    break
+
+    def pause_reprocess(self) -> None:
+        """Signal :meth:`reprocess_bad` loop to stop."""
+        self._stop_reprocess = True
 
     def _retranscribe_row(self, iid: str) -> None:
         """Transcribe a single row with Whisper large model."""
@@ -395,7 +417,11 @@ class App(tk.Tk):
             row = [0, "", "", 0.0, 0.0, words, new_text]
             review_row(row)
             rating = score_row(row)
-            self.tree.set(iid, "AI", row[3])
+            self.tree.set(iid, "Score", rating)
+            if float(rating) >= 4:
+                self.tree.set(iid, "AI", "ok")
+            else:
+                self.tree.set(iid, "AI", row[3])
             if row[2]:
                 self.tree.set(iid, "OK", row[2])
             self.asr_confidence[iid] = float(rating)
@@ -434,12 +460,14 @@ class App(tk.Tk):
             self.clear_table()
             for r in rows:
                 if len(r) == 6:
-                    vals = [r[0], r[1], "", "", r[2], r[3], r[4], r[5]]
+                    vals = [r[0], r[1], "", "", "", r[2], r[3], r[4], r[5]]
                 elif len(r) == 7:
-                    vals = [r[0], r[1], r[2], "", r[3], r[4], r[5], r[6]]
+                    vals = [r[0], r[1], r[2], "", "", r[3], r[4], r[5], r[6]]
+                elif len(r) == 8:
+                    vals = [r[0], r[1], r[2], r[3], "", r[4], r[5], r[6], r[7]]
                 else:
                     vals = r
-                vals[6], vals[7] = str(vals[6]), str(vals[7])
+                vals[-2], vals[-1] = str(vals[-2]), str(vals[-1])
                 self.tree.insert("", tk.END, values=vals)
             self._snapshot()
             self._log(f"✔ Cargado {self.v_json.get()}")
@@ -762,10 +790,14 @@ class App(tk.Tk):
                 if isinstance(msg, tuple) and msg[0] == "ROWS":
                     for r in msg[1]:
                         if len(r) == 6:
-                            vals = [r[0], r[1], "", "", r[2], r[3], r[4], r[5]]
+                            vals = [r[0], r[1], "", "", "", r[2], r[3], r[4], r[5]]
+                        elif len(r) == 7:
+                            vals = [r[0], r[1], r[2], "", "", r[3], r[4], r[5], r[6]]
+                        elif len(r) == 8:
+                            vals = [r[0], r[1], r[2], r[3], "", r[4], r[5], r[6], r[7]]
                         else:
                             vals = r
-                        vals[6], vals[7] = str(vals[6]), str(vals[7])
+                        vals[-2], vals[-1] = str(vals[-2]), str(vals[-1])
                         self.tree.insert("", tk.END, values=vals)
                     self._snapshot()
                 elif isinstance(msg, tuple) and msg[0] == "RELOAD":
@@ -802,12 +834,14 @@ class App(tk.Tk):
         self.clear_table()
         for r in rows:
             if len(r) == 6:
-                vals = [r[0], r[1], "", "", r[2], r[3], r[4], r[5]]
+                vals = [r[0], r[1], "", "", "", r[2], r[3], r[4], r[5]]
             elif len(r) == 7:
-                vals = [r[0], r[1], r[2], "", r[3], r[4], r[5], r[6]]
+                vals = [r[0], r[1], r[2], "", "", r[3], r[4], r[5], r[6]]
+            elif len(r) == 8:
+                vals = [r[0], r[1], r[2], r[3], "", r[4], r[5], r[6], r[7]]
             else:
                 vals = r
-            vals[6], vals[7] = str(vals[6]), str(vals[7])
+            vals[-2], vals[-1] = str(vals[-2]), str(vals[-1])
             self.tree.insert("", tk.END, values=vals)
 
     def undo(self, event: tk.Event | None = None) -> None:
