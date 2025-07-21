@@ -102,18 +102,56 @@ def normalize(text: str, strip_punct: bool = True) -> str:
     return re.sub(r"\s+", " ", text).strip()
 
 
+# text_utils.py  – reemplaza la función completa
+
+from pathlib import Path
+import pdfplumber
+
+
 def read_script(path: str) -> str:
-    """Read text from a PDF or TXT file."""
+    """Devuelve el texto de un PDF o TXT normalizado para alineamiento."""
 
     p = Path(path)
+
+    # ── PDF ─────────────────────────────────────────────────────────────────────
     if p.suffix.lower() == ".pdf":
         with pdfplumber.open(p) as pdf:
             pages = [pg.extract_text() or "" for pg in pdf.pages]
         raw = "\n".join(pages)
         if not raw.strip():
             raise RuntimeError("No se pudo extraer texto del PDF; usa un TXT.")
-        return raw
-    return p.read_text(encoding="utf8", errors="ignore")
+    else:
+        # ── TXT ─────────────────────────────────────────────────────────────────────
+        # 1. Intentamos utf-8 (lo ideal)
+        try:
+            raw = p.read_text(encoding="utf-8")  # sin errors="ignore" ❗
+        except UnicodeDecodeError:
+            # 2. Fallback rápido Latin-1 / Windows-1252 (común en textos antiguos)
+            try:
+                raw = p.read_text(encoding="latin-1")
+            except UnicodeDecodeError:
+                # 3. Último recurso: detección automática
+                try:
+                    import chardet  # pip install chardet
+                    data = p.read_bytes()
+                    enc = chardet.detect(data)["encoding"] or "latin-1"
+                    raw = data.decode(enc, errors="replace")  # nunca "ignore"
+                except Exception as exc:
+                    raise RuntimeError(f"No se pudo determinar la codificación: {exc}")
+
+    # ── NORMALIZACIÓN CRUCIAL ────────────────────────────────────────────────────
+    # Aplicar normalización básica manteniendo estructura de párrafos
+    lines = []
+    for line in raw.split('\n'):
+        line = line.strip()
+        if line:  # Solo procesar líneas no vacías
+            # Normalizar pero mantener algo de puntuación para el alineamiento
+            normalized = normalize(line, strip_punct=False)
+            if normalized:
+                lines.append(normalized)
+
+    # Unir con espacios, creando un texto continuo normalizado
+    return ' '.join(lines)
 
 
 def token_equal(a: str, b: str) -> bool:

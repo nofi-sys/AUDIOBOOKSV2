@@ -77,6 +77,8 @@ class App(tk.Tk):
         self._build_ui()
         self.after(250, self._poll)
 
+        self._prog_win: tk.Toplevel | None = None  # ventana de progreso
+
     # ---------------------------------------------------------------- build UI ------
     def _build_ui(self) -> None:
         top = ttk.Frame(self)
@@ -248,12 +250,64 @@ class App(tk.Tk):
         except BaseException as exc:  # noqa: BLE001 - catch SystemExit too
             show_error("Error", exc)
 
+    # ──────────────────────────────────────────────────────────────────────────────
+    # Normaliza la lista que llega de build_rows a las 8 columnas de la GUI
+    # Orden final: [ID, ✓, OK, AI, WER, tc, Original, ASR]
+    # ──────────────────────────────────────────────────────────────────────────────
+    def _row_from_alignment(self, r: list) -> list:
+        """
+        build_rows genera:
+          6 col.: [ID, ✓,        WER, tc, Original, ASR]
+          7 col.: [ID, ✓,  OK,   WER, tc, Original, ASR]
+          8 col.: [ID, ✓,  OK, AI, WER, tc, Original, ASR]  (ya correcto)
+        Retorna siempre 8-columnas en el orden que usa la GUI.
+        """
+
+        if len(r) == 6:
+            #           ID  ✓   OK AI WER  tc  Original  ASR
+            return [r[0], r[1], "", "", r[2], r[3], r[4], r[5]]
+
+        if len(r) == 7:
+            #           ID  ✓   OK  AI WER  tc  Original  ASR
+            return [r[0], r[1], r[2], "", r[3], r[4], r[5], r[6]]
+
+        return r  # ya vienen 8 columnas
+
+    # ───────────────────────────────── ventana de progreso ─────────────────────────
+    def _show_progress(self, text: str = "Procesando…") -> None:
+        """Crea (si no existe) una ventana modal con barra indeterminada."""
+        if self._prog_win:  # ya mostrada
+            return
+        win = tk.Toplevel(self)
+        win.title(text)
+        win.resizable(False, False)
+        win.transient(self)  # encima de la ventana principal
+        win.grab_set()  # modal
+        ttk.Label(win, text=text, padding=12).pack()
+        pb = ttk.Progressbar(win, mode="indeterminate", length=220)
+        pb.pack(padx=12, pady=(0, 12))
+        pb.start(10)  # rueda giratoria
+        self._prog_win = win
+
+    def _close_progress(self) -> None:
+        """Cierra la ventana de progreso, si existe."""
+        if self._prog_win:
+            self._prog_win.destroy()
+            self._prog_win = None
+
+    # ───────────────────────────────────────────────────────────────────────────────
+
     # ---------------------------------------------------------------------------------
     # Procesar align ------------------------------------------------------------------
-    def launch(self):
+    def launch(self) -> None:
+        """Arranca el alineado REF-ASR en un hilo y muestra feedback inmediato."""
         if not (self.v_ref.get() and self.v_asr.get()):
             messagebox.showwarning("Falta info", "Selecciona guion y TXT ASR.")
             return
+
+        self._log("⏳ Procesando…")
+        self._show_progress("Procesando…")
+
         threading.Thread(target=self._worker, daemon=True).start()
 
     # ---------------------------------------------------------------------------------
@@ -336,18 +390,17 @@ class App(tk.Tk):
             if not p:
                 return
             self.v_json.set(p)
+
         try:
             rows = json.loads(Path(self.v_json.get()).read_text(encoding="utf8"))
             self.clear_table()
+
             for r in rows:
-                if len(r) == 6:
-                    vals = [r[0], r[1], "", "", r[2], r[3], r[4], r[5]]
-                elif len(r) == 7:
-                    vals = [r[0], r[1], r[2], "", r[3], r[4], r[5], r[6]]
-                else:
-                    vals = r
+                vals = self._row_from_alignment(r)
+                # Treeview no admite números; asegúrate de que llegan como str
                 vals[6], vals[7] = str(vals[6]), str(vals[7])
                 self.tree.insert("", tk.END, values=vals)
+
             self._snapshot()
             self._log(f"✔ Cargado {self.v_json.get()}")
         except Exception as e:
@@ -619,13 +672,29 @@ class App(tk.Tk):
             self.q.put("→ Leyendo guion…")
             ref = read_script(self.v_ref.get())
 
+            # ═══ DEBUG TEMPORAL ═══
+            self.q.put(f"→ DEBUG: Longitud del guión: {len(ref)} caracteres")
+            self.q.put(f"→ DEBUG: Primeros 200 chars: {ref[:200]}")
+            # ═══ FIN DEBUG ═══
+
             self.q.put("→ TXT externo cargado")
             hyp = Path(self.v_asr.get()).read_text(
                 encoding="utf8", errors="ignore"
             )
 
+            # ═══ DEBUG TEMPORAL ═══
+            self.q.put(f"→ DEBUG: Longitud ASR: {len(hyp)} caracteres")
+            self.q.put(f"→ DEBUG: Primeros 200 chars ASR: {hyp[:200]}")
+            # ═══ FIN DEBUG ═══
+
             self.q.put("→ Alineando…")
             rows = build_rows(ref, hyp)
+
+            # ═══ DEBUG TEMPORAL ═══
+            self.q.put(f"→ DEBUG: Se generaron {len(rows)} filas")
+            if rows:
+                self.q.put(f"→ DEBUG: Primera fila: {rows[0]}")
+            # ═══ FIN DEBUG ═══
 
             out = Path(self.v_asr.get()).with_suffix(".qc.json")
             if out.exists():
@@ -654,34 +723,24 @@ class App(tk.Tk):
         try:
             while True:
                 msg = self.q.get_nowait()
+
                 if isinstance(msg, tuple) and msg[0] == "ROWS":
                     for r in msg[1]:
-                        if len(r) == 6:
-                            vals = [r[0], r[1], "", "", r[2], r[3], r[4], r[5]]
-                        else:
-                            vals = r
+                        vals = self._row_from_alignment(r)
                         vals[6], vals[7] = str(vals[6]), str(vals[7])
                         self.tree.insert("", tk.END, values=vals)
+                    self._close_progress()
                     self._snapshot()
-                elif isinstance(msg, tuple) and msg[0] == "RELOAD":
-                    self.load_json()
+
                 elif isinstance(msg, tuple) and msg[0] == "SET_ASR":
                     self.v_asr.set(msg[1])
-                elif isinstance(msg, tuple) and msg[0] == "AI_ROW":
-                    iid, verdict, ok = msg[1]
-                    self.tree.set(iid, "AI", verdict)
-                    if ok:
-                        self.tree.set(iid, "OK", ok)
-                        try:
-                            line_id = int(self.tree.set(iid, "ID"))
-                            self.ok_rows.add(line_id)
-                        except Exception:
-                            pass
-                    self.save_json()
+
                 else:
                     self._log(str(msg))
+
         except queue.Empty:
             pass
+
         self.after(250, self._poll)
 
     # ------------------------------------------------------------- undo/redo --
@@ -695,13 +754,9 @@ class App(tk.Tk):
     def _restore(self, data: str) -> None:
         rows = json.loads(data)
         self.clear_table()
+
         for r in rows:
-            if len(r) == 6:
-                vals = [r[0], r[1], "", "", r[2], r[3], r[4], r[5]]
-            elif len(r) == 7:
-                vals = [r[0], r[1], r[2], "", r[3], r[4], r[5], r[6]]
-            else:
-                vals = r
+            vals = self._row_from_alignment(r)
             vals[6], vals[7] = str(vals[6]), str(vals[7])
             self.tree.insert("", tk.END, values=vals)
 
