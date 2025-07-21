@@ -23,8 +23,23 @@ def merge_qc_metadata(old_rows: List[List], new_rows: List[List]) -> List[List]:
 
     old_norm = [normalize(str(r[-2])) for r in old_rows]
 
+    has_score = any(len(r) >= 9 for r in old_rows)
+
     for new in new_rows:
-        base = [new[0], new[1], "", "", "", new[2], new[3], new[4], new[5]]
+        if has_score:
+            base = [
+                new[0],
+                new[1],
+                "",
+                "",
+                "",
+                new[2],
+                new[3],
+                new[4],
+                new[5],
+            ]
+        else:
+            base = [new[0], new[1], "", "", new[2], new[3], new[4], new[5]]
         n_norm = normalize(str(new[-2]))
         best = None
         best_sim = 0.8
@@ -40,9 +55,10 @@ def merge_qc_metadata(old_rows: List[List], new_rows: List[List]) -> List[List]:
                 base[2] = best[2]
             if len(best) > 3:
                 base[3] = best[3]
-            if len(best) > 4:
+            if has_score and len(best) > 4:
                 base[4] = best[4]
-            if len(best) > 9:
-                base.extend(best[9:])
+            extra_idx = 9 if has_score else 8
+            if len(best) > extra_idx:
+                base.extend(best[extra_idx:])
         merged.append(base)
     return merged
