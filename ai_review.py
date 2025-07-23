@@ -32,6 +32,9 @@ _client_instance: OpenAI | None = None
 # Global flag to allow cancelling a long batch review
 _stop_review = False
 
+# Maximum number of OpenAI requests per batch review
+MAX_MESSAGES = int(os.getenv("AI_REVIEW_MAX_MESSAGES", "100"))
+
 
 def stop_review() -> None:
     """Signal any running :func:`review_file` loop to exit early."""
@@ -103,7 +106,9 @@ def _mark_error(row: List) -> None:
 
 # Default instruction prompt
 DEFAULT_PROMPT = """
-You are an audiobook QA assistant. Your job is to compare an ORIGINAL sentence (the correct text from the book) with an ASR sentence (automatic speech-to-text transcription, known to be phonetically imperfect).
+You are an audiobook QA assistant. Your job is to compare an ORIGINAL sentence
+(the correct text from the book) with an ASR sentence (automatic speech-to-text
+transcription, known to be phonetically imperfect).
 
 Your ONLY goal is to detect clear AUDIO READING or EDITING ERRORS that significantly affect the meaning, such as:
 
@@ -120,8 +125,10 @@ DO NOT consider the following as mistakes:
 
 Evaluation criteria:
 
-- If the ASR line does NOT show clear evidence of unacceptable reading or editing errors (as described above), respond exactly with: ok
-- If the ASR line shows clear evidence of unacceptable reading or editing errors, respond exactly with: mal
+- If the ASR line does NOT show clear evidence of unacceptable reading or editing
+  errors (as described above), respond exactly with: ok
+- If the ASR line shows clear evidence of unacceptable reading or editing errors,
+  respond exactly with: mal
 
 Respond EXACTLY with one word, without explanations or punctuation:
 
@@ -296,8 +303,22 @@ def score_row(row: List, base_prompt: str | None = None) -> str:
     return rating
 
 
-def review_file(qc_json: str, prompt_path: str = "prompt.txt") -> tuple[int, int]:
-    """Batch review QC JSON file, auto-approve lines marked ok."""
+def review_file(
+    qc_json: str,
+    prompt_path: str = "prompt.txt",
+    limit: int | None = None,
+) -> tuple[int, int]:
+    """Batch review QC JSON file, auto-approve lines marked ok.
+
+    Parameters
+    ----------
+    qc_json:
+        Path to the QC JSON file.
+    prompt_path:
+        Optional prompt file path.
+    limit:
+        Maximum number of requests to send. ``None`` uses ``MAX_MESSAGES``.
+    """
     global _stop_review
     _stop_review = False
     rows = json.loads(Path(qc_json).read_text(encoding="utf8"))
@@ -309,8 +330,9 @@ def review_file(qc_json: str, prompt_path: str = "prompt.txt") -> tuple[int, int
         )
     prompt = load_prompt(prompt_path)
     sent = approved = 0
+    max_requests = limit if limit is not None else MAX_MESSAGES
     for i, row in enumerate(rows):
-        if _stop_review:
+        if _stop_review or (max_requests and sent >= max_requests):
             break
         tick = row[1] if len(row) > 1 else ""
         ok = row[2] if len(row) >= 7 else ""
@@ -353,9 +375,15 @@ def review_file(qc_json: str, prompt_path: str = "prompt.txt") -> tuple[int, int
 
 
 def review_file_feedback(
-    qc_json: str, prompt_path: str = "prompt.txt"
+    qc_json: str,
+    prompt_path: str = "prompt.txt",
+    limit: int | None = None,
 ) -> tuple[int, int, List[str]]:
-    """Batch review returning feedback strings for each processed row."""
+    """Batch review returning feedback strings for each processed row.
+
+    ``limit`` restricts how many requests are sent. ``None`` means use
+    ``MAX_MESSAGES``.
+    """
 
     global _stop_review
     _stop_review = False
@@ -365,9 +393,10 @@ def review_file_feedback(
         bak.write_text(json.dumps(rows, ensure_ascii=False, indent=2), encoding="utf8")
     prompt = load_prompt(prompt_path)
     sent = approved = 0
+    max_requests = limit if limit is not None else MAX_MESSAGES
     feedback: List[str] = []
     for i, row in enumerate(rows):
-        if _stop_review:
+        if _stop_review or (max_requests and sent >= max_requests):
             break
         tick = row[1] if len(row) > 1 else ""
         ok = row[2] if len(row) >= 7 else ""
@@ -419,6 +448,12 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Batch review QC JSON using o3 model")
     parser.add_argument("file", help="QC JSON file path")
     parser.add_argument("--prompt", default="prompt.txt")
+    parser.add_argument(
+        "--limit",
+        type=int,
+        default=None,
+        help="maximum number of lines to review",
+    )
     args = parser.parse_args()
-    a, b = review_file(args.file, args.prompt)
+    a, b = review_file(args.file, args.prompt, args.limit)
     print(f"Auto-approved {a} / Remaining {b}")

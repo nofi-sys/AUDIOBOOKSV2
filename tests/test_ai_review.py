@@ -198,3 +198,19 @@ def test_client_singleton(monkeypatch):
     c1 = ai_review._client()
     c2 = ai_review._client()
     assert c1 is c2 and len(created) == 1
+
+
+def test_review_file_respects_limit(tmp_path):
+    rows = [
+        [0, "", "", 0.0, 0.0, "a", "a"],
+        [1, "", "", 0.0, 0.0, "b", "b"],
+        [2, "", "", 0.0, 0.0, "c", "c"],
+    ]
+    p = tmp_path / "rows.json"
+    p.write_text(json.dumps(rows, ensure_ascii=False), encoding="utf8")
+    with mock.patch("ai_review.ai_verdict", return_value="ok") as m:
+        approved, remaining = ai_review.review_file(str(p), limit=2)
+    assert m.call_count == 2
+    data = json.loads(p.read_text())
+    assert len(data[0]) == 8 and len(data[1]) == 8 and len(data[2]) == 7
+    assert approved == 2 and remaining == 0
