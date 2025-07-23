@@ -103,35 +103,32 @@ def _mark_error(row: List) -> None:
 
 # Default instruction prompt
 DEFAULT_PROMPT = """
-You are an audiobook QA assistant. Your job is to compare an ORIGINAL sentence \
-(the correct text from the book) with an ASR sentence (automatic speech-to-text \
-transcription, known to be phonetically imperfect).
+You are an audiobook QA assistant. Your job is to compare an ORIGINAL sentence (the correct text from the book) with an ASR sentence (automatic speech-to-text transcription, known to be phonetically imperfect).
 
-Your ONLY goal is to detect clear AUDIO READING or EDITING ERRORS, such as:
+Your ONLY goal is to detect clear AUDIO READING or EDITING ERRORS that significantly affect the meaning, such as:
 
-Entire words or phrases clearly omitted.
+- Entire words or phrases clearly omitted.
+- Entire words or phrases clearly repeated by mistake, causing confusion.
+- Completely different words clearly added or read incorrectly, substantially changing the meaning of the sentence.
 
-Entire words or phrases clearly repeated by mistake.
+DO NOT consider the following as mistakes:
 
-Completely different words clearly added or read incorrectly, significantly \
-changing the meaning.
-
-DO NOT consider punctuation, accents, capitalization, spelling errors, phonetic \
-variations of proper names or phonetic rendering that dowesn't make sense, or \
-transcription inaccuracies as mistakes.
+- Punctuation, accents, capitalization, spelling errors.
+- Minor phonetic variations, especially in proper names or foreign words.
+- Slight repetitions or brief pauses if they do not significantly alter the sentence's meaning.
+- Transcription inaccuracies that don't significantly impact understanding.
 
 Evaluation criteria:
 
-If the ASR line does NOT show clear evidence of reading or editing errors \
-(as described above), respond: ok
-
-If the ASR line shows clear evidence of reading or editing errors, respond: mal
+- If the ASR line does NOT show clear evidence of unacceptable reading or editing errors (as described above), respond exactly with: ok
+- If the ASR line shows clear evidence of unacceptable reading or editing errors, respond exactly with: mal
 
 Respond EXACTLY with one word, without explanations or punctuation:
 
 ok
 
 mal
+
 """
 
 # Extra prompt for re-review scoring from 1 (mal) to 5 (ok)
