@@ -29,3 +29,15 @@ def test_merge_qc_metadata_preserves_score_column():
     assert len(merged[0]) == 9
     assert merged[0][4] == "4"
     assert merged[0][5] == 20.0
+
+
+def test_canonical_row_variants():
+    six = [0, "✅", 10.0, 0.5, "hola", "hola"]
+    seven = [0, "✅", "OK", 10.0, 0.5, "hola", "hola"]
+    eight = [0, "✅", "OK", "mal", 10.0, 0.5, "hola", "hola"]
+    nine = [0, "✅", "OK", "mal", "4", 10.0, 0.5, "hola", "hola"]
+
+    assert qc_utils.canonical_row(six) == [0, "✅", "", "", 10.0, 0.5, "hola", "hola"]
+    assert qc_utils.canonical_row(seven) == [0, "✅", "OK", "", 10.0, 0.5, "hola", "hola"]
+    assert qc_utils.canonical_row(eight) == eight
+    assert qc_utils.canonical_row(nine) == nine

@@ -277,15 +277,9 @@ class App(tk.Tk):
         Retorna siempre 8-columnas en el orden que usa la GUI.
         """
 
-        if len(r) == 6:
-            #           ID  ✓   OK AI WER  tc  Original  ASR
-            return [r[0], r[1], "", "", r[2], r[3], r[4], r[5]]
+        from qc_utils import canonical_row
 
-        if len(r) == 7:
-            #           ID  ✓   OK  AI WER  tc  Original  ASR
-            return [r[0], r[1], r[2], "", r[3], r[4], r[5], r[6]]
-
-        return r  # ya vienen 8 columnas
+        return canonical_row(r)
 
     # ───────────────────────────────── ventana de progreso ─────────────────────────
     def _show_progress(self, text: str = "Procesando…", *, determinate: bool = False) -> None:
