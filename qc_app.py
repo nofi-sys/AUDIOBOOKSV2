@@ -179,6 +179,7 @@ class App(tk.Tk):
 
         self.tree.tag_configure("sel_cell", background="#d0e0ff")
         self.tree.tag_configure("merged", background="#f5f5f5")
+        self.tree.tag_configure("processing", background="#fff2ab")
 
         # bindings
         self.tree.bind("<Double-1>", self._handle_double)
@@ -365,7 +366,12 @@ class App(tk.Tk):
             self._log(
                 "⏳ Solicitando revisión AI (esto puede tardar unos segundos)…"
             )
-            threading.Thread(target=self._ai_review_worker, daemon=True).start()
+            items = list(self.tree.get_children())
+            threading.Thread(
+                target=self._ai_review_worker,
+                args=(items,),
+                daemon=True,
+            ).start()
 
     def stop_ai_review(self):
         try:
@@ -376,16 +382,50 @@ class App(tk.Tk):
         except Exception as exc:
             self._log(str(exc))
 
-    def _ai_review_worker(self) -> None:
+    def _ai_review_worker(self, items: list[str] | None = None) -> None:
+        """Run batch AI review updating the GUI incrementally."""
         try:
             import ai_review
 
-            approved, remaining = ai_review.review_file(self.v_json.get())
-            self.q.put(("RELOAD", None))
+            if not items:
+                approved, remaining = ai_review.review_file(self.v_json.get())
+                self.q.put(("RELOAD", None))
+                if ai_review._stop_review:
+                    self.q.put("⚠ Revisión detenida")
+                else:
+                    self.q.put(
+                        f"✔ Auto-aprobadas {approved} / Restantes {remaining}"
+                    )
+                return
+
+            def progress(stage: str, idx: int, row: list) -> None:
+                iid = items[idx]
+                if stage == "start":
+                    self.q.put(("AI_START", iid))
+                else:
+                    self.q.put(("AI_ROW", (iid, row[3], row[2])))
+
+            try:
+                approved, remaining = ai_review.review_file(
+                    self.v_json.get(), progress_callback=progress
+                )
+            except TypeError:
+                approved, remaining = ai_review.review_file(self.v_json.get())
+                self.q.put(("RELOAD", None))
+                if ai_review._stop_review:
+                    self.q.put("⚠ Revisión detenida")
+                else:
+                    self.q.put(
+                        f"✔ Auto-aprobadas {approved} / Restantes {remaining}"
+                    )
+                return
+
             if ai_review._stop_review:
                 self.q.put("⚠ Revisión detenida")
             else:
-                self.q.put(f"✔ Auto-aprobadas {approved} / Restantes {remaining}")
+                self.q.put(
+                    f"✔ Auto-aprobadas {approved} / Restantes {remaining}"
+                )
         except Exception:
             buf = io.StringIO()
             traceback.print_exc(file=buf)
@@ -772,6 +812,33 @@ class App(tk.Tk):
                 elif isinstance(msg, tuple) and msg[0] == "PROGRESS":
                     pct = int(msg[1])
                     self._update_progress(pct)
+
+                elif isinstance(msg, tuple) and msg[0] == "RELOAD":
+                    self.load_json()
+
+                elif isinstance(msg, tuple) and msg[0] == "AI_START":
+                    iid = msg[1]
+                    tags = list(self.tree.item(iid, "tags"))
+                    if "processing" not in tags:
+                        tags.append("processing")
+                        self.tree.item(iid, tags=tuple(tags))
+                    self.tree.see(iid)
+                    self.tree.selection_set(iid)
+
+                elif isinstance(msg, tuple) and msg[0] == "AI_ROW":
+                    iid, verdict, ok = msg[1]
+                    self.tree.set(iid, "AI", verdict)
+                    if ok:
+                        self.tree.set(iid, "OK", ok)
+                        try:
+                            line_id = int(self.tree.set(iid, "ID"))
+                            self.ok_rows.add(line_id)
+                        except Exception:
+                            pass
+                    tags = list(self.tree.item(iid, "tags"))
+                    if "processing" in tags:
+                        tags.remove("processing")
+                        self.tree.item(iid, tags=tuple(tags))
 
                 else:
                     self._log(str(msg))
