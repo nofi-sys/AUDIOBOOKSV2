@@ -516,7 +516,7 @@ class App(tk.Tk):
         if col == "#3":
             self._toggle_ok(item)
             return
-        if col in ("#7", "#8"):
+        if col in ("#8", "#9"):
             self._show_text_popup(item, col)
         self._play_clip(item)
 
@@ -547,7 +547,7 @@ class App(tk.Tk):
 
     def _show_text_popup(self, iid: str, col: str) -> None:
         """Display full text for Original or ASR in a popup window."""
-        col_name = "Original" if col == "#7" else "ASR"
+        col_name = "Original" if col == "#8" else "ASR"
         text = self.tree.set(iid, col_name)
         win = tk.Toplevel(self)
         win.title(col_name)
@@ -584,7 +584,7 @@ class App(tk.Tk):
         if not self.selected_cell:
             return
         iid, col = self.selected_cell
-        if col != "#8":  # Only for ASR column
+        if col != "#9":  # Only for ASR column
             return
         current = self.tree.set(iid, "ASR")
         if iid in self.prev_asr:
@@ -644,7 +644,7 @@ class App(tk.Tk):
             if self.tree_tag in tags:
                 tags.remove(self.tree_tag)
                 self.tree.item(iid, tags=tuple(tags))
-        if col not in ("#7", "#8") or not item:
+        if col not in ("#8", "#9") or not item:
             self.selected_cell = None
             return
         tags = list(self.tree.item(item, "tags"))
@@ -674,7 +674,7 @@ class App(tk.Tk):
         if dst_idx < 0 or dst_idx >= len(children):
             return
         dst_item = children[dst_idx]
-        col = "Original" if col_id == "#7" else "ASR"
+        col = "Original" if col_id == "#8" else "ASR"
         src_text = self.tree.set(item, col)
         if not src_text:
             return
@@ -708,7 +708,7 @@ class App(tk.Tk):
         if dst_idx < 0 or dst_idx >= len(children):
             return
         dst_item = children[dst_idx]
-        col = "Original" if col_id == "#7" else "ASR"
+        col = "Original" if col_id == "#8" else "ASR"
         src_text = self.tree.set(item, col).strip()
         if not src_text:
             return
