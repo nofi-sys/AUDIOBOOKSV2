@@ -79,6 +79,8 @@ class App(tk.Tk):
         self.after(250, self._poll)
 
         self._prog_win: tk.Toplevel | None = None  # ventana de progreso
+        self._prog_bar: ttk.Progressbar | None = None
+        self._prog_label: ttk.Label | None = None
 
     # ---------------------------------------------------------------- build UI ------
     def _build_ui(self) -> None:
@@ -240,6 +242,7 @@ class App(tk.Tk):
             )
             return
         self._log("⏳ Transcribiendo…")
+        self._show_progress("Transcribiendo…", determinate=True)
         threading.Thread(target=self._transcribe_worker, daemon=True).start()
 
     def _transcribe_worker(self) -> None:
@@ -247,9 +250,15 @@ class App(tk.Tk):
             from transcriber import transcribe_file, transcribe_word_csv
 
             if self.use_wordcsv.get():
-                out = transcribe_word_csv(self.v_audio.get())
+                out = transcribe_word_csv(
+                    self.v_audio.get(), progress_queue=self.q
+                )
             else:
-                out = transcribe_file(self.v_audio.get(), script_path=self.v_ref.get())
+                out = transcribe_file(
+                    self.v_audio.get(),
+                    script_path=self.v_ref.get(),
+                    progress_queue=self.q,
+                )
             self.q.put(("SET_ASR", str(out)))
             self.q.put(f"✔ Transcripción guardada en {out}")
         except BaseException as exc:  # noqa: BLE001 - catch SystemExit too
@@ -279,26 +288,42 @@ class App(tk.Tk):
         return r  # ya vienen 8 columnas
 
     # ───────────────────────────────── ventana de progreso ─────────────────────────
-    def _show_progress(self, text: str = "Procesando…") -> None:
-        """Crea (si no existe) una ventana modal con barra indeterminada."""
-        if self._prog_win:  # ya mostrada
+    def _show_progress(self, text: str = "Procesando…", *, determinate: bool = False) -> None:
+        """Create modal window with progress bar."""
+        if self._prog_win:
             return
         win = tk.Toplevel(self)
         win.title(text)
         win.resizable(False, False)
-        win.transient(self)  # encima de la ventana principal
-        win.grab_set()  # modal
+        win.transient(self)
+        win.grab_set()
         ttk.Label(win, text=text, padding=12).pack()
-        pb = ttk.Progressbar(win, mode="indeterminate", length=220)
-        pb.pack(padx=12, pady=(0, 12))
-        pb.start(10)  # rueda giratoria
+        mode = "determinate" if determinate else "indeterminate"
+        pb = ttk.Progressbar(win, mode=mode, length=220, maximum=100)
+        pb.pack(padx=12, pady=(0, 6))
+        if determinate:
+            pb["value"] = 0
+        else:
+            pb.start(10)
+        lbl = ttk.Label(win, text="0%" if determinate else "")
+        lbl.pack(pady=(0, 12))
         self._prog_win = win
+        self._prog_bar = pb
+        self._prog_label = lbl
 
     def _close_progress(self) -> None:
         """Cierra la ventana de progreso, si existe."""
         if self._prog_win:
             self._prog_win.destroy()
             self._prog_win = None
+            self._prog_bar = None
+            self._prog_label = None
+
+    def _update_progress(self, pct: int) -> None:
+        if self._prog_bar:
+            self._prog_bar["value"] = pct
+        if self._prog_label:
+            self._prog_label["text"] = f"{pct}%"
 
     # ───────────────────────────────────────────────────────────────────────────────
 
@@ -747,6 +772,11 @@ class App(tk.Tk):
 
                 elif isinstance(msg, tuple) and msg[0] == "SET_ASR":
                     self.v_asr.set(msg[1])
+                    self._close_progress()
+
+                elif isinstance(msg, tuple) and msg[0] == "PROGRESS":
+                    pct = int(msg[1])
+                    self._update_progress(pct)
 
                 else:
                     self._log(str(msg))
