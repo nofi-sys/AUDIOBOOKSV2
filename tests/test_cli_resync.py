@@ -18,3 +18,4 @@ def test_cli_resync(tmp_path):
     out = tmp_path / "in.resync.json"
     data = json.loads(out.read_text())
     assert data[0][5] == "0.50"
+    assert data[0][7] == "hola"
