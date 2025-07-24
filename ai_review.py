@@ -2,7 +2,7 @@ from __future__ import annotations
 
 """Automatic AI review of QC rows using OpenAI's o3 models."""
 from pathlib import Path
-from typing import List
+from typing import List, Callable
 import json
 import os
 import logging
@@ -307,6 +307,7 @@ def review_file(
     qc_json: str,
     prompt_path: str = "prompt.txt",
     limit: int | None = None,
+    progress_callback: Callable[[str, int, list], None] | None = None,
 ) -> tuple[int, int]:
     """Batch review QC JSON file, auto-approve lines marked ok.
 
@@ -318,6 +319,9 @@ def review_file(
         Optional prompt file path.
     limit:
         Maximum number of requests to send. ``None`` uses ``MAX_MESSAGES``.
+    progress_callback:
+        Optional callable invoked as ``callback(stage, index, row)`` before
+        (``stage='start'``) and after (``stage='done'``) each reviewed row.
     """
     global _stop_review
     _stop_review = False
@@ -340,6 +344,11 @@ def review_file(
         # Skip rows already reviewed by AI regardless of verdict
         if tick == "✅" or ok.lower() == "ok" or ai:
             continue
+        if progress_callback:
+            try:
+                progress_callback("start", i, row)
+            except Exception:
+                logger.exception("progress_callback start failed")
         sent += 1
         try:
             verdict = ai_verdict(str(row[-2]), str(row[-1]), prompt)
@@ -370,6 +379,11 @@ def review_file(
             json.dumps(rows, ensure_ascii=False, indent=2),
             encoding="utf8",
         )
+        if progress_callback:
+            try:
+                progress_callback("done", i, row)
+            except Exception:
+                logger.exception("progress_callback done failed")
     logger.info("Approved %d / Remaining %d", approved, sent-approved)
     return approved, sent-approved
 
