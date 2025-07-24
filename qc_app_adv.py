@@ -509,6 +509,8 @@ class App(tk.Tk):
         if col == "#3":
             self._toggle_ok(item)
             return
+        if col in ("#7", "#8"):
+            self._show_text_popup(item, col)
         self._play_clip(item)
 
     def _play_clip(self, iid: str):
@@ -535,6 +537,18 @@ class App(tk.Tk):
     def _play_current_clip(self):
         if self._clip_item and self.v_audio.get():
             play_interval(self.v_audio.get(), self._clip_start, self._clip_end)
+
+    def _show_text_popup(self, iid: str, col: str) -> None:
+        """Display full text for Original or ASR in a popup window."""
+        col_name = "Original" if col == "#7" else "ASR"
+        text = self.tree.set(iid, col_name)
+        win = tk.Toplevel(self)
+        win.title(col_name)
+        st = scrolledtext.ScrolledText(win, width=80, height=10, wrap="word")
+        st.insert("1.0", text)
+        st.configure(state="disabled")
+        st.pack(padx=10, pady=10)
+        ttk.Button(win, text="Cerrar", command=win.destroy).pack(pady=(0, 10))
 
     def _toggle_ok(self, item: str) -> None:
         current = self.tree.set(item, "OK")
