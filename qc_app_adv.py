@@ -59,6 +59,7 @@ class App(tk.Tk):
         self.v_audio = tk.StringVar(self)
         self.v_json  = tk.StringVar(self)
         self.ai_one  = tk.BooleanVar(self, value=False)
+        self.use_wordcsv = tk.BooleanVar(self, value=False)
 
         # Estados internos
         self.q:   queue.Queue = queue.Queue()
@@ -98,6 +99,7 @@ class App(tk.Tk):
                         ("Media", "*.mp3;*.wav;*.m4a;*.flac;*.ogg;*.aac;*.mp4"))
 
         ttk.Button(top, text="Transcribir", command=self.transcribe).grid(row=2, column=3, padx=6)
+        ttk.Checkbutton(top, text="CSV palabras", variable=self.use_wordcsv).grid(row=2, column=6, padx=4)
         ttk.Button(top, text="Procesar", width=11, command=self.launch).grid(row=0, column=3, rowspan=2, padx=6)
 
         ttk.Label(top, text="JSON:").grid(row=3, column=0, sticky="e")
@@ -254,9 +256,12 @@ class App(tk.Tk):
 
     def _transcribe_worker(self) -> None:
         try:
-            from transcriber import transcribe_file
+            from transcriber import transcribe_file, transcribe_word_csv
 
-            out = transcribe_file(self.v_audio.get(), script_path=self.v_ref.get())
+            if self.use_wordcsv.get():
+                out = transcribe_word_csv(self.v_audio.get())
+            else:
+                out = transcribe_file(self.v_audio.get(), script_path=self.v_ref.get())
             self.q.put(("SET_ASR", str(out)))
             self.q.put(f"✔ Transcripción guardada en {out}")
         except BaseException as exc:  # noqa: BLE001 - catch SystemExit too
@@ -781,6 +786,14 @@ class App(tk.Tk):
 
             self.q.put("→ Alineando…")
             rows = build_rows(ref, hyp)
+            if self.use_wordcsv.get():
+                try:
+                    from utils.resync_python_v2 import load_words_csv, resync_rows
+                    csv_path = Path(self.v_audio.get()).with_suffix(".words.csv")
+                    csv_words, csv_tcs = load_words_csv(csv_path)
+                    resync_rows(rows, csv_words, csv_tcs)
+                except Exception as exc:
+                    self.q.put(f"Resync error: {exc}")
 
             out = Path(self.v_asr.get()).with_suffix(".qc.json")
             if out.exists():
