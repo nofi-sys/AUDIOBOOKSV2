@@ -33,14 +33,21 @@ from qc_utils import canonical_row
 # utilidades de audio ------------------------------------------------------------------
 # --------------------------------------------------------------------------------------
 
+PLAYBACK_PAD = 0.3
+
+
 def play_interval(path: str, start: float, end: float | None) -> None:
-    """Reproduce *path* desde *start* (seg) hasta *end* (seg) con pygame."""
+    """Reproduce *path* desde *start* (seg) hasta *end* (seg) con pygame.
+
+    Agrega un pequeño margen ``PLAYBACK_PAD`` para evitar cortes prematuros
+    cuando los códigos de tiempo no son precisos.
+    """
 
     pygame.mixer.init()
     pygame.mixer.music.load(path)
     pygame.mixer.music.play(start=start)
     if end is not None:
-        ms = int(max(0.0, end - start) * 1000)
+        ms = int(max(0.0, end - start + PLAYBACK_PAD) * 1000)
         tk._default_root.after(ms, pygame.mixer.music.stop)
 
 
