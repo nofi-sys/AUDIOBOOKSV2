@@ -62,3 +62,25 @@ def merge_qc_metadata(old_rows: List[List], new_rows: List[List]) -> List[List]:
                 base.extend(best[extra_idx:])
         merged.append(base)
     return merged
+
+
+
+def canonical_row(row: List) -> List:
+    """Return row in standard QC order.
+
+    The canonical format is either ``[ID, ✓, OK, AI, WER, tc, Original, ASR]``
+    or ``[ID, ✓, OK, AI, Score, WER, tc, Original, ASR]`` when a Score column is
+    present. Input rows may omit some of these columns. Missing fields are filled
+    with empty strings so that the output always has either 8 or 9 elements.
+    """
+    if len(row) >= 9:
+        return row[:9]
+    if len(row) == 8:
+        return row
+    if len(row) == 7:
+        # [ID, ✓, OK, WER, tc, Original, ASR]
+        return [row[0], row[1], row[2], "", row[3], row[4], row[5], row[6]]
+    if len(row) == 6:
+        # [ID, ✓, WER, tc, Original, ASR]
+        return [row[0], row[1], "", "", row[2], row[3], row[4], row[5]]
+    return row

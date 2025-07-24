@@ -485,16 +485,13 @@ class App(tk.Tk):
         try:
             rows = json.loads(Path(self.v_json.get()).read_text(encoding="utf8"))
             self.clear_table()
+            from qc_utils import canonical_row
+
             for r in rows:
-                if len(r) == 6:
-                    vals = [r[0], r[1], "", "", "", r[2], r[3], r[4], r[5]]
-                elif len(r) == 7:
-                    vals = [r[0], r[1], r[2], "", "", r[3], r[4], r[5], r[6]]
-                elif len(r) == 8:
-                    vals = [r[0], r[1], r[2], r[3], "", r[4], r[5], r[6], r[7]]
-                else:
-                    vals = r
+                vals = canonical_row(r)
                 vals[-2], vals[-1] = str(vals[-2]), str(vals[-1])
+                if len(vals) < 9:
+                    vals.insert(4, "")  # ensure Score column exists
                 self.tree.insert("", tk.END, values=vals)
             self._snapshot()
             self._log(f"✔ Cargado {self.v_json.get()}")
