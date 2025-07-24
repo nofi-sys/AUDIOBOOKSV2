@@ -7,6 +7,8 @@ import json
 import os
 import subprocess
 import tempfile
+import queue
+from time import monotonic
 from pathlib import Path
 
 import torch
@@ -161,12 +163,34 @@ def transcribe_wordlevel(
     return out
 
 
+def _probe_duration(path: str) -> float:
+    """Return audio duration in seconds using ffprobe if available."""
+    try:
+        out = subprocess.check_output(
+            [
+                "ffprobe",
+                "-v",
+                "error",
+                "-show_entries",
+                "format=duration",
+                "-of",
+                "default=nw=1:nk=1",
+                path,
+            ],
+            text=True,
+        ).strip()
+        return float(out)
+    except Exception:
+        return 0.0
+
+
 def transcribe_file(
     file_path: str | None = None,
     model_size: str | None = None,
     script_path: str | None = None,
     *,
     show_messagebox: bool = True,
+    progress_queue: "queue.Queue" | None = None,
 ) -> Path:
     """Transcribe ``file_path`` with Whisper and save ``.txt`` next to it.
 
@@ -202,9 +226,19 @@ def transcribe_file(
     )
 
     segments, _info = model.transcribe(audio_path, beam_size=5, hotwords=hotwords)
+    duration = _probe_duration(audio_path)
+    start = monotonic()
     text = ""
     for segment in tqdm(segments, desc="Transcribiendo", unit="segment"):
         text += segment.text
+        if progress_queue:
+            pct = int(100 * segment.end / duration) if duration else 0
+            pct = max(1, min(100, pct))
+            eta = 0.0
+            if duration and segment.end:
+                elapsed = monotonic() - start
+                eta = elapsed / segment.end * (duration - segment.end)
+            progress_queue.put(("PROGRESS", pct, eta))
 
     out_path = Path(base + ".txt")
     out_path.write_text(text, encoding="utf8")
@@ -214,6 +248,9 @@ def transcribe_file(
             os.remove(audio_path)
         except OSError:
             pass
+
+    if progress_queue:
+        progress_queue.put(("PROGRESS", 100, 0.0))
 
     if tk is not None and show_messagebox:
         messagebox.showinfo(
@@ -228,6 +265,7 @@ def transcribe_word_csv(
     test_mode: bool = False,
     use_vad: bool = True,
     show_messagebox: bool = True,
+    progress_queue: "queue.Queue" | None = None,
 ) -> Path:
     """Transcribe ``file_path`` saving words CSV and plain text."""
 
@@ -240,7 +278,9 @@ def transcribe_word_csv(
 
     from utils.word_timed_transcriber_2 import transcribe_audio, write_csv
 
-    words = transcribe_audio(Path(audio_path), test_mode=test_mode, use_vad=use_vad)
+    words = transcribe_audio(
+        Path(audio_path), test_mode=test_mode, use_vad=use_vad, q=progress_queue
+    )
 
     csv_path = Path(base + ".words.csv")
     write_csv(csv_path, words)
@@ -254,6 +294,9 @@ def transcribe_word_csv(
             os.remove(audio_path)
         except OSError:
             pass
+
+    if progress_queue:
+        progress_queue.put(("PROGRESS", 100, 0.0))
 
     if tk is not None and show_messagebox:
         messagebox.showinfo(
