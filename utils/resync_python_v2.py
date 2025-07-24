@@ -167,10 +167,14 @@ def resync_rows(rows: List[List], csv_words: List[str], csv_tcs: List[float],
         else:
             last_tc=row_tc[i]
 
-    # h) escribir tc en JSON (col 5)  / progress
-    for i,row in enumerate(rows):
-        row[5]=f"{row_tc[i]:.2f}"
-        if i%10==0: progress_cb(i/len(rows))
+    # h) escribir tc en la columna adecuada  / progress
+    tc_idx = {6: 3, 7: 4, 8: 5}.get(len(rows[0]), len(rows[0]) - 1)
+    for i, row in enumerate(rows):
+        if len(row) <= tc_idx:
+            row.extend([""] * (tc_idx - len(row) + 1))
+        row[tc_idx] = f"{row_tc[i]:.2f}"
+        if i % 10 == 0:
+            progress_cb(i / len(rows))
 
 ###########################################################################################
 # ▸ 6. GUI  (sin cambios visuales)
