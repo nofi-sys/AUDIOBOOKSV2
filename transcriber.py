@@ -222,6 +222,47 @@ def transcribe_file(
     return out_path
 
 
+def transcribe_word_csv(
+    file_path: str | None = None,
+    *,
+    test_mode: bool = False,
+    use_vad: bool = True,
+    show_messagebox: bool = True,
+) -> Path:
+    """Transcribe ``file_path`` saving words CSV and plain text."""
+
+    if not file_path:
+        file_path = _select_file()
+        if not file_path:
+            raise SystemExit("No file selected")
+
+    audio_path, base = _extract_audio(file_path)
+
+    from utils.word_timed_transcriber_2 import transcribe_audio, write_csv
+
+    words = transcribe_audio(Path(audio_path), test_mode=test_mode, use_vad=use_vad)
+
+    csv_path = Path(base + ".words.csv")
+    write_csv(csv_path, words)
+
+    text = " ".join(w for _t, w in words)
+    txt_path = Path(base + ".txt")
+    txt_path.write_text(text, encoding="utf8")
+
+    if audio_path != file_path:
+        try:
+            os.remove(audio_path)
+        except OSError:
+            pass
+
+    if tk is not None and show_messagebox:
+        messagebox.showinfo(
+            title="Transcripción finalizada", message=f"Guardado en:\n{txt_path}"
+        )
+
+    return txt_path
+
+
 def build_rows_wordlevel(ref: str, words: list[dict]) -> list[list]:
     """Build QC rows using ``words`` from :func:`transcribe_wordlevel`."""
 
@@ -249,6 +290,11 @@ def main(argv: list[str] | None = None) -> None:
         help="Output QC JSON using word level alignment",
     )
     parser.add_argument(
+        "--word-align-v2",
+        action="store_true",
+        help="Use word_timed_transcriber_2 and improved resync",
+    )
+    parser.add_argument(
         "--resync-csv",
         metavar="CSV",
         help="Update an existing QC JSON using a word timed CSV",
@@ -257,9 +303,11 @@ def main(argv: list[str] | None = None) -> None:
     if args.resync_csv:
         if not args.input:
             parser.error("--resync-csv requires a QC JSON path")
-        from utils.resync import resync_file
+        from utils.resync_python_v2 import load_words_csv, resync_rows
 
-        rows = resync_file(args.input, args.resync_csv)
+        rows = json.loads(Path(args.input).read_text(encoding="utf8"))
+        csv_words, csv_tcs = load_words_csv(Path(args.resync_csv))
+        resync_rows(rows, csv_words, csv_tcs)
         base = Path(args.input).with_suffix("")
         out = base.with_suffix(".resync.json")
         out.write_text(json.dumps(rows, ensure_ascii=False, indent=2), encoding="utf8")
@@ -282,6 +330,22 @@ def main(argv: list[str] | None = None) -> None:
         out.write_text(json.dumps(rows, ensure_ascii=False, indent=2), encoding="utf8")
         print(out)
 
+    elif args.word_align_v2:
+        if not args.script:
+            parser.error("--word-align-v2 requires --script")
+        txt = transcribe_word_csv(args.input)
+        ref = read_script(args.script)
+        hyp = Path(txt).read_text(encoding="utf8", errors="ignore")
+        rows = build_rows(ref, hyp)
+        from utils.resync_python_v2 import load_words_csv, resync_rows
+
+        csv_path = Path(args.input).with_suffix(".words.csv")
+        csv_words, csv_tcs = load_words_csv(csv_path)
+        resync_rows(rows, csv_words, csv_tcs)
+        base = Path(args.input).with_suffix("")
+        out = base.with_suffix(".wordv2.qc.json")
+        out.write_text(json.dumps(rows, ensure_ascii=False, indent=2), encoding="utf8")
+        print(out)
 
     else:
         transcribe_file(args.input, args.model, args.script)

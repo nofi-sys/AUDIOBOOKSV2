@@ -168,13 +168,22 @@ def resync_rows(rows: List[List], csv_words: List[str], csv_tcs: List[float],
             last_tc=row_tc[i]
 
     # h) escribir tc en la columna adecuada  / progress
-    tc_idx = {6: 3, 7: 4, 8: 5}.get(len(rows[0]), len(rows[0]) - 1)
+    tc_idx = 5 if len(rows[0]) > 5 else len(rows[0])
     for i, row in enumerate(rows):
         if len(row) <= tc_idx:
             row.extend([""] * (tc_idx - len(row) + 1))
         row[tc_idx] = f"{row_tc[i]:.2f}"
         if i % 10 == 0:
             progress_cb(i / len(rows))
+
+
+def resync_file(json_path: str | Path, csv_path: str | Path) -> List[List]:
+    """Return rows from ``json_path`` with updated ``tc`` using ``csv_path``."""
+
+    rows = json.loads(Path(json_path).read_text(encoding="utf8"))
+    csv_words, csv_tcs = load_words_csv(Path(csv_path))
+    resync_rows(rows, csv_words, csv_tcs)
+    return rows
 
 ###########################################################################################
 # ▸ 6. GUI  (sin cambios visuales)
