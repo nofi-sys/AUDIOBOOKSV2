@@ -481,8 +481,6 @@ class App(tk.Tk):
         if col == "#3":
             self._toggle_ok(item)
             return
-        if col in ("#7", "#8"):
-            self._show_text_popup(item, col)
         self._play_clip(item)
 
     def _play_clip(self, iid: str):
@@ -494,6 +492,7 @@ class App(tk.Tk):
             start = float(self.tree.set(iid, "tc"))
         except ValueError:
             return
+        self._show_text_popup(iid, "#7")
         # siguiente
         children = list(self.tree.get_children())
         idx = children.index(iid)
