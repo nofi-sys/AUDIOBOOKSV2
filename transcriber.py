@@ -15,6 +15,7 @@ import torch
 
 from text_utils import read_script, extract_word_list
 from alignment import build_rows
+from qc_utils import canonical_row
 
 try:
     from faster_whisper import WhisperModel
@@ -347,8 +348,10 @@ def main(argv: list[str] | None = None) -> None:
         if not args.input:
             parser.error("--resync-csv requires a QC JSON path")
         from utils.resync_python_v2 import load_words_csv, resync_rows
+        from qc_utils import canonical_row
 
-        rows = json.loads(Path(args.input).read_text(encoding="utf8"))
+        raw_rows = json.loads(Path(args.input).read_text(encoding="utf8"))
+        rows = [canonical_row(r) for r in raw_rows]
         csv_words, csv_tcs = load_words_csv(Path(args.resync_csv))
         resync_rows(rows, csv_words, csv_tcs)
         base = Path(args.input).with_suffix("")
@@ -379,7 +382,7 @@ def main(argv: list[str] | None = None) -> None:
         txt = transcribe_word_csv(args.input)
         ref = read_script(args.script)
         hyp = Path(txt).read_text(encoding="utf8", errors="ignore")
-        rows = build_rows(ref, hyp)
+        rows = [canonical_row(r) for r in build_rows(ref, hyp)]
         from utils.resync_python_v2 import load_words_csv, resync_rows
 
         csv_path = Path(args.input).with_suffix(".words.csv")

@@ -25,6 +25,7 @@ from utils.gui_errors import show_error
 
 from alignment import build_rows
 from text_utils import read_script
+from qc_utils import canonical_row
 
 # --------------------------------------------------------------------------------------
 # utilidades de audio ------------------------------------------------------------------
@@ -712,7 +713,7 @@ class App(tk.Tk):
             # ═══ FIN DEBUG ═══
 
             self.q.put("→ Alineando…")
-            rows = build_rows(ref, hyp)
+            rows = [canonical_row(r) for r in build_rows(ref, hyp)]
             if self.use_wordcsv.get():
                 try:
                     from utils.resync_python_v2 import load_words_csv, resync_rows
