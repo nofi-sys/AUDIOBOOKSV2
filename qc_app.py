@@ -34,6 +34,30 @@ from qc_utils import canonical_row
 PLAYBACK_PAD = 0.3
 
 
+def _format_tc(val: str | float) -> str:
+    """Return ``val`` formatted as ``HH:MM:SS.d`` with one decimal."""
+    try:
+        t = float(val)
+    except (TypeError, ValueError):
+        return str(val)
+    h = int(t // 3600)
+    m = int((t % 3600) // 60)
+    s = t % 60
+    return f"{h:02d}:{m:02d}:{s:04.1f}"
+
+
+def _parse_tc(text: str) -> str:
+    """Parse ``text`` formatted with ``_format_tc`` back to seconds string."""
+    if ":" in text:
+        try:
+            h, m, s = text.split(":")
+            total = int(h) * 3600 + int(m) * 60 + float(s)
+            return str(round(total, 2))
+        except Exception:
+            pass
+    return text
+
+
 def play_interval(path: str, start: float, end: float | None) -> None:
     """Reproduce *path* desde *start* (seg) hasta *end* (seg) con pygame.
 
@@ -82,6 +106,11 @@ class App(tk.Tk):
         self._clip_item: str | None = None
         self._clip_start = 0.0
         self._clip_end: float | None = None
+
+        self.marker_path: Path | None = None
+
+        self.pos_scale: tk.Scale | None = None
+        self.pos_label: ttk.Label | None = None
 
         self._build_ui()
         self.after(250, self._poll)
@@ -155,6 +184,7 @@ class App(tk.Tk):
         self.tree.bind("<Button-1>", self._cell_click)
         self.tree.bind("<Button-3>", self._popup_menu)
         self.tree.bind("<Double-1>", self._handle_double)
+        self.tree.bind("<<TreeviewSelect>>", self._update_position)
 
         style = ttk.Style(self)
         style.configure("Treeview", rowheight=45)
@@ -180,9 +210,24 @@ class App(tk.Tk):
             self.tree.heading(c, text=c)
             self.tree.column(c, width=w, anchor="w")
         self.tree.pack(fill="both", expand=True, side="left")
+
         sb = ttk.Scrollbar(table_frame, orient="vertical", command=self.tree.yview)
         self.tree.configure(yscrollcommand=sb.set)
-        sb.pack(side="right", fill="y")
+        sb.pack(side="left", fill="y")
+
+        pos_frame = ttk.Frame(table_frame)
+        pos_frame.pack(side="right", fill="y", padx=(4, 0))
+        self.pos_label = ttk.Label(pos_frame, text="0/0")
+        self.pos_label.pack()
+        self.pos_scale = tk.Scale(
+            pos_frame,
+            from_=1,
+            to=1,
+            orient="vertical",
+            showvalue=False,
+            command=self._on_pos_change,
+        )
+        self.pos_scale.pack(fill="y")
 
         self.tree.tag_configure("sel_cell", background="#d0e0ff")
         self.tree.tag_configure("merged", background="#f5f5f5")
@@ -200,6 +245,7 @@ class App(tk.Tk):
         ttk.Button(bar, text="→", command=self._next_bad_row).pack(side="left", padx=4)
         ttk.Button(bar, text="OK", command=self._clip_ok).pack(side="left", padx=4)
         ttk.Button(bar, text="mal", command=self._clip_bad).pack(side="left", padx=4)
+        ttk.Button(bar, text="Marcar", command=self.set_marker).pack(side="left", padx=4)
 
     # ---------------------------------------------------------------------------------
     # navegación de archivos ----------------------------------------------------------
@@ -212,6 +258,7 @@ class App(tk.Tk):
     def clear_table(self) -> None:
         self.tree.delete(*self.tree.get_children())
         self.ok_rows.clear()
+        self._update_scale_range()
 
     def save_json(self) -> None:
         if not self.v_json.get():
@@ -224,6 +271,8 @@ class App(tk.Tk):
             self.v_json.set(p)
         try:
             rows = [list(self.tree.item(i)["values"]) for i in self.tree.get_children()]
+            for r in rows:
+                r[5] = _parse_tc(str(r[5]))
             Path(self.v_json.get()).write_text(
                 json.dumps(rows, ensure_ascii=False, indent=2), encoding="utf8"
             )
@@ -288,7 +337,10 @@ class App(tk.Tk):
 
         from qc_utils import canonical_row
 
-        return canonical_row(r)
+        row = canonical_row(r)
+        if len(row) > 5:
+            row[5] = _format_tc(row[5])
+        return row
 
     # ───────────────────────────────── ventana de progreso ─────────────────────────
     def _show_progress(self, text: str = "Procesando…", *, determinate: bool = False) -> None:
@@ -472,8 +524,9 @@ class App(tk.Tk):
                 # Treeview no admite números; asegúrate de que llegan como str
                 vals[6], vals[7] = str(vals[6]), str(vals[7])
                 self.tree.insert("", tk.END, values=vals)
-
             self._snapshot()
+            self._update_scale_range()
+            self._load_marker()
             self._log(f"✔ Cargado {self.v_json.get()}")
         except Exception as e:
             show_error("Error", e)
@@ -496,7 +549,7 @@ class App(tk.Tk):
             messagebox.showwarning("Falta audio", "Selecciona archivo de audio")
             return
         try:
-            start = float(self.tree.set(iid, "tc"))
+            start = float(_parse_tc(self.tree.set(iid, "tc")))
         except ValueError:
             return
         self._show_text_popup(iid, "#7")
@@ -506,7 +559,7 @@ class App(tk.Tk):
         end = None
         if idx + 1 < len(children):
             try:
-                end = float(self.tree.set(children[idx + 1], "tc"))
+                end = float(_parse_tc(self.tree.set(children[idx + 1], "tc")))
             except ValueError:
                 pass
         self._clip_item, self._clip_start, self._clip_end = iid, start, end
@@ -695,6 +748,71 @@ class App(tk.Tk):
                 self.tree.item(iid, tags=tuple(tags))
         self.save_json()
 
+    # ------------------------------------------------------------- position bar
+    def _on_pos_change(self, value: str) -> None:
+        if not self.tree.get_children():
+            return
+        idx = int(float(value)) - 1
+        children = self.tree.get_children()
+        idx = max(0, min(len(children) - 1, idx))
+        iid = children[idx]
+        self.tree.see(iid)
+        self.tree.selection_set(iid)
+        self._update_position(update_scale=False)
+
+    def _update_position(self, event: tk.Event | None = None, *, update_scale: bool = True) -> None:
+        if not self.tree.get_children():
+            if self.pos_label:
+                self.pos_label.config(text="0/0")
+            return
+        sel = self.tree.selection()
+        if not sel:
+            return
+        idx = self.tree.index(sel[0]) + 1
+        total = len(self.tree.get_children())
+        if self.pos_label:
+            self.pos_label.config(text=f"{idx}/{total}")
+        if update_scale and self.pos_scale:
+            self.pos_scale.configure(to=total)
+            self.pos_scale.set(idx)
+
+    def _update_scale_range(self) -> None:
+        total = len(self.tree.get_children())
+        if self.pos_scale:
+            self.pos_scale.configure(to=max(total, 1))
+        if self.pos_label:
+            sel = self.tree.selection()
+            idx = self.tree.index(sel[0]) + 1 if sel else 0
+            self.pos_label.config(text=f"{idx}/{total}")
+
+    # ------------------------------------------------------------- marker utils
+    def set_marker(self) -> None:
+        if not self.v_json.get():
+            return
+        sel = self.tree.selection()
+        if not sel:
+            return
+        idx = self.tree.index(sel[0])
+        self.marker_path = Path(self.v_json.get()).with_suffix(".marker")
+        self.marker_path.write_text(str(idx), encoding="utf8")
+        self._log(f"✔ Marcador en fila {idx + 1}")
+
+    def _load_marker(self) -> None:
+        if not self.v_json.get():
+            return
+        self.marker_path = Path(self.v_json.get()).with_suffix(".marker")
+        if self.marker_path.exists():
+            try:
+                idx = int(self.marker_path.read_text())
+                children = self.tree.get_children()
+                if 0 <= idx < len(children):
+                    iid = children[idx]
+                    self.tree.selection_set(iid)
+                    self.tree.see(iid)
+                    self._update_position()
+            except Exception:
+                pass
+
     def _merge_selected_rows(self) -> None:
         sel = list(self.tree.selection())
         if len(sel) < 2:
@@ -729,7 +847,7 @@ class App(tk.Tk):
         start_idx = self.tree.index(first)
         for new_id, iid in enumerate(self.tree.get_children()[start_idx:], start_idx):
             self.tree.set(iid, "ID", new_id)
-
+        self._update_scale_range()
         self.save_json()
 
     def _unmerge_row(self) -> None:
@@ -748,6 +866,7 @@ class App(tk.Tk):
             idx += 1
         for new_id, iid in enumerate(self.tree.get_children()):
             self.tree.set(iid, "ID", new_id)
+        self._update_scale_range()
         self.save_json()
 
     # ---------------------------------------------------------------------------------
@@ -822,6 +941,7 @@ class App(tk.Tk):
                         vals = self._row_from_alignment(r)
                         vals[6], vals[7] = str(vals[6]), str(vals[7])
                         self.tree.insert("", tk.END, values=vals)
+                    self._update_scale_range()
                     self._close_progress()
                     self._snapshot()
 
@@ -884,6 +1004,7 @@ class App(tk.Tk):
             vals = self._row_from_alignment(r)
             vals[6], vals[7] = str(vals[6]), str(vals[7])
             self.tree.insert("", tk.END, values=vals)
+        self._update_scale_range()
 
     def undo(self, event: tk.Event | None = None) -> None:
         if not self.undo_stack:
