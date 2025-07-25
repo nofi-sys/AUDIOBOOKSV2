@@ -105,7 +105,7 @@ class App(tk.Tk):
 
         # Entradas de archivos -------------------------------------------------------
         self._lbl_entry(top, "Guion:", self.v_ref, 0, ("PDF/TXT", "*.pdf;*.txt"))
-        self._lbl_entry(top, "TXT ASR:", self.v_asr, 1, ("TXT", "*.txt"))
+        self._lbl_entry(top, "TXT ASR:", self.v_asr, 1, ("TXT/CSV", "*.txt;*.csv"))
         self._lbl_entry(top, "Audio:", self.v_audio, 2,
                         ("Media", "*.mp3;*.wav;*.m4a;*.flac;*.ogg;*.aac;*.mp4"))
 
@@ -874,10 +874,10 @@ class App(tk.Tk):
 
             self.q.put("→ Alineando…")
             rows = [canonical_row(r) for r in build_rows(ref, hyp)]
-            if self.use_wordcsv.get():
+            csv_path = Path(self.v_audio.get()).with_suffix(".words.csv")
+            if self.use_wordcsv.get() or csv_path.exists():
                 try:
                     from utils.resync_python_v2 import load_words_csv, resync_rows
-                    csv_path = Path(self.v_audio.get()).with_suffix(".words.csv")
                     csv_words, csv_tcs = load_words_csv(csv_path)
                     resync_rows(rows, csv_words, csv_tcs)
                 except Exception as exc:
