@@ -26,6 +26,7 @@ from utils.gui_errors import show_error
 from alignment import build_rows
 from text_utils import read_script
 from qc_utils import canonical_row
+from audacity_session import AudacityLabelSession
 
 # --------------------------------------------------------------------------------------
 # utilidades de audio ------------------------------------------------------------------
@@ -108,6 +109,7 @@ class App(tk.Tk):
         self._clip_end: float | None = None
 
         self.marker_path: Path | None = None
+        self.audio_session: AudacityLabelSession | None = None
 
         self.pos_scale: tk.Scale | None = None
         self.pos_label: ttk.Label | None = None
@@ -579,7 +581,15 @@ class App(tk.Tk):
         st.insert("1.0", text)
         st.configure(state="disabled")
         st.pack(padx=10, pady=10)
-        ttk.Button(win, text="Cerrar", command=win.destroy).pack(pady=(0, 10))
+        btns = ttk.Frame(win)
+        btns.pack(pady=(0, 10))
+        ttk.Button(btns, text="OK", command=lambda: self._popup_mark_ok(iid, win)).pack(side="left", padx=4)
+        ttk.Button(
+            btns,
+            text="Marcar",
+            command=lambda: self.add_audacity_marker(self._clip_start),
+        ).pack(side="left", padx=4)
+        ttk.Button(btns, text="Cerrar", command=win.destroy).pack(side="left", padx=4)
 
     def _toggle_ok(self, item: str) -> None:
         current = self.tree.set(item, "OK")
@@ -594,10 +604,20 @@ class App(tk.Tk):
         else:
             self.ok_rows.discard(line_id)
 
+    def _popup_mark_ok(self, iid: str, win: tk.Toplevel) -> None:
+        self.tree.set(iid, "OK", "OK")
+        try:
+            line_id = int(self.tree.set(iid, "ID"))
+            self.ok_rows.add(line_id)
+        except Exception:
+            pass
+        win.destroy()
+
     def _clip_ok(self):
         if self._clip_item:
             self.tree.set(self._clip_item, "AI", "ok")
         self._hide_clip()
+
     def _clip_bad(self):
         if self._clip_item:
             self.tree.set(self._clip_item, "AI", "mal")
@@ -794,6 +814,25 @@ class App(tk.Tk):
         self.marker_path = Path(self.v_json.get()).with_suffix(".marker")
         self.marker_path.write_text(str(idx), encoding="utf8")
         self._log(f"✔ Marcador en fila {idx + 1}")
+
+    def _get_audacity_session(self) -> AudacityLabelSession | None:
+        if not self.v_audio.get():
+            return None
+        if self.audio_session and self.audio_session.audio_path == Path(self.v_audio.get()):
+            return self.audio_session
+        try:
+            self.audio_session = AudacityLabelSession(self.v_audio.get())
+        except Exception as exc:
+            self._log(str(exc))
+            self.audio_session = None
+        return self.audio_session
+
+    def add_audacity_marker(self, time_sec: float) -> None:
+        session = self._get_audacity_session()
+        if not session:
+            return
+        session.add_marker(time_sec)
+        self._log(f"✔ Marker Audacity {time_sec:.2f}s")
 
     def _load_marker(self) -> None:
         if not self.v_json.get():
