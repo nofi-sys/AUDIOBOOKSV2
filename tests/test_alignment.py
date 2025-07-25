@@ -35,3 +35,11 @@ def test_build_rows_wordlevel_basic():
     rows = build_rows_wordlevel(ref, json.dumps(data))
     assert rows[0][1] == "✅"
     assert rows[0][3] == 1.0
+
+
+def test_build_rows_detect_repetition():
+    ref = "Hola mundo"
+    hyp = "Hola mundo hola mundo hola mundo"
+    rows = build_rows(ref, hyp)
+    assert "||" in rows[0][5]
+    assert rows[0][1] == "✅"

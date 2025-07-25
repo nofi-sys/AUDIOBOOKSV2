@@ -222,7 +222,78 @@ def build_rows(ref: str, hyp: str) -> List[List]:
         rows.append([line_id, flag, round(wer_val * 100, 1), dur, orig_line, asr_line])
         line_id += 1
 
-    return refine_segments(rows)
+    return _apply_repetitions(refine_segments(rows))
+
+
+def _find_takes(
+    ref_tokens: List[str],
+    asr_tokens: List[str],
+    max_extra: int = 2,
+    thr: float = 0.3,
+) -> List[List[str]]:
+    """Return sublists in ``asr_tokens`` that match ``ref_tokens``.
+
+    The search allows a window of ``max_extra`` words around the reference
+    length and accepts matches with normalized Levenshtein distance below
+    ``thr``.
+    """
+
+    takes: List[List[str]] = []
+    n = len(ref_tokens)
+    i = 0
+    while i < len(asr_tokens):
+        best_j = None
+        best_wer = 1.0
+        for j in range(i + n - max_extra, i + n + max_extra + 1):
+            if j <= i or j > len(asr_tokens):
+                continue
+            window = asr_tokens[i:j]
+            wer = Levenshtein.normalized_distance(ref_tokens, window)
+            if wer < best_wer:
+                best_wer = wer
+                best_j = j
+        if best_j is not None and best_wer <= thr:
+            takes.append(asr_tokens[i:best_j])
+            i = best_j
+        else:
+            i += 1
+    return takes
+
+
+def _apply_repetitions(rows: List[List]) -> List[List]:
+    """Detect repeated takes in ASR lines and adjust WER using the best one."""
+
+    updated = []
+    for row in rows:
+        orig_line = row[4]
+        asr_line = row[5]
+        ref_t = normalize(orig_line, strip_punct=False).split()
+        hyp_t = normalize(asr_line, strip_punct=False).split()
+        takes = _find_takes(ref_t, hyp_t)
+        if len(takes) <= 1:
+            updated.append(row)
+            continue
+
+        take_strs = [" ".join(t) for t in takes]
+        best = min(takes, key=lambda t: Levenshtein.normalized_distance(ref_t, t))
+
+        row[5] = " || ".join(take_strs)
+        wer_val = Levenshtein.normalized_distance(ref_t, best)
+        base_ref = [t.strip(".,;!") for t in ref_t]
+        base_hyp = [t.strip(".,;!") for t in best]
+        base_wer = Levenshtein.normalized_distance(base_ref, base_hyp)
+        if base_wer <= 0.05:
+            flag = "✅"
+        else:
+            threshold = 0.20 if len(ref_t) < 5 else WARN_WER
+            flag = "✅" if wer_val <= threshold else ("⚠️" if wer_val <= 0.20 else "❌")
+
+        row[1] = flag
+        row[2] = round(wer_val * 100, 1)
+        row[3] = round(len(best) / 3.0, 2)
+        updated.append(row)
+
+    return updated
 
 
 def refine_segments(rows: List[List], max_shift: int = 2) -> List[List]:
@@ -286,7 +357,7 @@ def refine_segments(rows: List[List], max_shift: int = 2) -> List[List]:
         r[1] = flag
         r[2] = round(wer_val * 100, 1)
         r[3] = round(len(hyp_tokens) / 3.0, 2)
-    return rows
+    return _apply_repetitions(rows)
 
 
 def build_rows_wordlevel(ref: str, asr_word_json: str) -> List[List]:
@@ -369,4 +440,4 @@ def build_rows_wordlevel(ref: str, asr_word_json: str) -> List[List]:
         rows.append([line_id, flag, round(wer_val * 100, 1), dur, orig_line, asr_line])
         line_id += 1
 
-    return rows
+    return _apply_repetitions(rows)
