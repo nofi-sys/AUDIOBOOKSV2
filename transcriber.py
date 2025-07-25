@@ -15,7 +15,6 @@ import torch
 
 from text_utils import read_script, extract_word_list
 from alignment import build_rows
-from qc_utils import canonical_row
 
 try:
     from faster_whisper import WhisperModel
@@ -265,14 +264,10 @@ def transcribe_word_csv(
     *,
     test_mode: bool = False,
     use_vad: bool = True,
-    script_path: str | None = None,
     show_messagebox: bool = True,
     progress_queue: "queue.Queue" | None = None,
 ) -> Path:
-    """Transcribe ``file_path`` saving words CSV and plain text.
-
-    If ``script_path`` is provided it will guide Whisper using the script text.
-    """
+    """Transcribe ``file_path`` saving words CSV and plain text."""
 
     if not file_path:
         file_path = _select_file()
@@ -287,7 +282,6 @@ def transcribe_word_csv(
         Path(audio_path),
         test_mode=test_mode,
         use_vad=use_vad,
-        script_path=script_path,
         q=progress_queue,
     )
 
@@ -356,9 +350,8 @@ def main(argv: list[str] | None = None) -> None:
         if not args.input:
             parser.error("--resync-csv requires a QC JSON path")
         from utils.resync_python_v2 import load_words_csv, resync_rows
-        from qc_utils import canonical_row
-
         raw_rows = json.loads(Path(args.input).read_text(encoding="utf8"))
+        from qc_utils import canonical_row
         rows = [canonical_row(r) for r in raw_rows]
         csv_words, csv_tcs = load_words_csv(Path(args.resync_csv))
         resync_rows(rows, csv_words, csv_tcs)
@@ -390,8 +383,8 @@ def main(argv: list[str] | None = None) -> None:
         txt = transcribe_word_csv(args.input)
         ref = read_script(args.script)
         hyp = Path(txt).read_text(encoding="utf8", errors="ignore")
+        from qc_utils import canonical_row
         rows = [canonical_row(r) for r in build_rows(ref, hyp)]
-        from utils.resync_python_v2 import load_words_csv, resync_rows
 
         csv_path = Path(args.input).with_suffix(".words.csv")
         csv_words, csv_tcs = load_words_csv(csv_path)

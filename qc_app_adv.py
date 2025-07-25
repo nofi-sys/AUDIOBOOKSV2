@@ -276,10 +276,7 @@ class App(tk.Tk):
             from transcriber import transcribe_file, transcribe_word_csv
 
             if self.use_wordcsv.get():
-                out = transcribe_word_csv(
-                    self.v_audio.get(),
-                    script_path=self.v_ref.get(),
-                )
+                out = transcribe_word_csv(self.v_audio.get())
             else:
                 out = transcribe_file(self.v_audio.get(), script_path=self.v_ref.get())
             self.q.put(("SET_ASR", str(out)))

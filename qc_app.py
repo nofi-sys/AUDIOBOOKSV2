@@ -316,9 +316,7 @@ class App(tk.Tk):
 
             if self.use_wordcsv.get():
                 out = transcribe_word_csv(
-                    self.v_audio.get(),
-                    script_path=self.v_ref.get(),
-                    progress_queue=self.q,
+                    self.v_audio.get(), progress_queue=self.q
                 )
             else:
                 out = transcribe_file(

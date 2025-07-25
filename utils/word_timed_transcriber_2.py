@@ -1,6 +1,6 @@
 # word_timed_transcriber.py  (versión 2025-06-19)
 from __future__ import annotations
-import argparse, csv, os, queue, subprocess, sys, tempfile, unicodedata
+import argparse, csv, os, queue, subprocess, sys, tempfile
 from pathlib import Path
 from threading import Thread
 from time import monotonic
@@ -60,9 +60,6 @@ def transcribe_audio(
     path: Path,
     test_mode: bool = False,
     use_vad: bool = True,
-    *,
-    script_path: str | None = None,
-    model_name: str = "large-v3",
     q: "queue.Queue[str]" | None = None,
 ):
     tmp: Path | None = None
@@ -74,34 +71,13 @@ def transcribe_audio(
 
     duration = _probe_duration(src)
 
-    hotwords = None
-    initial_prompt = None
-    if script_path:
-        try:
-            from text_utils import read_script, extract_word_list
-
-            script_text = read_script(script_path)
-            tokens = script_text.split()
-            initial_prompt = " ".join(tokens[:200]) if tokens else None
-            words = extract_word_list(script_text)
-            if words:
-                hotwords = " ".join(words)
-        except Exception:
-            pass
-
-    device = "cuda" if torch.cuda.is_available() else "cpu"
-    compute_type = "int8_float16" if device == "cuda" else "int8"
-    model = WhisperModel(model_name, device=device, compute_type=compute_type)
+    model = WhisperModel("base", device="auto", compute_type="int8")
 
     seg_gen, _info = model.transcribe(
         str(src),
         word_timestamps=True,
-        beam_size=7,
+        beam_size=1,
         vad_filter=use_vad,
-        vad_parameters=dict(min_silence_duration_ms=300),
-        temperature=0.0,
-        hotwords=hotwords,
-        initial_prompt=initial_prompt,
     )
 
     words: list[tuple[float, str]] = []
