@@ -303,7 +303,8 @@ def transcribe_word_csv(
 
     if tk is not None and show_messagebox:
         messagebox.showinfo(
-            title="Transcripción finalizada", message=f"Guardado en:\n{txt_path}"
+            title="Transcripción finalizada",
+            message=f"Guardado en:\n{txt_path}\n{csv_path}",
         )
 
     return txt_path
