@@ -265,6 +265,7 @@ def transcribe_word_csv(
     *,
     test_mode: bool = False,
     use_vad: bool = True,
+    script_path: str | None = None,
     show_messagebox: bool = True,
     progress_queue: "queue.Queue" | None = None,
 ) -> Path:
@@ -280,7 +281,11 @@ def transcribe_word_csv(
     from utils.word_timed_transcriber_2 import transcribe_audio, write_csv
 
     words = transcribe_audio(
-        Path(audio_path), test_mode=test_mode, use_vad=use_vad, q=progress_queue
+        Path(audio_path),
+        test_mode=test_mode,
+        use_vad=use_vad,
+        script_path=script_path,
+        q=progress_queue,
     )
 
     csv_path = Path(base + ".words.csv")
@@ -379,7 +384,7 @@ def main(argv: list[str] | None = None) -> None:
     elif args.word_align_v2:
         if not args.script:
             parser.error("--word-align-v2 requires --script")
-        txt = transcribe_word_csv(args.input)
+        txt = transcribe_word_csv(args.input, script_path=args.script)
         ref = read_script(args.script)
         hyp = Path(txt).read_text(encoding="utf8", errors="ignore")
         rows = [canonical_row(r) for r in build_rows(ref, hyp)]

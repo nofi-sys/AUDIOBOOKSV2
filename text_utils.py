@@ -104,9 +104,6 @@ def normalize(text: str, strip_punct: bool = True) -> str:
 
 # text_utils.py  – reemplaza la función completa
 
-from pathlib import Path
-import pdfplumber
-
 
 def read_script(path: str) -> str:
     """Devuelve el texto de un PDF o TXT normalizado para alineamiento."""
@@ -256,11 +253,19 @@ def find_anchor_trigrams(
     return filtered
 
 
+COMMON_THRESHOLD = 0.05  # skip words appearing in >5% of the text
+
+
 def extract_word_list(text: str, max_words: int = 50) -> List[str]:
     """Return frequent non-stopwords from ``text`` for ASR prompting."""
 
     tokens = normalize(text).split()
     counts = Counter(t for t in tokens if t not in STOP and len(t) > 3)
+
+    if len(tokens) >= 100:
+        max_common = len(tokens) * COMMON_THRESHOLD
+        counts = Counter({w: c for w, c in counts.items() if c <= max_common})
+
     first_pos: Dict[str, int] = {}
     for i, tok in enumerate(tokens):
         if tok not in first_pos:
