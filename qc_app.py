@@ -146,7 +146,10 @@ class App(tk.Tk):
 
         # Tabla principal -----------------------------------------------------------
         self._build_table()
-        self._build_player_bar()
+        # Zona inferior con barra y log
+        self.bottom_frame = ttk.Frame(self)
+        self.bottom_frame.pack(side="bottom", fill="x")
+        self._build_player_bar(self.bottom_frame)
 
         # Menu contextual y atajos -------------------------------------------
         self.menu = tk.Menu(self, tearoff=0)
@@ -179,7 +182,7 @@ class App(tk.Tk):
         self.bind_all("<Control-Shift-Z>", self.redo)
 
         # Cuadro de log -------------------------------------------------------
-        self.log_box = scrolledtext.ScrolledText(self, height=5, state="disabled")
+        self.log_box = scrolledtext.ScrolledText(self.bottom_frame, height=5, state="disabled")
         self.log_box.pack(fill="x", padx=3, pady=2)
 
         # Eventos de tabla ----------------------------------------------------
@@ -239,8 +242,10 @@ class App(tk.Tk):
         self.tree.bind("<Double-1>", self._handle_double)
 
     # ------------------------------------------------------------- player bar -------
-    def _build_player_bar(self) -> None:
-        bar = ttk.Frame(self)
+    def _build_player_bar(self, parent: tk.Widget | None = None) -> None:
+        if parent is None:
+            parent = self
+        bar = ttk.Frame(parent)
         bar.pack(side="top", anchor="ne", padx=4, pady=4)
         ttk.Button(bar, text="▶", command=self._play_current_clip).pack(side="left", padx=4)
         ttk.Button(bar, text="←", command=self._prev_bad_row).pack(side="left", padx=4)
