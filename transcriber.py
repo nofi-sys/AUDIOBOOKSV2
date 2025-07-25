@@ -265,10 +265,14 @@ def transcribe_word_csv(
     *,
     test_mode: bool = False,
     use_vad: bool = True,
+    script_path: str | None = None,
     show_messagebox: bool = True,
     progress_queue: "queue.Queue" | None = None,
 ) -> Path:
-    """Transcribe ``file_path`` saving words CSV and plain text."""
+    """Transcribe ``file_path`` saving words CSV and plain text.
+
+    If ``script_path`` is provided it will guide Whisper using the script text.
+    """
 
     if not file_path:
         file_path = _select_file()
@@ -280,7 +284,11 @@ def transcribe_word_csv(
     from utils.word_timed_transcriber_2 import transcribe_audio, write_csv
 
     words = transcribe_audio(
-        Path(audio_path), test_mode=test_mode, use_vad=use_vad, q=progress_queue
+        Path(audio_path),
+        test_mode=test_mode,
+        use_vad=use_vad,
+        script_path=script_path,
+        q=progress_queue,
     )
 
     csv_path = Path(base + ".words.csv")

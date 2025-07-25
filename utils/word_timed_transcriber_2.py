@@ -7,6 +7,7 @@ from time import monotonic
 
 from tqdm.auto import tqdm
 from faster_whisper import WhisperModel
+import torch
 
 # ───────────────────── utilidades básicas ─────────────────────
 def have_ffmpeg() -> bool:
@@ -59,6 +60,9 @@ def transcribe_audio(
     path: Path,
     test_mode: bool = False,
     use_vad: bool = True,
+    *,
+    script_path: str | None = None,
+    model_name: str = "large-v3",
     q: "queue.Queue[str]" | None = None,
 ):
     tmp: Path | None = None
@@ -70,13 +74,34 @@ def transcribe_audio(
 
     duration = _probe_duration(src)
 
-    model = WhisperModel("base", device="auto", compute_type="int8")
+    hotwords = None
+    initial_prompt = None
+    if script_path:
+        try:
+            from text_utils import read_script, extract_word_list
+
+            script_text = read_script(script_path)
+            tokens = script_text.split()
+            initial_prompt = " ".join(tokens[:200]) if tokens else None
+            words = extract_word_list(script_text)
+            if words:
+                hotwords = " ".join(words)
+        except Exception:
+            pass
+
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    compute_type = "int8_float16" if device == "cuda" else "int8"
+    model = WhisperModel(model_name, device=device, compute_type=compute_type)
 
     seg_gen, _info = model.transcribe(
         str(src),
         word_timestamps=True,
-        beam_size=1,
+        beam_size=7,
         vad_filter=use_vad,
+        vad_parameters=dict(min_silence_duration_ms=300),
+        temperature=0.0,
+        hotwords=hotwords,
+        initial_prompt=initial_prompt,
     )
 
     words: list[tuple[float, str]] = []
