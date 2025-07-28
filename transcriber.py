@@ -15,6 +15,7 @@ import torch
 
 from text_utils import read_script, extract_word_list
 from alignment import build_rows
+import alignment
 
 try:
     from faster_whisper import WhisperModel
@@ -310,13 +311,6 @@ def transcribe_word_csv(
     return txt_path
 
 
-def build_rows_wordlevel(ref: str, words: list[dict]) -> list[list]:
-    """Build QC rows using ``words`` from :func:`transcribe_wordlevel`."""
-
-    text = " ".join(w.get("word", "") for w in words)
-    return build_rows(ref, text)
-
-
 def main(argv: list[str] | None = None) -> None:
     """CLI entry point."""
 
@@ -371,8 +365,8 @@ def main(argv: list[str] | None = None) -> None:
             detailed=True,
         )
         ref = read_script(args.script)
-        words = json.loads(Path(words_json).read_text(encoding="utf8"))
-        rows = build_rows_wordlevel(ref, words)
+        words_json_text = Path(words_json).read_text(encoding="utf8")
+        rows = alignment.build_rows_wordlevel(ref, words_json_text)
         base = Path(args.input).with_suffix("")
         out = base.with_suffix(".word.qc.json")
         out.write_text(json.dumps(rows, ensure_ascii=False, indent=2), encoding="utf8")
