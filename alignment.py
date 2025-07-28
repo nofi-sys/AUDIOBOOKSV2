@@ -230,25 +230,26 @@ def _find_takes(
     asr_tokens: List[str],
     max_extra: int = 2,
     thr: float = 0.3,
+    min_len: int = 2,
 ) -> List[List[str]]:
-    """Return sublists in ``asr_tokens`` that match ``ref_tokens``.
+    """Return sublists in ``asr_tokens`` that resemble ``ref_tokens``.
 
-    The search allows a window of ``max_extra`` words around the reference
-    length and accepts matches with normalized Levenshtein distance below
-    ``thr``.
+    The search grows a window from ``min_len`` up to ``len(ref_tokens)`` plus
+    ``max_extra`` words and accepts matches with normalized Levenshtein distance
+    below ``thr``. This allows detecting truncated or partially repeated takes.
     """
 
     takes: List[List[str]] = []
     n = len(ref_tokens)
     i = 0
     while i < len(asr_tokens):
-        best_j = None
+        best_j: int | None = None
         best_wer = 1.0
-        for j in range(i + n - max_extra, i + n + max_extra + 1):
-            if j <= i or j > len(asr_tokens):
-                continue
+        max_j = min(len(asr_tokens), i + n + max_extra)
+        for j in range(i + min_len, max_j + 1):
             window = asr_tokens[i:j]
-            wer = Levenshtein.normalized_distance(ref_tokens, window)
+            ref_slice = ref_tokens[: len(window)]
+            wer = Levenshtein.normalized_distance(ref_slice, window)
             if wer < best_wer:
                 best_wer = wer
                 best_j = j
@@ -269,7 +270,7 @@ def _apply_repetitions(rows: List[List]) -> List[List]:
         asr_line = row[5]
         ref_t = normalize(orig_line, strip_punct=False).split()
         hyp_t = normalize(asr_line, strip_punct=False).split()
-        takes = _find_takes(ref_t, hyp_t)
+        takes = _find_takes(ref_t, hyp_t, min_len=2)
         if len(takes) <= 1:
             updated.append(row)
             continue
