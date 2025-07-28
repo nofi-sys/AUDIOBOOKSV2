@@ -28,7 +28,6 @@ from text_utils import read_script
 from qc_utils import canonical_row
 from audacity_session import AudacityLabelSession
 
-from audio_video_editor import build_intervals
 # --------------------------------------------------------------------------------------
 # utilidades de audio ------------------------------------------------------------------
 # --------------------------------------------------------------------------------------
@@ -144,7 +143,6 @@ class App(tk.Tk):
         ttk.Button(top, text="AI Review (o3)", command=self.ai_review).grid(row=3, column=3, padx=6)
         ttk.Checkbutton(top, text="una fila", variable=self.ai_one).grid(row=3, column=4, padx=4)
         ttk.Button(top, text="Detener análisis", command=self.stop_ai_review).grid(row=3, column=5, padx=6)
-        ttk.Button(top, text="Crear EDL", command=self.create_edl).grid(row=3, column=6, padx=6)
 
         # Tabla principal -----------------------------------------------------------
         self._build_table()
@@ -1071,24 +1069,6 @@ class App(tk.Tk):
         self.undo_stack.append(current)
         self._restore(state)
         self.save_json()
-
-    def create_edl(self) -> None:
-        from tkinter import filedialog
-        if not self.v_ref.get():
-            messagebox.showerror("Error", "Selecciona un guion")
-            return
-        json_path = filedialog.askopenfilename(filetypes=[("JSON", "*.json")])
-        if not json_path:
-            return
-        try:
-            script_text = read_script(self.v_ref.get())
-            edl = build_intervals(script_text, json_path)
-            out = Path(json_path).with_suffix(".edl.json")
-            Path(out).write_text(json.dumps(edl, indent=2), encoding="utf8")
-            messagebox.showinfo("EDL", f"Guardado {out}")
-        except Exception as exc:
-            show_error("Error", exc)
-
 
 # --------------------------------------------------------------------------------------
 if __name__ == "__main__":
