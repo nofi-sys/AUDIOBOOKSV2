@@ -9,8 +9,8 @@ from pathlib import Path
 
 
 def _clean_text(text: str) -> str:
-    """Return ``text`` keeping only letters and spaces."""
-    cleaned = ''.join(c for c in text if c.isalpha() or c.isspace())
+    """Return ``text`` keeping only letters, digits and spaces."""
+    cleaned = "".join(c for c in text if c.isalnum() or c.isspace())
     return re.sub(r"\s+", " ", cleaned).strip()
 
 
