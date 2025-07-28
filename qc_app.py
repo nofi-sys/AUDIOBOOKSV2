@@ -23,8 +23,9 @@ from tkinter import filedialog, messagebox, scrolledtext, ttk
 
 from utils.gui_errors import show_error
 
-from alignment import build_rows
-from text_utils import read_script
+from alignment import build_rows, WARN_WER
+from text_utils import read_script, normalize
+from rapidfuzz.distance import Levenshtein
 from qc_utils import canonical_row
 from audacity_session import AudacityLabelSession
 
@@ -584,19 +585,39 @@ class App(tk.Tk):
         text = self.tree.set(iid, col_name)
         win = tk.Toplevel(self)
         win.title(col_name)
-        st = scrolledtext.ScrolledText(win, width=80, height=10, wrap="word")
-        st.insert("1.0", text)
-        st.configure(state="disabled")
-        st.pack(padx=10, pady=10)
-        btns = ttk.Frame(win)
-        btns.pack(pady=(0, 10))
-        ttk.Button(btns, text="OK", command=lambda: self._popup_mark_ok(iid, win)).pack(side="left", padx=4)
-        ttk.Button(
-            btns,
-            text="Marcar",
-            command=lambda: self.add_audacity_marker(self._clip_start),
-        ).pack(side="left", padx=4)
-        ttk.Button(btns, text="Cerrar", command=win.destroy).pack(side="left", padx=4)
+
+        takes = [t.strip() for t in text.split("||")]
+        if len(takes) > 1 and col_name == "ASR":
+            var = tk.IntVar(value=len(takes) - 1)
+            for idx, take in enumerate(takes):
+                rb = ttk.Radiobutton(win, text=take, variable=var, value=idx)
+                rb.pack(anchor="w", padx=10, pady=2)
+
+            btns = ttk.Frame(win)
+            btns.pack(pady=(0, 10))
+
+            def _apply():
+                chosen = takes[var.get()]
+                self.tree.set(iid, "ASR", chosen)
+                self._update_metrics(iid)
+                win.destroy()
+
+            ttk.Button(btns, text="Usar", command=_apply).pack(side="left", padx=4)
+            ttk.Button(btns, text="Cerrar", command=win.destroy).pack(side="left", padx=4)
+        else:
+            st = scrolledtext.ScrolledText(win, width=80, height=10, wrap="word")
+            st.insert("1.0", text)
+            st.configure(state="disabled")
+            st.pack(padx=10, pady=10)
+            btns = ttk.Frame(win)
+            btns.pack(pady=(0, 10))
+            ttk.Button(btns, text="OK", command=lambda: self._popup_mark_ok(iid, win)).pack(side="left", padx=4)
+            ttk.Button(
+                btns,
+                text="Marcar",
+                command=lambda: self.add_audacity_marker(self._clip_start),
+            ).pack(side="left", padx=4)
+            ttk.Button(btns, text="Cerrar", command=win.destroy).pack(side="left", padx=4)
 
     def _toggle_ok(self, item: str) -> None:
         current = self.tree.set(item, "OK")
@@ -619,6 +640,29 @@ class App(tk.Tk):
         except Exception:
             pass
         win.destroy()
+
+    def _update_metrics(self, iid: str) -> None:
+        """Recalculate flag and WER after modifying text."""
+        original = self.tree.set(iid, "Original")
+        asr = self.tree.set(iid, "ASR")
+        ref_t = normalize(original, strip_punct=False).split()
+        hyp_t = normalize(asr, strip_punct=False).split()
+        if hyp_t:
+            wer_val = Levenshtein.normalized_distance(ref_t, hyp_t)
+            base_ref = [t.strip(".,;!") for t in ref_t]
+            base_hyp = [t.strip(".,;!") for t in hyp_t]
+            base_wer = Levenshtein.normalized_distance(base_ref, base_hyp)
+        else:
+            wer_val = 1.0
+            base_wer = 1.0
+        if base_wer <= 0.05:
+            flag = "✅"
+        else:
+            thr = 0.20 if len(ref_t) < 5 else WARN_WER
+            flag = "✅" if wer_val <= thr else ("⚠️" if wer_val <= 0.20 else "❌")
+        self.tree.set(iid, "✓", flag)
+        self.tree.set(iid, "WER", f"{wer_val*100:.1f}")
+        self.save_json()
 
     def _clip_ok(self):
         if self._clip_item:
