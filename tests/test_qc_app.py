@@ -74,3 +74,34 @@ def test_worker_creates_json(tmp_path, monkeypatch):
         assert data[0][-1] == "hola"
     finally:
         app.destroy()
+
+
+def test_worker_csv_as_asr(tmp_path, monkeypatch):
+    app = App()
+    try:
+        ref = tmp_path / "ref.txt"
+        ref.write_text("hola")
+        csv = tmp_path / "hyp.csv"
+        csv.write_text("0.5; hola\n", encoding="utf8")
+        app.v_ref.set(str(ref))
+        app.v_asr.set(str(csv))
+
+        monkeypatch.setattr("qc_app.read_script", lambda p: "hola")
+        monkeypatch.setattr(
+            "qc_app.build_rows", lambda r, h: [[0, "", 0.0, "0.0", "hola", "hola"]]
+        )
+
+        def fake_resync_rows(rows, words, tcs):
+            rows[0][5] = f"{tcs[0]:.2f}"
+
+        monkeypatch.setattr(
+            "utils.resync_python_v2.resync_rows", fake_resync_rows
+        )
+
+        app._worker()
+
+        out = csv.with_suffix(".qc.json")
+        data = json.loads(out.read_text())
+        assert data[0][5] == "0.50"
+    finally:
+        app.destroy()
