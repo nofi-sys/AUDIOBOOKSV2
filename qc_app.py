@@ -969,10 +969,18 @@ class App(tk.Tk):
             self.q.put(f"→ DEBUG: Primeros 200 chars: {ref[:200]}")
             # ═══ FIN DEBUG ═══
 
+            asr_path = Path(self.v_asr.get())
+            if asr_path.suffix.lower() == ".csv":
+                from utils.resync_python_v2 import load_words_csv, resync_rows
+                csv_words, csv_tcs = load_words_csv(asr_path)
+                hyp = " ".join(csv_words)
+                use_csv = True
+            else:
+                hyp = asr_path.read_text(
+                    encoding="utf8", errors="ignore"
+                )
+                use_csv = False
             self.q.put("→ TXT externo cargado")
-            hyp = Path(self.v_asr.get()).read_text(
-                encoding="utf8", errors="ignore"
-            )
 
             # ═══ DEBUG TEMPORAL ═══
             self.q.put(f"→ DEBUG: Longitud ASR: {len(hyp)} caracteres")
@@ -981,14 +989,17 @@ class App(tk.Tk):
 
             self.q.put("→ Alineando…")
             rows = [canonical_row(r) for r in build_rows(ref, hyp)]
-            csv_path = Path(self.v_audio.get()).with_suffix(".words.csv")
-            if self.use_wordcsv.get() or csv_path.exists():
-                try:
-                    from utils.resync_python_v2 import load_words_csv, resync_rows
-                    csv_words, csv_tcs = load_words_csv(csv_path)
-                    resync_rows(rows, csv_words, csv_tcs)
-                except Exception as exc:
-                    self.q.put(f"Resync error: {exc}")
+            if use_csv:
+                resync_rows(rows, csv_words, csv_tcs)
+            else:
+                csv_path = Path(self.v_audio.get()).with_suffix(".words.csv")
+                if self.use_wordcsv.get() or csv_path.exists():
+                    try:
+                        from utils.resync_python_v2 import load_words_csv, resync_rows
+                        csv_words, csv_tcs = load_words_csv(csv_path)
+                        resync_rows(rows, csv_words, csv_tcs)
+                    except Exception as exc:
+                        self.q.put(f"Resync error: {exc}")
 
             # ═══ DEBUG TEMPORAL ═══
             self.q.put(f"→ DEBUG: Se generaron {len(rows)} filas")
