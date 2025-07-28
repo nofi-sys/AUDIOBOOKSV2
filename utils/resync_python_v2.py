@@ -130,6 +130,7 @@ def resync_rows(rows: List[List], csv_words: List[str], csv_tcs: List[float],
     # b) anclas
     anchors=find_anchors(csv_words, j_tokens)
     log_cb(f"Encontradas {len(anchors)} anclas")
+    real_anchors = anchors[:]
 
     # c) default mapping
     mapping=[-1]*len(j_tokens)
@@ -159,6 +160,10 @@ def resync_rows(rows: List[List], csv_words: List[str], csv_tcs: List[float],
         if row_tc[ridx] is None and cidx!=-1:
             row_tc[ridx]=csv_tcs[cidx]
 
+    unmapped = sum(1 for tc in row_tc if tc is None)
+    if unmapped / len(row_tc) > 0.3:
+        log_cb(f"WARNING: {unmapped} of {len(row_tc)} rows could not be mapped")
+
     # g) propagar faltantes linealmente
     last_tc=0.0
     for i in range(len(row_tc)):
@@ -166,6 +171,27 @@ def resync_rows(rows: List[List], csv_words: List[str], csv_tcs: List[float],
             row_tc[i]=last_tc
         else:
             last_tc=row_tc[i]
+
+    # filas tras la última ancla: interpolar hasta el último tiempo CSV
+    if real_anchors:
+        j_last = real_anchors[-1][0] + real_anchors[-1][2] - 1
+        last_row = tok2row[j_last]
+    else:
+        last_row = -1
+    if last_row < len(row_tc) - 1:
+        start = row_tc[last_row] if last_row >= 0 else 0.0
+        end = csv_tcs[-1]
+        n = len(row_tc) - last_row - 1
+        if real_anchors:
+            if n > 0 and end > start:
+                step = (end - start) / n
+                for idx in range(1, n + 1):
+                    row_tc[last_row + idx] = start + step * idx
+        else:
+            if n > 1 and end > start:
+                step = (end - start) / (n - 1)
+                for idx in range(n):
+                    row_tc[idx] = start + step * idx
 
     # h) escribir tc en la columna adecuada  / progress
     tc_idx = 5 if len(rows[0]) > 5 else len(rows[0])
