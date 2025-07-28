@@ -262,7 +262,13 @@ def _find_takes(
 
 
 def _apply_repetitions(rows: List[List]) -> List[List]:
-    """Detect repeated takes in ASR lines and adjust WER using the best one."""
+    """Detect repeated takes in ASR lines and adjust WER using the best one.
+
+    When multiple candidate segments (takes) are detected for a row, the best
+    matching take replaces the ASR text and all takes are appended as an extra
+    column in the returned row. This avoids embedding markers inside the ASR
+    string while preserving the alternatives for later inspection.
+    """
 
     updated = []
     for row in rows:
@@ -278,7 +284,8 @@ def _apply_repetitions(rows: List[List]) -> List[List]:
         take_strs = [" ".join(t) for t in takes]
         best = min(takes, key=lambda t: Levenshtein.normalized_distance(ref_t, t))
 
-        row[5] = " || ".join(take_strs)
+        row[5] = " ".join(best)
+        row.append(take_strs)
         wer_val = Levenshtein.normalized_distance(ref_t, best)
         base_ref = [t.strip(".,;!") for t in ref_t]
         base_hyp = [t.strip(".,;!") for t in best]
