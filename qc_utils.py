@@ -74,7 +74,7 @@ def canonical_row(row: List) -> List:
     with empty strings so that the output always has either 8 or 9 elements.
     """
     if len(row) >= 9:
-        return row[:9]
+        return row
     if len(row) == 8:
         return row
     if len(row) == 7:
