@@ -43,3 +43,12 @@ def test_build_rows_detect_repetition():
     rows = build_rows(ref, hyp)
     assert "||" in rows[0][5]
     assert rows[0][1] == "✅"
+
+
+def test_build_rows_truncated_take():
+    ref = "Nos los representantes del pueblo argentino"
+    hyp = "Nos los representantes nos nos los representantes del pueblo argentino"
+    rows = build_rows(ref, hyp)
+    assert "||" in rows[0][5]
+    parts = [p.strip() for p in rows[0][5].split("||")]
+    assert parts[-1].endswith("argentino")
