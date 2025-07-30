@@ -222,7 +222,7 @@ def build_rows(ref: str, hyp: str) -> List[List]:
         rows.append([line_id, flag, round(wer_val * 100, 1), dur, orig_line, asr_line])
         line_id += 1
 
-    return _apply_repetitions(refine_segments(rows))
+    return refine_segments(rows)
 
 
 def _find_takes(
@@ -261,13 +261,14 @@ def _find_takes(
     return takes
 
 
-def _apply_repetitions(rows: List[List]) -> List[List]:
-    """Detect repeated takes in ASR lines and adjust WER using the best one.
+def _apply_repetitions(rows: List[List], replace: bool = False) -> List[List]:
+    """Detect repeated takes in ASR lines and optionally replace them.
 
-    When multiple candidate segments (takes) are detected for a row, the best
-    matching take replaces the ASR text and all takes are appended as an extra
-    column in the returned row. This avoids embedding markers inside the ASR
-    string while preserving the alternatives for later inspection.
+    When multiple candidate segments (takes) are detected for a row, all takes
+    are appended as an extra column in the returned row.  If ``replace`` is
+    ``True`` the ASR cell is replaced with the best take and the metrics are
+    updated accordingly.  Otherwise the original ASR is preserved so users can
+    inspect the raw text.
     """
 
     updated = []
@@ -284,21 +285,23 @@ def _apply_repetitions(rows: List[List]) -> List[List]:
         take_strs = [" ".join(t) for t in takes]
         best = min(takes, key=lambda t: Levenshtein.normalized_distance(ref_t, t))
 
-        row[5] = " ".join(best)
-        row.append(take_strs)
-        wer_val = Levenshtein.normalized_distance(ref_t, best)
-        base_ref = [t.strip(".,;!") for t in ref_t]
-        base_hyp = [t.strip(".,;!") for t in best]
-        base_wer = Levenshtein.normalized_distance(base_ref, base_hyp)
-        if base_wer <= 0.05:
-            flag = "✅"
-        else:
-            threshold = 0.20 if len(ref_t) < 5 else WARN_WER
-            flag = "✅" if wer_val <= threshold else ("⚠️" if wer_val <= 0.20 else "❌")
+        if replace:
+            row[5] = " ".join(best)
+            wer_val = Levenshtein.normalized_distance(ref_t, best)
+            base_ref = [t.strip(".,;!") for t in ref_t]
+            base_hyp = [t.strip(".,;!") for t in best]
+            base_wer = Levenshtein.normalized_distance(base_ref, base_hyp)
+            if base_wer <= 0.05:
+                flag = "✅"
+            else:
+                threshold = 0.20 if len(ref_t) < 5 else WARN_WER
+                flag = "✅" if wer_val <= threshold else ("⚠️" if wer_val <= 0.20 else "❌")
 
-        row[1] = flag
-        row[2] = round(wer_val * 100, 1)
-        row[3] = round(len(best) / 3.0, 2)
+            row[1] = flag
+            row[2] = round(wer_val * 100, 1)
+            row[3] = round(len(best) / 3.0, 2)
+
+        row.append(take_strs)
         updated.append(row)
 
     return updated
