@@ -60,8 +60,12 @@ def _parse_tc(text: str) -> str:
     return text
 
 
-def play_interval(path: str, start: float, end: float | None) -> None:
-    """Play ``path`` from ``start`` seconds until ``end`` using pygame."""
+def play_interval(path: str, start: float, end: float | None) -> str | None:
+    """Play ``path`` from ``start`` seconds until ``end`` using pygame.
+
+    Returns the ``after`` job id used to stop playback, or ``None`` if
+    no stop is scheduled.
+    """
 
     pygame.mixer.init()
     pygame.mixer.music.load(path)
@@ -69,7 +73,8 @@ def play_interval(path: str, start: float, end: float | None) -> None:
     if end is not None:
         dur = max(0.0, end - start)
         ms = int((dur + PLAYBACK_PAD) * 1000)
-        tk._default_root.after(ms, pygame.mixer.music.stop)
+        return tk._default_root.after(ms, pygame.mixer.music.stop)
+    return None
 
 
 # --------------------------------------------------------------------------------------
@@ -106,6 +111,7 @@ class App(tk.Tk):
         self._clip_start = 0.0
         self._clip_end: float | None = None
         self._clip_offset = 0.0  # offset within the current clip
+        self._play_job: str | None = None
 
         self.marker_path: Path | None = None
         self.audio_session: AudacityLabelSession | None = None
@@ -576,7 +582,14 @@ class App(tk.Tk):
     def _play_current_clip(self):
         if self._clip_item and self.v_audio.get():
             start = self._clip_start + self._clip_offset
-            play_interval(self.v_audio.get(), start, self._clip_end)
+            if self._play_job is not None:
+                try:
+                    tk._default_root.after_cancel(self._play_job)
+                except Exception:
+                    pass
+            self._play_job = play_interval(
+                self.v_audio.get(), start, self._clip_end
+            )
 
     def _seek_clip(self, offset: float) -> None:
         """Move playback head to ``offset`` seconds within current clip."""
@@ -604,9 +617,12 @@ class App(tk.Tk):
         st_asr.pack(side="left", fill="both", expand=True, padx=(5, 0))
 
         dur = (self._clip_end or self._clip_start) - self._clip_start
-        scale = ttk.Scale(win, from_=0.0, to=max(dur, 0.0), orient="horizontal", length=400)
+        scale_frame = ttk.Frame(win)
+        scale_frame.pack(fill="x", padx=10, pady=(0, 10))
+        scale = ttk.Scale(scale_frame, from_=0.0, to=max(dur, 0.0), orient="horizontal", length=400)
         scale.set(self._clip_offset)
-        scale.pack(fill="x", padx=10, pady=(0, 10))
+        scale.pack(side="left", fill="x", expand=True)
+        ttk.Label(scale_frame, text=f"{dur:.1f}s").pack(side="right", padx=(6, 0))
 
         def _seek(event=None):
             self._seek_clip(float(scale.get()))
@@ -618,7 +634,7 @@ class App(tk.Tk):
                 pos = pygame.mixer.music.get_pos()
                 if pos >= 0:
                     scale.set(self._clip_offset + pos / 1000)
-                win.after(100, _update)
+            win.after(100, _update)
 
         _update()
 
@@ -688,6 +704,12 @@ class App(tk.Tk):
             pygame.mixer.music.stop()
         except Exception:
             pass
+        if self._play_job is not None:
+            try:
+                tk._default_root.after_cancel(self._play_job)
+            except Exception:
+                pass
+            self._play_job = None
         self._clip_item = None
 
     def _next_bad_row(self):
