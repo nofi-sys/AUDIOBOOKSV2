@@ -195,6 +195,9 @@ def build_rows(ref: str, hyp: str) -> List[List]:
                 else:
                     break
 
+            while h_start > 0 and (h_start - 1) not in consumed_h:
+                h_start -= 1
+
             consumed_h.update(range(h_start, h_end))
             asr_line = " ".join(hyp_tok[h_start:h_end])
         else:
@@ -221,6 +224,11 @@ def build_rows(ref: str, hyp: str) -> List[List]:
 
         rows.append([line_id, flag, round(wer_val * 100, 1), dur, orig_line, asr_line])
         line_id += 1
+
+    unused = [i for i in range(len(hyp_tok)) if i not in consumed_h]
+    if unused:
+        extra = " ".join(hyp_tok[min(unused):])
+        rows[-1][5] = (rows[-1][5] + " " + extra).strip()
 
     return refine_segments(rows)
 
@@ -421,6 +429,8 @@ def build_rows_wordlevel(ref: str, asr_word_json: str) -> List[List]:
         if h_idxs:
             h_start = min(h_idxs)
             h_end = max(h_idxs) + 1
+            while h_start > 0 and (h_start - 1) not in consumed_h:
+                h_start -= 1
             consumed_h.update(range(h_start, h_end))
             asr_line = " ".join(w["norm"] for w in words[h_start:h_end])
             start_time = words[h_start]["start"]
@@ -450,5 +460,10 @@ def build_rows_wordlevel(ref: str, asr_word_json: str) -> List[List]:
 
         rows.append([line_id, flag, round(wer_val * 100, 1), dur, orig_line, asr_line])
         line_id += 1
+
+    unused = [i for i in range(len(hyp_tok)) if i not in consumed_h]
+    if unused:
+        extra = " ".join(w["norm"] for w in words[min(unused):])
+        rows[-1][5] = (rows[-1][5] + " " + extra).strip()
 
     return _apply_repetitions(rows)
