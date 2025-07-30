@@ -640,6 +640,7 @@ class App(tk.Tk):
             self.ok_rows.add(line_id)
         else:
             self.ok_rows.discard(line_id)
+        self.save_json()
 
     def _popup_mark_ok(self, iid: str, win: tk.Toplevel) -> None:
         self.tree.set(iid, "OK", "OK")
@@ -649,6 +650,7 @@ class App(tk.Tk):
         except Exception:
             pass
         win.destroy()
+        self.save_json()
 
     def _update_metrics(self, iid: str) -> None:
         """Recalculate flag and WER after modifying text."""

@@ -64,7 +64,7 @@ The updated rows are written to `myaudio.resync.json` next to the original file.
 ## Manual review
 
 Double-click the **OK** column in the results table to mark or unmark a row as
-reviewed. Use the **Guardar JSON** button to save the current table so these
+reviewed. The table is saved automatically to the loaded JSON file so these
 marks persist. Loading a previously saved file that includes an **OK** column
 will restore the review status for each row.
 
