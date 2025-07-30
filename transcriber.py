@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import csv
 import os
 import subprocess
 import tempfile
@@ -262,13 +263,17 @@ def transcribe_file(
 
 def transcribe_word_csv(
     file_path: str | None = None,
+    model_size: str | None = None,
+    script_path: str | None = None,
     *,
-    test_mode: bool = False,
-    use_vad: bool = True,
     show_messagebox: bool = True,
     progress_queue: "queue.Queue" | None = None,
 ) -> Path:
-    """Transcribe ``file_path`` saving words CSV and plain text."""
+    """Transcribe ``file_path`` saving words CSV and plain text.
+
+    ``model_size`` selects the Whisper model and ``script_path`` allows
+    supplying a reference text whose prominent words are used as hotwords.
+    """
 
     if not file_path:
         file_path = _select_file()
@@ -277,19 +282,22 @@ def transcribe_word_csv(
 
     audio_path, base = _extract_audio(file_path)
 
-    from utils.word_timed_transcriber_2 import transcribe_audio, write_csv
-
-    words = transcribe_audio(
-        Path(audio_path),
-        test_mode=test_mode,
-        use_vad=use_vad,
-        q=progress_queue,
+    words_json = transcribe_wordlevel(
+        audio_path,
+        model_name=model_size or "base",
+        script_path=script_path,
+        detailed=False,
     )
 
-    csv_path = Path(base + ".words.csv")
-    write_csv(csv_path, words)
+    data = json.loads(Path(words_json).read_text(encoding="utf8"))
 
-    text = " ".join(w for _t, w in words)
+    csv_path = Path(base + ".words.csv")
+    with csv_path.open("w", newline="", encoding="utf8") as f:
+        w = csv.writer(f, delimiter=";")
+        for item in data:
+            w.writerow([f"{item['start']:.2f}", item["word"]])
+
+    text = " ".join(item["word"] for item in data)
     txt_path = Path(base + ".txt")
     txt_path.write_text(text, encoding="utf8")
 
@@ -390,7 +398,7 @@ def main(argv: list[str] | None = None) -> None:
         print(out)
 
     else:
-        transcribe_file(args.input, args.model, args.script)
+        transcribe_word_csv(args.input, args.model, args.script)
 
 
 if __name__ == "__main__":  # pragma: no cover - manual invocation
