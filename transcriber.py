@@ -78,6 +78,7 @@ def _extract_audio(path: str) -> tuple[str, str]:
     base, ext = os.path.splitext(path)
     ext = ext.lower()
     if ext == ".mp4":
+        print(f"[Transcriber] Extrayendo audio de {path}…")
         tmp = tempfile.NamedTemporaryFile(suffix=".wav", delete=False)
         tmp_path = tmp.name
         tmp.close()
@@ -98,7 +99,9 @@ def _extract_audio(path: str) -> tuple[str, str]:
         subprocess.run(
             cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
         )
+        print(f"[Transcriber] Audio temporal en {tmp_path}")
         return tmp_path, base
+    print(f"[Transcriber] Usando audio original {path}")
     return path, base
 
 
@@ -116,6 +119,7 @@ def transcribe_wordlevel(
     otherwise produce a flat ``.words.json`` list.
     """
 
+    print(f"[Transcriber] Transcribiendo {audio_path} con modelo {model_name}")
     hotwords = None
     if script_path:
         try:
@@ -123,12 +127,17 @@ def transcribe_wordlevel(
             words = extract_word_list(script_text)
             if words:
                 hotwords = " ".join(words)
+                print("[Transcriber] Palabras clave cargadas del guion")
         except Exception:
             hotwords = None
+            print("[Transcriber] Advertencia: no se pudieron cargar hotwords")
 
     device = "cuda" if torch.cuda.is_available() else "cpu"
     compute_type = "int8_float16" if device == "cuda" else "int8"
+    print(f"[Transcriber] Dispositivo {device}")
     model = WhisperModel(model_name, device=device, compute_type=compute_type)
+
+    print("[Transcriber] Ejecutando inferencia…")
 
     segments, _info = model.transcribe(
         audio_path,
@@ -162,6 +171,7 @@ def transcribe_wordlevel(
             for w in seg.words:
                 words.append({"word": w.word, "start": w.start, "end": w.end})
         out.write_text(json.dumps(words, ensure_ascii=False, indent=2), "utf8")
+    print(f"[Transcriber] Resultado guardado en {out}")
     return out
 
 
@@ -181,7 +191,9 @@ def _probe_duration(path: str) -> float:
             ],
             text=True,
         ).strip()
-        return float(out)
+        dur = float(out)
+        print(f"[Transcriber] Duración detectada: {dur:.1f}s")
+        return dur
     except Exception:
         return 0.0
 
@@ -208,6 +220,9 @@ def transcribe_file(
     if not model_size:
         model_size = _choose_model()
 
+    print(f"[Transcriber] Iniciando transcripción de {file_path}")
+    print(f"[Transcriber] Modelo: {model_size}")
+
     audio_path, base = _extract_audio(file_path)
 
     hotwords = None
@@ -217,15 +232,21 @@ def transcribe_file(
             words = extract_word_list(script_text)
             if words:
                 hotwords = " ".join(words)
+                print("[Transcriber] Usando guion para hotwords")
         except Exception:
             hotwords = None
+            print("[Transcriber] Error obteniendo hotwords del guion")
 
     device = "cuda" if torch.cuda.is_available() else "cpu"
     compute_type = "float16" if device == "cuda" else "int8"
 
+    print(f"[Transcriber] Dispositivo {device}")
+
     model = WhisperModel(
         model_size_or_path=model_size, device=device, compute_type=compute_type
     )
+
+    print("[Transcriber] Ejecutando primera pasada…")
 
     segments, _info = model.transcribe(audio_path, beam_size=5, hotwords=hotwords)
     duration = _probe_duration(audio_path)
@@ -244,6 +265,7 @@ def transcribe_file(
 
     out_path = Path(base + ".txt")
     out_path.write_text(text, encoding="utf8")
+    print(f"[Transcriber] Texto guardado en {out_path}")
 
     if audio_path != file_path:
         try:
@@ -258,6 +280,7 @@ def transcribe_file(
         messagebox.showinfo(
             title="Transcripción finalizada", message=f"Guardado en:\n{out_path}"
         )
+    print("[Transcriber] Transcripción completada")
     return out_path
 
 
@@ -280,6 +303,7 @@ def transcribe_word_csv(
         if not file_path:
             raise SystemExit("No file selected")
 
+    print("[Transcriber] Paso 1/2: transcripción palabra a palabra")
     audio_path, base = _extract_audio(file_path)
 
     words_json = transcribe_wordlevel(
@@ -290,6 +314,8 @@ def transcribe_word_csv(
     )
 
     data = json.loads(Path(words_json).read_text(encoding="utf8"))
+
+    print("[Transcriber] Paso 2/2: generando CSV y TXT…")
 
     csv_path = Path(base + ".words.csv")
     with csv_path.open("w", newline="", encoding="utf8") as f:
@@ -307,6 +333,9 @@ def transcribe_word_csv(
         except OSError:
             pass
 
+    print(f"[Transcriber] Guardado CSV en {csv_path}")
+    print(f"[Transcriber] Guardado texto en {txt_path}")
+
     if progress_queue:
         progress_queue.put(("PROGRESS", 100, 0.0))
 
@@ -316,6 +345,7 @@ def transcribe_word_csv(
             message=f"Guardado en:\n{txt_path}\n{csv_path}",
         )
 
+    print("[Transcriber] Proceso finalizado")
     return txt_path
 
 
@@ -352,6 +382,7 @@ def main(argv: list[str] | None = None) -> None:
     if args.resync_csv:
         if not args.input:
             parser.error("--resync-csv requires a QC JSON path")
+        print("[Transcriber] Re-sincronizando JSON con CSV…")
         from utils.resync_python_v2 import load_words_csv, resync_rows
         raw_rows = json.loads(Path(args.input).read_text(encoding="utf8"))
         from qc_utils import canonical_row
@@ -366,6 +397,7 @@ def main(argv: list[str] | None = None) -> None:
     if args.word_align:
         if not args.script:
             parser.error("--word-align requires --script")
+        print("[Transcriber] Word-align detallado")
         words_json = transcribe_wordlevel(
             args.input,
             args.model,
@@ -383,7 +415,9 @@ def main(argv: list[str] | None = None) -> None:
     elif args.word_align_v2:
         if not args.script:
             parser.error("--word-align-v2 requires --script")
+        print("[Transcriber] Word-align v2 – doble transcripción")
         txt = transcribe_word_csv(args.input)
+        print("[Transcriber] Primera etapa completada")
         ref = read_script(args.script)
         hyp = Path(txt).read_text(encoding="utf8", errors="ignore")
         from qc_utils import canonical_row
@@ -398,6 +432,7 @@ def main(argv: list[str] | None = None) -> None:
         print(out)
 
     else:
+        print("[Transcriber] Transcripción simple a TXT y CSV")
         transcribe_word_csv(args.input, args.model, args.script)
 
 
