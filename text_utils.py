@@ -234,7 +234,7 @@ def find_anchor_trigrams(
 
 
 def extract_word_list(text: str, max_words: int = 50) -> List[str]:
-    """Return frequent non-stopwords from ``text`` for ASR prompting."""
+    """Return frequent and noteworthy words from ``text`` for ASR prompting."""
 
     tokens = normalize(text).split()
     counts = Counter(t for t in tokens if t not in STOP and len(t) > 3)
@@ -245,4 +245,25 @@ def extract_word_list(text: str, max_words: int = 50) -> List[str]:
     ordered = sorted(
         counts.items(), key=lambda x: (-x[1], first_pos.get(x[0], 0))
     )
-    return [w for w, _ in ordered[:max_words]]
+
+    proper_raw = re.findall(r"\b[A-ZÁÉÍÓÚÑ][\wÁÉÍÓÚÑáéíóúñ]*\b", text)
+    proper_tokens: List[str] = []
+    seen: set[str] = set()
+    for tok in proper_raw:
+        norm = normalize(tok)
+        if len(norm) > 3 and norm not in STOP and norm not in seen:
+            proper_tokens.append(norm)
+            seen.add(norm)
+
+    result: List[str] = []
+    for tok in proper_tokens:
+        result.append(tok)
+        if len(result) >= max_words:
+            return result
+
+    for tok, _ in ordered:
+        if tok not in result:
+            result.append(tok)
+        if len(result) >= max_words:
+            break
+    return result[:max_words]
