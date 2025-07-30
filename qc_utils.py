@@ -78,6 +78,10 @@ def canonical_row(row: List) -> List:
     if len(row) == 8:
         return row
     if len(row) == 7:
+        # common case from alignment with extra "takes" list at the end
+        if isinstance(row[6], list):
+            # [ID, ✓, WER, tc, Original, ASR, takes]
+            return [row[0], row[1], "", "", row[2], row[3], row[4], row[5], row[6]]
         # [ID, ✓, OK, WER, tc, Original, ASR]
         return [row[0], row[1], row[2], "", row[3], row[4], row[5], row[6]]
     if len(row) == 6:
