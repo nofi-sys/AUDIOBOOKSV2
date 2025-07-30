@@ -12,7 +12,6 @@ import io
 import json
 import os
 import queue
-import sys
 import threading
 import traceback
 from pathlib import Path
@@ -34,7 +33,7 @@ from audio_video_editor import build_intervals
 # utilidades de audio ------------------------------------------------------------------
 # --------------------------------------------------------------------------------------
 
-PLAYBACK_PAD = 0.3
+PLAYBACK_PAD = 1.0  # extra cushion to avoid premature cut-offs
 
 
 def _format_tc(val: str | float) -> str:
@@ -62,17 +61,14 @@ def _parse_tc(text: str) -> str:
 
 
 def play_interval(path: str, start: float, end: float | None) -> None:
-    """Reproduce *path* desde *start* (seg) hasta *end* (seg) con pygame.
-
-    Se añade un pequeño margen ``PLAYBACK_PAD`` para evitar que el audio se
-    corte demasiado pronto si los códigos de tiempo no son precisos.
-    """
+    """Play ``path`` from ``start`` seconds until ``end`` using pygame."""
 
     pygame.mixer.init()
     pygame.mixer.music.load(path)
     pygame.mixer.music.play(start=start)
     if end is not None:
-        ms = int(max(0.0, end - start + PLAYBACK_PAD) * 1000)
+        dur = max(0.0, end - start)
+        ms = int((dur + PLAYBACK_PAD) * 1000)
         tk._default_root.after(ms, pygame.mixer.music.stop)
 
 
@@ -109,6 +105,7 @@ class App(tk.Tk):
         self._clip_item: str | None = None
         self._clip_start = 0.0
         self._clip_end: float | None = None
+        self._clip_offset = 0.0  # offset within the current clip
 
         self.marker_path: Path | None = None
         self.audio_session: AudacityLabelSession | None = None
@@ -562,7 +559,8 @@ class App(tk.Tk):
             start = float(_parse_tc(self.tree.set(iid, "tc")))
         except ValueError:
             return
-        self._show_text_popup(iid, "#7")
+        self._clip_offset = 0.0
+        self._show_text_popup(iid)
         # siguiente
         children = list(self.tree.get_children())
         idx = children.index(iid)
@@ -577,47 +575,58 @@ class App(tk.Tk):
 
     def _play_current_clip(self):
         if self._clip_item and self.v_audio.get():
-            play_interval(self.v_audio.get(), self._clip_start, self._clip_end)
+            start = self._clip_start + self._clip_offset
+            play_interval(self.v_audio.get(), start, self._clip_end)
 
-    def _show_text_popup(self, iid: str, col: str) -> None:
-        """Display full text for Original or ASR in a popup window."""
-        col_name = "Original" if col == "#7" else "ASR"
-        text = self.tree.set(iid, col_name)
+    def _seek_clip(self, offset: float) -> None:
+        """Move playback head to ``offset`` seconds within current clip."""
+        self._clip_offset = max(0.0, offset)
+        self._play_current_clip()
+
+    def _show_text_popup(self, iid: str) -> None:
+        """Display full text for Original and ASR with timeline controls."""
+        original = self.tree.set(iid, "Original")
+        asr = self.tree.set(iid, "ASR")
+
         win = tk.Toplevel(self)
-        win.title(col_name)
+        win.title("Texto completo")
 
-        takes = [t.strip() for t in text.split("||")]
-        if len(takes) > 1 and col_name == "ASR":
-            var = tk.IntVar(value=len(takes) - 1)
-            for idx, take in enumerate(takes):
-                rb = ttk.Radiobutton(win, text=take, variable=var, value=idx)
-                rb.pack(anchor="w", padx=10, pady=2)
+        text_frame = ttk.Frame(win)
+        text_frame.pack(fill="both", expand=True, padx=10, pady=10)
 
-            btns = ttk.Frame(win)
-            btns.pack(pady=(0, 10))
+        st_orig = scrolledtext.ScrolledText(text_frame, width=50, height=10, wrap="word")
+        st_asr = scrolledtext.ScrolledText(text_frame, width=50, height=10, wrap="word")
+        st_orig.insert("1.0", original)
+        st_asr.insert("1.0", asr)
+        st_orig.configure(state="disabled")
+        st_asr.configure(state="disabled")
+        st_orig.pack(side="left", fill="both", expand=True, padx=(0, 5))
+        st_asr.pack(side="left", fill="both", expand=True, padx=(5, 0))
 
-            def _apply():
-                chosen = takes[var.get()]
-                self.tree.set(iid, "ASR", chosen)
-                self._update_metrics(iid)
-                win.destroy()
+        dur = (self._clip_end or self._clip_start) - self._clip_start
+        scale = ttk.Scale(win, from_=0.0, to=max(dur, 0.0), orient="horizontal", length=400)
+        scale.set(self._clip_offset)
+        scale.pack(fill="x", padx=10, pady=(0, 10))
 
-            ttk.Button(btns, text="Usar", command=_apply).pack(side="left", padx=4)
-            ttk.Button(btns, text="Cerrar", command=win.destroy).pack(side="left", padx=4)
-        else:
-            st = scrolledtext.ScrolledText(win, width=80, height=10, wrap="word")
-            st.insert("1.0", text)
-            st.configure(state="disabled")
-            st.pack(padx=10, pady=10)
-            btns = ttk.Frame(win)
-            btns.pack(pady=(0, 10))
-            ttk.Button(btns, text="OK", command=lambda: self._popup_mark_ok(iid, win)).pack(side="left", padx=4)
-            ttk.Button(
-                btns,
-                text="Marcar",
-                command=lambda: self.add_audacity_marker(self._clip_start),
-            ).pack(side="left", padx=4)
-            ttk.Button(btns, text="Cerrar", command=win.destroy).pack(side="left", padx=4)
+        def _seek(event=None):
+            self._seek_clip(float(scale.get()))
+
+        scale.bind("<ButtonRelease-1>", _seek)
+
+        def _update():
+            if pygame.mixer.get_init() and pygame.mixer.music.get_busy():
+                pos = pygame.mixer.music.get_pos()
+                if pos >= 0:
+                    scale.set(self._clip_offset + pos / 1000)
+                win.after(100, _update)
+
+        _update()
+
+        btns = ttk.Frame(win)
+        btns.pack(pady=(0, 10))
+        ttk.Button(btns, text="OK", command=lambda: self._popup_mark_ok(iid, win)).pack(side="left", padx=4)
+        ttk.Button(btns, text="Marcar", command=lambda: self.add_audacity_marker(self._clip_start + float(scale.get()))).pack(side="left", padx=4)
+        ttk.Button(btns, text="Cerrar", command=win.destroy).pack(side="left", padx=4)
 
     def _toggle_ok(self, item: str) -> None:
         current = self.tree.set(item, "OK")
