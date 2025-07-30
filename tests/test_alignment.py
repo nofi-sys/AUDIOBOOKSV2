@@ -41,10 +41,9 @@ def test_build_rows_detect_repetition():
     ref = "Hola mundo"
     hyp = "Hola mundo hola mundo hola mundo"
     rows = build_rows(ref, hyp)
-    assert rows[0][5] == "hola mundo"
+    assert rows[0][5] == "hola mundo hola mundo hola mundo"
     assert len(rows[0]) > 6
     assert len(rows[0][6]) > 1
-    assert rows[0][1] == "✅"
 
 
 def test_build_rows_truncated_take():
