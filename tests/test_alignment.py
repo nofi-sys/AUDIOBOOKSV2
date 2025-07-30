@@ -1,6 +1,7 @@
 import json
 
 from alignment import build_rows, build_rows_wordlevel
+from text_utils import normalize
 
 
 def test_build_rows_basic():
@@ -53,3 +54,11 @@ def test_build_rows_truncated_take():
     assert rows[0][5].endswith("argentino")
     assert len(rows[0]) > 6
     assert rows[0][6][-1].endswith("argentino")
+
+
+def test_build_rows_no_truncation():
+    ref = "Hola mundo. Adios."
+    hyp = "Hola hola mundo. Adios."
+    rows = build_rows(ref, hyp)
+    assembled = " ".join(r[5] for r in rows)
+    assert normalize(assembled, strip_punct=False).split() == normalize(hyp, strip_punct=False).split()
