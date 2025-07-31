@@ -263,7 +263,18 @@ def build_rows(ref: str, hyp: str) -> List[List]:
             extra,
         ])
 
-    return refine_segments(rows)
+    rows = refine_segments(rows)
+
+    start_time = 0.0
+    for r in rows:
+        try:
+            dur = float(r[3])
+        except Exception:
+            dur = 0.0
+        r[3] = round(start_time, 2)
+        start_time += dur
+
+    return rows
 
 
 def _find_takes(

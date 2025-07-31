@@ -38,6 +38,15 @@ def test_build_rows_wordlevel_basic():
     assert rows[0][3] == 0.0
 
 
+def test_build_rows_tc_sequential():
+    ref = "Uno dos. Tres cuatro cinco."
+    hyp = "Uno dos tres cuatro cinco"
+    rows = build_rows(ref, hyp)
+    tcs = [r[3] for r in rows]
+    assert tcs == sorted(tcs)
+    assert tcs[0] == 0.0
+
+
 def test_build_rows_detect_repetition():
     ref = "Hola mundo"
     hyp = "Hola mundo hola mundo hola mundo"
