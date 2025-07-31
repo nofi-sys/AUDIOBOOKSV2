@@ -5,6 +5,12 @@ import json
 import re
 
 from rapidfuzz.distance import Levenshtein
+from text_utils import (
+    normalize,
+    token_equal,
+    STOP,
+    STOP_WEIGHT,
+)
 
 # ---------------------------------------------------------------------------
 # debug logging --------------------------------------------------------------
@@ -23,12 +29,8 @@ def set_debug_logger(logger: Callable[[str], None]) -> None:
 def _debug(msg: str) -> None:
     DEBUG_LOGGER(msg)
 
-from text_utils import (
-    normalize,
-    token_equal,
-    STOP,
-    STOP_WEIGHT,
-)
+
+
 
 LINE_LEN = 12
 COARSE_W = 40
@@ -174,6 +176,8 @@ def build_rows(ref: str, hyp: str) -> List[List]:
     rows = []
     consumed_h = set()
     line_id = 0
+    current_time = 0.0
+    current_time = 0.0
 
     # divide reference into sentence spans for cleaner rows
     text_norm = normalize(ref, strip_punct=False)
@@ -244,10 +248,11 @@ def build_rows(ref: str, hyp: str) -> List[List]:
         else:
             threshold = 0.20 if len(ref_tokens) < 5 else WARN_WER
             flag = "✅" if wer_val <= threshold else ("⚠️" if wer_val <= 0.20 else "❌")
-        dur = round(len(asr_line.split()) / 3.0, 2)
+        dur = len(asr_line.split()) / 3.0
 
-        rows.append([line_id, flag, round(wer_val * 100, 1), dur, orig_line, asr_line])
+        rows.append([line_id, flag, round(wer_val * 100, 1), round(current_time, 2), orig_line, asr_line])
         line_id += 1
+        current_time += dur
 
     unused = [i for i in range(len(hyp_tok)) if i not in consumed_h]
     if unused:
@@ -399,7 +404,13 @@ def refine_segments(rows: List[List], max_shift: int = 2) -> List[List]:
             flag = "✅" if wer_val <= threshold else ("⚠️" if wer_val <= 0.20 else "❌")
         r[1] = flag
         r[2] = round(wer_val * 100, 1)
-        r[3] = round(len(hyp_tokens) / 3.0, 2)
+
+    time_pos = 0.0
+    for r in rows:
+        hyp_tokens = r[5].split()
+        r[3] = round(time_pos, 2)
+        time_pos += len(hyp_tokens) / 3.0
+
     return _apply_repetitions(rows)
 
 
@@ -462,9 +473,11 @@ def build_rows_wordlevel(ref: str, asr_word_json: str) -> List[List]:
             asr_line = " ".join(w["norm"] for w in words[h_start:h_end])
             start_time = words[h_start]["start"]
             end_time = words[h_end - 1]["end"]
-            dur = round(end_time - start_time, 2)
+            dur = end_time - start_time
+            current_time = start_time
         else:
             asr_line = ""
+            start_time = current_time
             dur = 0.0
 
         orig_line = " ".join(block)
@@ -485,8 +498,9 @@ def build_rows_wordlevel(ref: str, asr_word_json: str) -> List[List]:
             threshold = 0.20 if len(ref_tokens) < 5 else WARN_WER
             flag = "✅" if wer_val <= threshold else ("⚠️" if wer_val <= 0.20 else "❌")
 
-        rows.append([line_id, flag, round(wer_val * 100, 1), dur, orig_line, asr_line])
+        rows.append([line_id, flag, round(wer_val * 100, 1), round(start_time, 2), orig_line, asr_line])
         line_id += 1
+        current_time = start_time + dur
 
     unused = [i for i in range(len(hyp_tok)) if i not in consumed_h]
     if unused:
