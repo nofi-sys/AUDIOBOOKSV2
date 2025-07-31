@@ -35,7 +35,7 @@ def test_build_rows_wordlevel_basic():
     }
     rows = build_rows_wordlevel(ref, json.dumps(data))
     assert rows[0][1] == "✅"
-    assert rows[0][3] == 1.0
+    assert rows[0][3] == 0.0
 
 
 def test_build_rows_detect_repetition():

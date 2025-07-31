@@ -417,7 +417,7 @@ def refine_segments(rows: List[List], max_shift: int = 2) -> List[List]:
 
 
 def build_rows_wordlevel(ref: str, asr_word_json: str) -> List[List]:
-    """Align using word-level timestamps and compute real durations."""
+    """Align using word-level timestamps and compute start times."""
 
     data = json.loads(asr_word_json)
     segments = data.get("segments", data)
@@ -474,11 +474,9 @@ def build_rows_wordlevel(ref: str, asr_word_json: str) -> List[List]:
             consumed_h.update(range(h_start, h_end))
             asr_line = " ".join(w["norm"] for w in words[h_start:h_end])
             start_time = words[h_start]["start"]
-            end_time = words[h_end - 1]["end"]
-            dur = round(end_time - start_time, 2)
         else:
             asr_line = ""
-            dur = 0.0
+            start_time = 0.0
 
         orig_line = " ".join(block)
         ref_tokens = orig_line.split()
@@ -498,17 +496,18 @@ def build_rows_wordlevel(ref: str, asr_word_json: str) -> List[List]:
             threshold = 0.20 if len(ref_tokens) < 5 else WARN_WER
             flag = "✅" if wer_val <= threshold else ("⚠️" if wer_val <= 0.20 else "❌")
 
-        rows.append([line_id, flag, round(wer_val * 100, 1), dur, orig_line, asr_line])
+        rows.append([line_id, flag, round(wer_val * 100, 1), start_time, orig_line, asr_line])
         line_id += 1
 
     unused = [i for i in range(len(hyp_tok)) if i not in consumed_h]
     if unused:
         extra = " ".join(w["norm"] for w in words[min(unused):])
+        start_time = words[min(unused)]["start"]
         rows.append([
             line_id,
             "❌",
             100.0,
-            round(len(extra.split()) / 3.0, 2),
+            start_time,
             "",
             extra,
         ])
