@@ -123,10 +123,11 @@ def resync_rows(rows: List[List], csv_words: List[str], csv_tcs: List[float],
     # a) explotar json en lista plana de palabras
     j_tokens: List[str]=[]
     tok2row=[]               # idx_json -> row_id
-    for ridx,row in enumerate(rows):
-        toks = tokenize(row[-1])
+    for ridx, row in enumerate(rows):
+        asr_text = row[-2] if isinstance(row[-1], list) else row[-1]
+        toks = tokenize(asr_text)
         j_tokens.extend(toks)
-        tok2row.extend([ridx]*len(toks))
+        tok2row.extend([ridx] * len(toks))
 
     # b) anclas
     anchors=find_anchors(csv_words, j_tokens)
