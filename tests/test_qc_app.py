@@ -105,3 +105,31 @@ def test_worker_csv_as_asr(tmp_path, monkeypatch):
         assert data[0][5] == "0.50"
     finally:
         app.destroy()
+
+
+def test_row_from_alignment_score():
+    app = App()
+    try:
+        row = [0, "❌", "OK", "mal", "5", 0.1, 0.5, "hola", "halo"]
+        vals = app._row_from_alignment(row)
+        assert vals[4] == "5"
+        assert vals[5] == 0.1
+        assert vals[6] == "00:00:00.5"
+        assert vals[7] == "hola"
+        assert vals[8] == "halo"
+    finally:
+        app.destroy()
+
+
+def test_row_from_alignment_takes():
+    app = App()
+    try:
+        row = [0, "❌", 0.1, 0.5, "hola", "halo", ["t1"]]
+        vals = app._row_from_alignment(row)
+        assert vals[4] == 0.1
+        assert vals[5] == "00:00:00.5"
+        assert vals[6] == "hola"
+        assert vals[7] == "halo"
+        assert vals[8] == ["t1"]
+    finally:
+        app.destroy()

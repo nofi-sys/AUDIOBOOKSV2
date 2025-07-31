@@ -338,8 +338,14 @@ class App(tk.Tk):
         from qc_utils import canonical_row
 
         row = canonical_row(r)
-        if len(row) > 5:
-            row[5] = _format_tc(row[5])
+
+        # ``canonical_row`` may return 8 or 9 columns. When a "Score" column is
+        # present the time code is at index 6 instead of 5. Rows ending with a
+        # list store "takes" and keep the time code at index 5.  Adjust the
+        # index accordingly before formatting.
+        tc_idx = 6 if len(row) >= 9 and not isinstance(row[-1], list) else 5
+        if len(row) > tc_idx:
+            row[tc_idx] = _format_tc(row[tc_idx])
         return row
 
     # ───────────────────────────────── ventana de progreso ─────────────────────────
