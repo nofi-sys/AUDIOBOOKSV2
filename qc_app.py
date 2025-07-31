@@ -966,11 +966,13 @@ class App(tk.Tk):
     def _worker(self):
         try:
             self.q.put("→ Leyendo guion…")
+            print("DEBUG: Leyendo guion")
             ref = read_script(self.v_ref.get())
 
             # ═══ DEBUG TEMPORAL ═══
             self.q.put(f"→ DEBUG: Longitud del guión: {len(ref)} caracteres")
             self.q.put(f"→ DEBUG: Primeros 200 chars: {ref[:200]}")
+            print("DEBUG: Guion cargado")
             # ═══ FIN DEBUG ═══
 
             asr_path = Path(self.v_asr.get())
@@ -985,13 +987,16 @@ class App(tk.Tk):
                 )
                 use_csv = False
             self.q.put("→ TXT externo cargado")
+            print("DEBUG: TXT externo cargado")
 
             # ═══ DEBUG TEMPORAL ═══
             self.q.put(f"→ DEBUG: Longitud ASR: {len(hyp)} caracteres")
             self.q.put(f"→ DEBUG: Primeros 200 chars ASR: {hyp[:200]}")
+            print("DEBUG: ASR cargado")
             # ═══ FIN DEBUG ═══
 
             self.q.put("→ Alineando…")
+            print("DEBUG: Iniciando alineacion")
             rows = [canonical_row(r) for r in build_rows(ref, hyp)]
             if use_csv:
                 resync_rows(rows, csv_words, csv_tcs)
@@ -1009,6 +1014,7 @@ class App(tk.Tk):
             self.q.put(f"→ DEBUG: Se generaron {len(rows)} filas")
             if rows:
                 self.q.put(f"→ DEBUG: Primera fila: {rows[0]}")
+            print("DEBUG: alineacion completada")
             # ═══ FIN DEBUG ═══
 
             out = Path(self.v_asr.get()).with_suffix(".qc.json")
@@ -1024,12 +1030,15 @@ class App(tk.Tk):
                 json.dumps(rows, ensure_ascii=False, indent=2), encoding="utf8"
             )
 
+            print(f"DEBUG: JSON guardado en {out}")
+
             self.q.put(("ROWS", rows))
             self.q.put(f"✔ Listo. Guardado en {out}")
             self.v_json.set(str(out))
         except Exception:
             buf = io.StringIO()
             traceback.print_exc(file=buf)
+            print("DEBUG: error en worker")
             self.q.put(buf.getvalue())
 
     # ---------------------------------------------------------------------------------

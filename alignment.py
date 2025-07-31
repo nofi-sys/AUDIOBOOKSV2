@@ -91,6 +91,7 @@ def safe_dtw(a: List[str], b: List[str], w: int) -> List[Tuple[int, int]]:
     band = w
     max_band = max(len(a), len(b)) * 2
     while band <= max_band:
+        print(f"DEBUG: intentando DTW con banda {band}")
         try:
             return dtw_band(a, b, band)
         except RuntimeError:
@@ -104,9 +105,12 @@ def build_rows(ref: str, hyp: str) -> List[List]:
     ref_tok = normalize(ref, strip_punct=False).split()
     hyp_tok = normalize(hyp, strip_punct=False).split()
 
+    print(f"DEBUG: ref tokens {len(ref_tok)} | hyp tokens {len(hyp_tok)}")
+
     from text_utils import find_anchor_trigrams
 
     anchor_pairs = find_anchor_trigrams(ref_tok, hyp_tok)
+    print(f"DEBUG: found {len(anchor_pairs)} anchor pairs")
 
     full_pairs: List[Tuple[int, int]] = []
     seg_starts = [(-1, -1)] + anchor_pairs + [
@@ -166,7 +170,10 @@ def build_rows(ref: str, hyp: str) -> List[List]:
             spans.append((pos, pos + length))
             pos += length
 
-    for span_start, span_end in spans:
+    for span_idx, (span_start, span_end) in enumerate(spans):
+        if span_idx % 50 == 0:
+            print(f"DEBUG: procesando segmento {span_idx}/{len(spans)}")
+        block = ref_tok[span_start:span_end]
         block = ref_tok[span_start:span_end]
 
         h_idxs_all = [map_h[k] for k in range(span_start, span_end) if map_h[k] != -1]
@@ -399,6 +406,7 @@ def build_rows_wordlevel(ref: str, asr_word_json: str) -> List[List]:
 
     hyp_tok = [w["norm"] for w in words]
     ref_tok = normalize(ref, strip_punct=False).split()
+    print(f"DEBUG: wordlevel ref tokens {len(ref_tok)} | hyp tokens {len(hyp_tok)}")
 
     pairs = safe_dtw(ref_tok, hyp_tok, COARSE_W)
     map_h = [-1] * len(ref_tok)
@@ -423,7 +431,9 @@ def build_rows_wordlevel(ref: str, asr_word_json: str) -> List[List]:
             spans.append((pos, pos + length))
             pos += length
 
-    for span_start, span_end in spans:
+    for span_idx, (span_start, span_end) in enumerate(spans):
+        if span_idx % 50 == 0:
+            print(f"DEBUG: wordlevel segmento {span_idx}/{len(spans)}")
         block = ref_tok[span_start:span_end]
         h_idxs = [map_h[k] for k in range(span_start, span_end) if map_h[k] != -1 and map_h[k] not in consumed_h]
         if h_idxs:
