@@ -254,7 +254,14 @@ def build_rows(ref: str, hyp: str) -> List[List]:
     unused = [i for i in range(len(hyp_tok)) if i not in consumed_h]
     if unused:
         extra = " ".join(hyp_tok[min(unused):])
-        rows[-1][5] = (rows[-1][5] + " " + extra).strip()
+        rows.append([
+            line_id,
+            "❌",
+            100.0,
+            round(len(extra.split()) / 3.0, 2),
+            "",
+            extra,
+        ])
 
     return refine_segments(rows)
 
@@ -497,6 +504,13 @@ def build_rows_wordlevel(ref: str, asr_word_json: str) -> List[List]:
     unused = [i for i in range(len(hyp_tok)) if i not in consumed_h]
     if unused:
         extra = " ".join(w["norm"] for w in words[min(unused):])
-        rows[-1][5] = (rows[-1][5] + " " + extra).strip()
+        rows.append([
+            line_id,
+            "❌",
+            100.0,
+            round(len(extra.split()) / 3.0, 2),
+            "",
+            extra,
+        ])
 
     return _apply_repetitions(rows)

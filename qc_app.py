@@ -552,18 +552,20 @@ class App(tk.Tk):
             start = float(_parse_tc(self.tree.set(iid, "tc")))
         except ValueError:
             return
-        self._clip_offset = 0.0
-        self._show_text_popup(iid)
-        # siguiente
         children = list(self.tree.get_children())
         idx = children.index(iid)
         end = None
-        if idx + 1 < len(children):
+        for next_iid in children[idx + 1 :]:
             try:
-                end = float(_parse_tc(self.tree.set(children[idx + 1], "tc")))
+                t = float(_parse_tc(self.tree.set(next_iid, "tc")))
             except ValueError:
-                pass
+                continue
+            if t > start:
+                end = t
+                break
         self._clip_item, self._clip_start, self._clip_end = iid, start, end
+        self._clip_offset = 0.0
+        self._show_text_popup(iid)
         self._play_current_clip()
 
     def _play_current_clip(self):
@@ -667,6 +669,19 @@ class App(tk.Tk):
         self.tree.set(iid, "✓", flag)
         self.tree.set(iid, "WER", f"{wer_val*100:.1f}")
         self.save_json()
+
+    def _recompute_tc(self) -> None:
+        """Ensure monotonically increasing time codes."""
+        last = 0.0
+        for iid in self.tree.get_children():
+            try:
+                tc = float(_parse_tc(self.tree.set(iid, "tc")))
+            except ValueError:
+                tc = last
+            if tc < last:
+                tc = last
+            self.tree.set(iid, "tc", _format_tc(tc))
+            last = tc
 
     def _clip_ok(self):
         if self._clip_item:
@@ -783,6 +798,9 @@ class App(tk.Tk):
             if self.tree_tag in tags:
                 tags.remove(self.tree_tag)
                 self.tree.item(iid, tags=tuple(tags))
+        self._recompute_tc()
+        self._update_metrics(dst_item)
+        self._update_metrics(item)
         self.save_json()
 
     def _move_word(self, direction: str, which: str) -> None:
@@ -821,6 +839,9 @@ class App(tk.Tk):
             if self.tree_tag in tags:
                 tags.remove(self.tree_tag)
                 self.tree.item(iid, tags=tuple(tags))
+        self._recompute_tc()
+        self._update_metrics(dst_item)
+        self._update_metrics(item)
         self.save_json()
 
     # ------------------------------------------------------------- position bar
@@ -940,6 +961,8 @@ class App(tk.Tk):
         for new_id, iid in enumerate(self.tree.get_children()[start_idx:], start_idx):
             self.tree.set(iid, "ID", new_id)
         self._update_scale_range()
+        self._recompute_tc()
+        self._update_metrics(first)
         self.save_json()
 
     def _unmerge_row(self) -> None:
@@ -956,9 +979,11 @@ class App(tk.Tk):
         for r in rows:
             iid = self.tree.insert("", idx, values=r)
             idx += 1
+            self._update_metrics(iid)
         for new_id, iid in enumerate(self.tree.get_children()):
             self.tree.set(iid, "ID", new_id)
         self._update_scale_range()
+        self._recompute_tc()
         self.save_json()
 
     # ---------------------------------------------------------------------------------
@@ -1003,7 +1028,7 @@ class App(tk.Tk):
 
             self.q.put("→ Alineando…")
             debug("DEBUG: Iniciando alineacion")
-            rows = [canonical_row(r) for r in build_rows(ref, hyp)]
+            rows = build_rows(ref, hyp)
             if use_csv:
                 resync_rows(rows, csv_words, csv_tcs)
             else:
@@ -1029,6 +1054,8 @@ class App(tk.Tk):
                     except Exception as exc:
                         self.q.put(f"Resync error: {exc}")
 
+            rows = [canonical_row(r) for r in rows]
+
             # ═══ DEBUG TEMPORAL ═══
             self.q.put(f"→ DEBUG: Se generaron {len(rows)} filas")
             if rows:
@@ -1043,6 +1070,7 @@ class App(tk.Tk):
                     from qc_utils import merge_qc_metadata
 
                     rows = merge_qc_metadata(old, rows)
+                    rows = [canonical_row(r) for r in rows]
                 except Exception:
                     pass
             out.write_text(
