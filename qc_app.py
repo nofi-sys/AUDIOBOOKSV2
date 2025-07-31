@@ -964,39 +964,45 @@ class App(tk.Tk):
     # ---------------------------------------------------------------------------------
     # hilo worker (alinear) -----------------------------------------------------------
     def _worker(self):
+        def debug(msg: str) -> None:
+            print(msg)
+            self.q.put(msg)
+
         try:
+            from alignment import set_debug_logger
+            set_debug_logger(debug)
+
             self.q.put("→ Leyendo guion…")
-            print("DEBUG: Leyendo guion")
+            debug(f"DEBUG: Leyendo guion {self.v_ref.get()}")
             ref = read_script(self.v_ref.get())
 
-            # ═══ DEBUG TEMPORAL ═══
-            self.q.put(f"→ DEBUG: Longitud del guión: {len(ref)} caracteres")
+            debug(f"DEBUG: Guion cargado ({len(ref)} chars)")
             self.q.put(f"→ DEBUG: Primeros 200 chars: {ref[:200]}")
-            print("DEBUG: Guion cargado")
-            # ═══ FIN DEBUG ═══
 
             asr_path = Path(self.v_asr.get())
+            debug(f"DEBUG: Leyendo ASR {asr_path}")
             if asr_path.suffix.lower() == ".csv":
                 from utils.resync_python_v2 import load_words_csv, resync_rows
                 csv_words, csv_tcs = load_words_csv(asr_path)
                 hyp = " ".join(csv_words)
                 use_csv = True
+                debug("DEBUG: ASR en formato CSV cargado")
             else:
                 hyp = asr_path.read_text(
                     encoding="utf8", errors="ignore"
                 )
                 use_csv = False
+                debug("DEBUG: ASR en texto cargado")
             self.q.put("→ TXT externo cargado")
-            print("DEBUG: TXT externo cargado")
 
             # ═══ DEBUG TEMPORAL ═══
             self.q.put(f"→ DEBUG: Longitud ASR: {len(hyp)} caracteres")
             self.q.put(f"→ DEBUG: Primeros 200 chars ASR: {hyp[:200]}")
-            print("DEBUG: ASR cargado")
+            debug("DEBUG: ASR cargado")
             # ═══ FIN DEBUG ═══
 
             self.q.put("→ Alineando…")
-            print("DEBUG: Iniciando alineacion")
+            debug("DEBUG: Iniciando alineacion")
             rows = [canonical_row(r) for r in build_rows(ref, hyp)]
             if use_csv:
                 resync_rows(rows, csv_words, csv_tcs)
@@ -1007,6 +1013,7 @@ class App(tk.Tk):
                         from utils.resync_python_v2 import load_words_csv, resync_rows
                         csv_words, csv_tcs = load_words_csv(csv_path)
                         resync_rows(rows, csv_words, csv_tcs)
+                        debug(f"DEBUG: CSV usado {csv_path}")
                     except Exception as exc:
                         self.q.put(f"Resync error: {exc}")
 
@@ -1014,7 +1021,7 @@ class App(tk.Tk):
             self.q.put(f"→ DEBUG: Se generaron {len(rows)} filas")
             if rows:
                 self.q.put(f"→ DEBUG: Primera fila: {rows[0]}")
-            print("DEBUG: alineacion completada")
+            debug("DEBUG: alineacion completada")
             # ═══ FIN DEBUG ═══
 
             out = Path(self.v_asr.get()).with_suffix(".qc.json")
@@ -1030,7 +1037,7 @@ class App(tk.Tk):
                 json.dumps(rows, ensure_ascii=False, indent=2), encoding="utf8"
             )
 
-            print(f"DEBUG: JSON guardado en {out}")
+            debug(f"DEBUG: JSON guardado en {out}")
 
             self.q.put(("ROWS", rows))
             self.q.put(f"✔ Listo. Guardado en {out}")
@@ -1038,8 +1045,11 @@ class App(tk.Tk):
         except Exception:
             buf = io.StringIO()
             traceback.print_exc(file=buf)
-            print("DEBUG: error en worker")
+            debug("DEBUG: error en worker")
             self.q.put(buf.getvalue())
+        finally:
+            from alignment import set_debug_logger
+            set_debug_logger(print)
 
     # ---------------------------------------------------------------------------------
     # cola de mensajes Tk -------------------------------------------------------------
