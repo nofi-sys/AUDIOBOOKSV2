@@ -1045,8 +1045,9 @@ class App(tk.Tk):
         except Exception:
             buf = io.StringIO()
             traceback.print_exc(file=buf)
-            debug("DEBUG: error en worker")
-            self.q.put(buf.getvalue())
+            err = buf.getvalue()
+            debug(f"DEBUG: error en worker:\n{err}")
+            self.q.put(err)
         finally:
             from alignment import set_debug_logger
             set_debug_logger(print)
