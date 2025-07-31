@@ -1007,8 +1007,20 @@ class App(tk.Tk):
             if use_csv:
                 resync_rows(rows, csv_words, csv_tcs)
             else:
-                csv_path = Path(self.v_audio.get()).with_suffix(".words.csv")
-                if csv_path.exists():
+                csv_path: Path | None = None
+                audio_val = self.v_audio.get()
+                if audio_val:
+                    candidate = Path(audio_val).with_suffix(".words.csv")
+                    if candidate.exists():
+                        csv_path = candidate
+                if csv_path is None:
+                    from tkinter import filedialog
+                    p = filedialog.askopenfilename(
+                        filetypes=[("CSV", "*.csv"), ("All", "*")]
+                    )
+                    if p:
+                        csv_path = Path(p)
+                if csv_path and csv_path.exists():
                     try:
                         from utils.resync_python_v2 import load_words_csv, resync_rows
                         csv_words, csv_tcs = load_words_csv(csv_path)
