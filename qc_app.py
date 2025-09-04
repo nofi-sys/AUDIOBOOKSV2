@@ -22,7 +22,7 @@ from tkinter import filedialog, messagebox, scrolledtext, ttk
 
 from utils.gui_errors import show_error
 
-from alignment import build_rows, WARN_WER
+from alignment import build_rows, build_rows_from_words, WARN_WER
 from text_utils import read_script, normalize
 from rapidfuzz.distance import Levenshtein
 from qc_utils import canonical_row
@@ -327,26 +327,8 @@ class App(tk.Tk):
     # Orden final: [ID, ✓, OK, AI, WER, tc, Original, ASR]
     # ──────────────────────────────────────────────────────────────────────────────
     def _row_from_alignment(self, r: list) -> list:
-        """
-        build_rows genera:
-          6 col.: [ID, ✓,        WER, tc, Original, ASR]
-          7 col.: [ID, ✓,  OK,   WER, tc, Original, ASR]
-          8 col.: [ID, ✓,  OK, AI, WER, tc, Original, ASR]  (ya correcto)
-        Retorna siempre 8-columnas en el orden que usa la GUI.
-        """
-
-        from qc_utils import canonical_row
-
-        row = canonical_row(r)
-
-        # ``canonical_row`` may return 8 or 9 columns. When a "Score" column is
-        # present the time code is at index 6 instead of 5. Rows ending with a
-        # list store "takes" and keep the time code at index 5.  Adjust the
-        # index accordingly before formatting.
-        tc_idx = 6 if len(row) >= 9 and not isinstance(row[-1], list) else 5
-        if len(row) > tc_idx:
-            row[tc_idx] = _format_tc(row[tc_idx])
-        return row
+        # r ya viene en el orden correcto de 6 columnas
+        return r
 
     # ───────────────────────────────── ventana de progreso ─────────────────────────
     def _show_progress(self, text: str = "Procesando…", *, determinate: bool = False) -> None:
@@ -994,6 +976,7 @@ class App(tk.Tk):
 
     # ---------------------------------------------------------------------------------
     # hilo worker (alinear) -----------------------------------------------------------
+
     def _worker(self):
         def debug(msg: str) -> None:
             print(msg)
@@ -1034,10 +1017,14 @@ class App(tk.Tk):
 
             self.q.put("→ Alineando…")
             debug("DEBUG: Iniciando alineacion")
-            rows = build_rows(ref, hyp)
+
             if use_csv:
-                resync_rows(rows, csv_words, csv_tcs)
+                # ASR llegó como CSV de palabras: usar alineado palabra-a-palabra
+                rows = build_rows_from_words(ref, csv_words, csv_tcs)
             else:
+                # ASR llegó como texto: alinear por tokens…
+                rows = build_rows(ref, hyp)
+                # …pero si hay CSV al lado (o lo seleccionás), preferir palabra-a-palabra
                 csv_path: Path | None = None
                 audio_val = self.v_audio.get()
                 if audio_val:
@@ -1046,19 +1033,17 @@ class App(tk.Tk):
                         csv_path = candidate
                 if csv_path is None:
                     from tkinter import filedialog
-                    p = filedialog.askopenfilename(
-                        filetypes=[("CSV", "*.csv"), ("All", "*")]
-                    )
+                    p = filedialog.askopenfilename(filetypes=[("CSV", "*.csv"), ("All", "*")])
                     if p:
                         csv_path = Path(p)
                 if csv_path and csv_path.exists():
                     try:
-                        from utils.resync_python_v2 import load_words_csv, resync_rows
+                        from utils.resync_python_v2 import load_words_csv
                         csv_words, csv_tcs = load_words_csv(csv_path)
-                        resync_rows(rows, csv_words, csv_tcs)
+                        rows = build_rows_from_words(ref, csv_words, csv_tcs)
                         debug(f"DEBUG: CSV usado {csv_path}")
                     except Exception as exc:
-                        self.q.put(f"Resync error: {exc}")
+                        self.q.put(f"CSV fallback error: {exc}")
 
             rows = [canonical_row(r) for r in rows]
 

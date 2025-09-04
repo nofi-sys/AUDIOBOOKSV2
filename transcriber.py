@@ -308,7 +308,7 @@ def transcribe_word_csv(
 
     words_json = transcribe_wordlevel(
         audio_path,
-        model_name=model_size or "base",
+        model_name=model_size or "medium",
         script_path=script_path,
         detailed=False,
     )
@@ -356,7 +356,7 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument("input", nargs="?", help="Audio or video file")
     parser.add_argument(
         "--model",
-        default=None,
+        default="medium",
         help="Model size: tiny, base, small, medium, large",
     )
     parser.add_argument(

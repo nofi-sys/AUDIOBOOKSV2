@@ -29,7 +29,7 @@ Constante pública:
 from typing import Callable, List, Tuple
 import json
 import re
-import os
+
 from rapidfuzz.distance import Levenshtein
 from text_utils import (
     normalize,
@@ -47,11 +47,9 @@ COARSE_W     = 40      # banda inicial DTW
 WARN_WER     = 0.08    # umbral para ⚠️
 GAMMA_TIME   = 0.3     # penalización temporal (proporción)
 WORDS_PER_SEC = 3.0    # usado en build_rows (sin time-codes)
-_DEFUZZ = 1
 
 # ─────────────────────── debug facilito ─────────────────────────────
 DEBUG_LOGGER: Callable[[str], None] = lambda m: None
-
 
 def set_debug_logger(logger: Callable[[str], None]) -> None:  # pragma: no cover
     global DEBUG_LOGGER
@@ -66,80 +64,6 @@ def _sec_to_tc(sec: float) -> str:
     m = int((sec % 3600) // 60)
     s = sec - h * 3600 - m * 60
     return f"{h:02d}:{m:02d}:{s:05.1f}"
-
-def _similar(a: str, b: str) -> bool:
-    # reutiliza el import existente
-    return a == b or Levenshtein.distance(a, b) <= _DEFUZZ
-
-def _join(tok, i, n) -> str:
-    return " ".join(tok[i:i+n])
-def _choose_run(idx: list[int], ref_len: int, max_gap: int = 12,
-                max_ratio: float = 2.5, extra: int = 12) -> tuple[int, int]:
-    """
-    Elige la corrida contigua de índices (brechas ≤ max_gap) y
-    limita su ancho a (ref_len * max_ratio + extra).
-    Devuelve (hs, he) tipo slice.
-    """
-    if not idx:
-        return (0, 0)
-    idx = sorted(idx)
-    runs: list[list[int]] = []
-    cur = [idx[0]]
-    for a, b in zip(idx, idx[1:]):
-        if b - a <= max_gap:
-            cur.append(b)
-        else:
-            runs.append(cur)
-            cur = [b]
-    runs.append(cur)
-    # run preferida: más larga; si empata, la de menor span
-    runs.sort(key=lambda r: (-(len(r)), (r[-1] - r[0])))
-    hs, he = runs[0][0], runs[0][-1] + 1
-
-    limit = int(ref_len * max_ratio) + extra
-    if (he - hs) > limit:
-        mid = runs[0][len(runs[0]) // 2]
-        hs = max(hs, mid - limit // 2)
-        he = hs + limit
-    return hs, he
-
-def _find_anchors_fuzzy(ref_tok: list[str], hyp_tok: list[str]) -> list[tuple[int,int]]:
-    anchors: list[tuple[int,int,int]] = []
-    used_r: set[int] = set(); used_h: set[int] = set()
-
-    for n in (5,4,3,2):
-        ref_map = { _join(ref_tok, i, n): i for i in range(len(ref_tok)-n+1) }
-        j = 0
-        while j <= len(hyp_tok) - n:
-            if any((j+k) in used_h for k in range(n)):
-                j += 1; continue
-            key = _join(hyp_tok, j, n)
-            i = ref_map.get(key)
-            if i is None and n == 2:
-                w0, w1 = hyp_tok[j:j+2]
-                for i2 in range(len(ref_tok)-1):
-                    if _similar(w0, ref_tok[i2]) and _similar(w1, ref_tok[i2+1]):
-                        i = i2; break
-            if i is not None and not any((i+k) in used_r for k in range(n)):
-                anchors.append((i, j, n))
-                for k in range(n): used_r.add(i+k); used_h.add(j+k)
-                j += n; continue
-            j += 1
-
-    # respaldo unigram disperso
-    for j in range(0, len(hyp_tok), 20):
-        if j in used_h: continue
-        w = hyp_tok[j]
-        try:
-            i = next(ix for ix,x in enumerate(ref_tok) if _similar(w, x) and ix not in used_r)
-        except StopIteration:
-            continue
-        anchors.append((i, j, 1))
-        used_r.add(i); used_h.add(j)
-
-    anchors.sort(key=lambda x: x[0])
-    # devolvemos solo (i,j)
-    return [(i,j) for (i,j,_) in anchors]
 
 # ───────────────────── núcleo DTW seguro ────────────────────────────
 def _dtw_band(a: List[str], b: List[str], w: int) -> List[Tuple[int, int]]:
@@ -262,8 +186,7 @@ def build_rows(ref: str, hyp: str) -> list[list]:
         ref_seg = ref_tok[s:e]
         idx = [map_h[k] for k in range(s, e) if map_h[k] != -1 and map_h[k] not in consumed]
         if idx:
-            #hs, he = min(idx), max(idx) + 1
-            hs, he = _choose_run(idx, len(ref_seg))
+            hs, he = min(idx), max(idx) + 1
             consumed.update(range(hs, he))
             asr_text = " ".join(hyp_tok[hs:he])
         else:
@@ -323,8 +246,7 @@ def build_rows_wordlevel(ref: str, asr_word_json: str) -> list[list]:
         ref_seg = ref_tok[s:e]
         idx = [map_h[k] for k in range(s, e) if map_h[k] != -1 and map_h[k] not in consumed]
         if idx:
-            #hs, he = min(idx), max(idx) + 1
-            hs, he = _choose_run(idx, len(ref_seg))
+            hs, he = min(idx), max(idx) + 1
             consumed.update(range(hs, he))
             asr_text = " ".join(hyp_tok[hs:he])
             tc       = _sec_to_tc(words[hs]["start"])
@@ -351,61 +273,4 @@ def build_rows_wordlevel(ref: str, asr_word_json: str) -> list[list]:
             "",
             " ".join(hyp_tok[min(leftover):]),
         ])
-    return rows
-
-# NUEVA función: alinea usando palabras+tiempos del CSV
-def build_rows_from_words(ref: str, csv_words: list[str], csv_tcs: list[float]) -> list[list]:
-    ref_tok = normalize(ref, strip_punct=False).split()
-    hyp_tok = [normalize(w, strip_punct=False) for w in csv_words]
-
-    anchors = _find_anchors_fuzzy(ref_tok, hyp_tok)
-
-    pairs: list[tuple[int,int]] = []
-    seg = [(-1,-1)] + anchors + [(len(ref_tok)-1, len(hyp_tok)-1)]
-    for (pi,pj),(ni,nj) in zip(seg[:-1], seg[1:]):
-        if ni > pi+1 and nj > pj+1:
-            sr, sh = ref_tok[pi+1:ni], hyp_tok[pj+1:nj]
-            if sr and sh:
-                sub = _safe_dtw(sr, sh)
-                pairs += [(pi+1+ri, pj+1+hj) for ri,hj in sub]
-        if 0 <= ni < len(ref_tok) and 0 <= nj < len(hyp_tok):
-            pairs.append((ni, nj))
-    pairs.sort()
-
-    used_h: dict[int,int] = {}
-    map_h = [-1]*len(ref_tok)
-    for ri, hj in pairs:
-        # permitimos re-uso lejano para manejar repeticiones largas
-        if hj not in used_h or abs(ri - used_h[hj]) > 5:
-            used_h[hj] = ri
-            map_h[ri] = hj
-
-    rows: list[list] = []
-    consumed: set[int] = set()
-    last_h = 0
-
-    for s, e in _sentence_spans(ref_tok):
-        ref_seg = ref_tok[s:e]
-        idx = [map_h[k] for k in range(s,e) if map_h[k] != -1 and map_h[k] not in consumed]
-        if idx:
-            #hs, he = min(idx), max(idx)+1
-            hs, he = _choose_run(idx, len(ref_seg))
-
-            # opcional: insertar huecos solo-ASR (activar con QC_INSERT_SOLO_ASR=1)
-            if os.getenv("QC_INSERT_SOLO_ASR") and hs > last_h:
-                rows.append([len(rows), "❌", 100.0, _sec_to_tc(csv_tcs[last_h]), "", " ".join(hyp_tok[last_h:hs])])
-
-            consumed.update(range(hs, he))
-            asr_text = " ".join(hyp_tok[hs:he])
-            tc = _sec_to_tc(csv_tcs[hs])  # ← start real de la PRIMERA palabra
-            last_h = he
-        else:
-            asr_text = ""
-            tc = _sec_to_tc(csv_tcs[last_h]) if last_h < len(csv_tcs) else _sec_to_tc(0.0)
-
-        flag, werp = _flag_wer(ref_seg, asr_text.split())
-        rows.append([len(rows), flag, round(werp,1), tc, " ".join(ref_seg), asr_text])
-
-    if last_h < len(hyp_tok):
-        rows.append([len(rows), "❌", 100.0, _sec_to_tc(csv_tcs[last_h]), "", " ".join(hyp_tok[last_h:])])
     return rows

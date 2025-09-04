@@ -27,7 +27,8 @@ if os.getenv("AI_REVIEW_DEBUG", "").lower() in ("1", "true", "yes"):
 load_dotenv()
 
 # Use o3 model family
-MODEL = "o3"
+#MODEL = "o3"
+MODEL = "gpt-5"
 _client_instance: OpenAI | None = None
 # Global flag to allow cancelling a long batch review
 _stop_review = False
@@ -118,7 +119,7 @@ Your ONLY goal is to detect clear AUDIO READING or EDITING ERRORS that significa
 
 DO NOT consider the following as mistakes:
 
-- Punctuation, accents, capitalization, spelling errors.
+- Punctuation, accents, capitalization, spelling errors. Non standard characters (like ||)
 - Minor phonetic variations, especially in proper names or foreign words.
 - Slight repetitions or brief pauses if they do not significantly alter the sentence's meaning.
 - Transcription inaccuracies that don't significantly impact understanding.
