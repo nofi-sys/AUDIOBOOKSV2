@@ -416,40 +416,37 @@ def build_rows_from_words(ref: str, csv_words: list[str], csv_tcs: list[float]) 
 
     rows: list[list] = []
     consumed: set[int] = set()
-    last_h = 0
-
-    # Encontrar el último token de referencia con correspondencia en ASR
-    last_ref_with_match = -1
-    if any(x != -1 for x in map_h):
-        last_ref_with_match = max(i for i, h_idx in enumerate(map_h) if h_idx != -1)
+    last_h = 0  # Pointer for the last consumed ASR word index
 
     for s, e in _sentence_spans(ref_tok):
         ref_seg = ref_tok[s:e]
-        # Marcar como epílogo si el inicio de la frase está más allá de la última coincidencia
-        is_epilogue = last_ref_with_match != -1 and s > last_ref_with_match
-
         idx = [map_h[k] for k in range(s,e) if map_h[k] != -1 and map_h[k] not in consumed]
+
         if idx:
-            #hs, he = min(idx), max(idx)+1
             hs, he = _choose_run(idx, len(ref_seg))
 
-            # opcional: insertar huecos solo-ASR (activar con QC_INSERT_SOLO_ASR=1)
-            if os.getenv("QC_INSERT_SOLO_ASR") and hs > last_h:
-                rows.append([len(rows), "❌", 100.0, _sec_to_tc(csv_tcs[last_h]), "", " ".join(hyp_tok[last_h:hs])])
+            # GENERAL INSERTION HANDLING: If there's a gap between the last ASR segment
+            # and this one, it's an insertion (e.g., ad-lib). Create a row for it.
+            if hs > last_h:
+                insertion_text = " ".join(hyp_tok[last_h:hs])
+                insertion_tc = _sec_to_tc(csv_tcs[last_h])
+                rows.append([len(rows), "❌", 100.0, insertion_tc, "", insertion_text])
 
+            # This is a normal, aligned segment.
             consumed.update(range(hs, he))
             asr_text = " ".join(hyp_tok[hs:he])
-            tc = _sec_to_tc(csv_tcs[hs])  # ← start real de la PRIMERA palabra
+            tc = _sec_to_tc(csv_tcs[hs])
             last_h = he
         else:
+            # GENERAL GAP HANDLING: This reference sentence has no corresponding ASR words.
+            # It's a gap in the audio. Mark it clearly.
             asr_text = ""
-            # Si es epílogo, no hay TC. Si no, es un hueco y se usa el TC anterior.
-            tc = "TC?" if is_epilogue else (_sec_to_tc(csv_tcs[last_h]) if last_h < len(csv_tcs) else 0.0)
+            tc = "TC?"
 
         flag, werp = _flag_wer(ref_seg, asr_text.split())
         rows.append([len(rows), flag, round(werp,1), tc, " ".join(ref_seg), asr_text])
 
-    # Fragmentos de ASR que no correspondieron a ninguna frase del guion
+    # Handle any leftover ASR text at the very end of the file.
     if last_h < len(hyp_tok):
         rows.append([
             len(rows), "❌", 100.0, _sec_to_tc(csv_tcs[last_h]), "", " ".join(hyp_tok[last_h:])
