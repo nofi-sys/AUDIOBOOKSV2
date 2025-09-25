@@ -49,7 +49,7 @@ def _format_tc(val: str | float) -> str:
     try:
         t = float(val)
     except (TypeError, ValueError):
-        return str(val)
+        return "---"
     h = int(t // 3600)
     m = int((t % 3600) // 60)
     s = t % 60

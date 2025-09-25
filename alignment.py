@@ -418,8 +418,16 @@ def build_rows_from_words(ref: str, csv_words: list[str], csv_tcs: list[float]) 
     consumed: set[int] = set()
     last_h = 0
 
+    # Encontrar el último token de referencia con correspondencia en ASR
+    last_ref_with_match = -1
+    if any(x != -1 for x in map_h):
+        last_ref_with_match = max(i for i, h_idx in enumerate(map_h) if h_idx != -1)
+
     for s, e in _sentence_spans(ref_tok):
         ref_seg = ref_tok[s:e]
+        # Marcar como epílogo si el inicio de la frase está más allá de la última coincidencia
+        is_epilogue = last_ref_with_match != -1 and s > last_ref_with_match
+
         idx = [map_h[k] for k in range(s,e) if map_h[k] != -1 and map_h[k] not in consumed]
         if idx:
             #hs, he = min(idx), max(idx)+1
@@ -435,14 +443,16 @@ def build_rows_from_words(ref: str, csv_words: list[str], csv_tcs: list[float]) 
             last_h = he
         else:
             asr_text = ""
-            tc = _sec_to_tc(csv_tcs[last_h]) if last_h < len(csv_tcs) else _sec_to_tc(0.0)
+            # Si es epílogo, no hay TC. Si no, es un hueco y se usa el TC anterior.
+            tc = "TC?" if is_epilogue else (_sec_to_tc(csv_tcs[last_h]) if last_h < len(csv_tcs) else 0.0)
 
         flag, werp = _flag_wer(ref_seg, asr_text.split())
         rows.append([len(rows), flag, round(werp,1), tc, " ".join(ref_seg), asr_text])
 
+    # Fragmentos de ASR que no correspondieron a ninguna frase del guion
     if last_h < len(hyp_tok):
         rows.append([
-            len(rows), "KO", 100.0, _sec_to_tc(csv_tcs[last_h]), "", " ".join(hyp_tok[last_h:])
+            len(rows), "❌", 100.0, _sec_to_tc(csv_tcs[last_h]), "", " ".join(hyp_tok[last_h:])
         ])
 
     if csv_words and not os.getenv("QC_SKIP_REFINER"):
