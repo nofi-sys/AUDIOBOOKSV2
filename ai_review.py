@@ -7,6 +7,7 @@ import json
 import os
 import logging
 import time
+import threading
 
 from dotenv import load_dotenv
 from openai import (
@@ -35,6 +36,7 @@ _stop_review = False
 
 # Maximum number of OpenAI requests per batch review
 MAX_MESSAGES = int(os.getenv("AI_REVIEW_MAX_MESSAGES", "100"))
+ROW_TIMEOUT_SEC = int(os.getenv("AI_REVIEW_ROW_TIMEOUT_SEC", "300"))  # 5 min default
 
 
 def stop_review() -> None:
@@ -92,6 +94,32 @@ def load_prompt(path: str = "prompt.txt") -> str:
     except Exception:
         logger.info("Using built-in prompt; failed to read %s", path)
         return DEFAULT_PROMPT
+
+
+def _ai_verdict_with_timeout(original: str, asr: str, prompt: str | None, timeout_sec: int) -> str:
+    """Run ai_verdict in a helper thread and enforce a timeout.
+
+    Returns the verdict string or raises TimeoutError/propagates exceptions.
+    """
+    result: dict[str, str] = {}
+    error: dict[str, BaseException] = {}
+
+    def _runner():
+        try:
+            result["v"] = ai_verdict(original, asr, prompt)
+        except BaseException as exc:  # noqa: BLE001
+            error["e"] = exc
+
+    th = threading.Thread(target=_runner, daemon=True)
+    th.start()
+    th.join(timeout=timeout_sec)
+    if th.is_alive():
+        # Leave the worker thread to finish in the background; we will ignore it.
+        raise TimeoutError("ai_verdict timed out")
+    if error:
+        exc = error["e"]
+        raise exc
+    return result.get("v", "dudoso")
 
 
 def _mark_error(row: List) -> None:
@@ -194,7 +222,7 @@ def ai_verdict(
     print("DEBUG: raw verdict repr:", repr(content))
     trimmed = content.strip()
     word = trimmed.split()[0].lower() if trimmed else ""
-    if word not in {"ok", "mal", "dudoso"}:
+    if word not in {"ok", "mal", "dudoso", "error"}:
         logger.warning(
             "Unexpected AI response '%s', defaulting to dudoso", trimmed
         )
@@ -214,7 +242,7 @@ def review_row(row: List, base_prompt: str | None = None) -> str:
             _mark_error(row)
             return "error"
         raise
-    if verdict not in {"ok", "mal", "dudoso"}:
+    if verdict not in {"ok", "mal", "dudoso", "error"}:
         verdict = "dudoso"
     # Insert into row preserving structure
     # Row formats: [ID, tick, OK?, WER, dur, original, asr]
@@ -246,7 +274,7 @@ def review_row_feedback(row: List, base_prompt: str | None = None) -> tuple[str,
             _mark_error(row)
             return "error", ""
         raise
-    if verdict not in {"ok", "mal", "dudoso"}:
+    if verdict not in {"ok", "mal", "dudoso", "error"}:
         verdict = "dudoso"
     if len(row) == 6:
         row.insert(2, "")
@@ -350,19 +378,67 @@ def review_file(
                 progress_callback("start", i, row)
             except Exception:
                 logger.exception("progress_callback start failed")
-        sent += 1
-        try:
-            verdict = ai_verdict(str(row[-2]), str(row[-1]), prompt)
-        except BadRequestError as exc:
-            if "max_tokens" in str(exc) or "model output limit" in str(exc):
-                _mark_error(row)
-                Path(qc_json).write_text(
-                    json.dumps(rows, ensure_ascii=False, indent=2),
-                    encoding="utf8",
+        attempts = 0
+        verdict = None  # type: ignore
+        while True:
+            # Check max requests budget before each attempt
+            if max_requests and sent >= max_requests:
+                break
+            sent += 1
+            try:
+                verdict = _ai_verdict_with_timeout(
+                    str(row[-2]), str(row[-1]), prompt, ROW_TIMEOUT_SEC
                 )
+            except TimeoutError:
+                attempts += 1
+                logger.warning("Row %d timed out after %ds (attempt %d)", i, ROW_TIMEOUT_SEC, attempts)
+                if attempts >= 2:
+                    # Stop processing; show popup and exit loop
+                    try:
+                        from tkinter import messagebox  # type: ignore
+
+                        messagebox.showerror(
+                            "AI Review detenido",
+                            f"Se detuvo el AI Review por timeout repetido en la fila {i+1}.",
+                        )
+                    except Exception:
+                        logger.exception("Failed to show error popup")
+                    _stop_review = True
+                    # Clean processing tag in GUI by sending 'done' without verdict
+                    if progress_callback:
+                        try:
+                            progress_callback("done", i, row)
+                        except Exception:
+                            logger.exception("progress_callback done failed (timeout)")
+                    break
+                # Retry same row once
                 continue
-            raise
-        if verdict not in {"ok", "mal", "dudoso"}:
+            except BadRequestError as exc:
+                if "max_tokens" in str(exc) or "model output limit" in str(exc):
+                    _mark_error(row)
+                    Path(qc_json).write_text(
+                        json.dumps(rows, ensure_ascii=False, indent=2),
+                        encoding="utf8",
+                    )
+                    # Inform GUI that this row ended processing
+                    if progress_callback:
+                        try:
+                            progress_callback("done", i, row)
+                        except Exception:
+                            logger.exception("progress_callback done failed (bad request)")
+                    verdict = "error"
+                    break
+                raise
+            # Success
+            break
+
+        # If we broke due to stop signal or budget, exit outer loop
+        if max_requests and sent >= max_requests and verdict is None:
+            break
+        if verdict is None:
+            # No verdict produced (e.g., budget exhausted). Stop.
+            break
+        if verdict not in {"ok", "mal", "dudoso", "error"}:
             verdict = "dudoso"
         # Insert verdict column
         if len(row) == 6:
@@ -385,6 +461,8 @@ def review_file(
                 progress_callback("done", i, row)
             except Exception:
                 logger.exception("progress_callback done failed")
+        if _stop_review or (max_requests and sent >= max_requests):
+            break
     logger.info("Approved %d / Remaining %d", approved, sent-approved)
     return approved, sent-approved
 
@@ -438,7 +516,7 @@ def review_file_feedback(
                 continue
             raise
         feedback.append(fb)
-        if verdict not in {"ok", "mal", "dudoso"}:
+        if verdict not in {"ok", "mal", "dudoso", "error"}:
             verdict = "dudoso"
         if len(row) == 6:
             row.insert(2, "")

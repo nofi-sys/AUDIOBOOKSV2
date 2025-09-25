@@ -39,6 +39,8 @@ from text_utils import (
     find_anchor_trigrams,
 )
 
+from rectifier import rectify_rows, RectifyReport
+
 __all__ = ["COL_ORDER", "build_rows", "build_rows_wordlevel"]
 
 COL_ORDER = ("ID", "flag", "WER", "tc", "Original", "ASR")
@@ -60,12 +62,26 @@ def set_debug_logger(logger: Callable[[str], None]) -> None:  # pragma: no cover
 def _d(msg: str) -> None:
     DEBUG_LOGGER(msg)
 
+def _log_rectify_report(report: RectifyReport) -> None:
+    parts: list[str] = [f"anchors={len(report.anchors)}"]
+    if report.total_moves:
+        parts.append(f"moves={report.total_moves}")
+    if report.empty_rows:
+        parts.append(f"empty={len(report.empty_rows)}")
+    if report.anomalies:
+        parts.append(f"issues={len(report.anomalies)}")
+    if report.notes:
+        parts.extend(report.notes)
+    summary = ', '.join(parts) if parts else 'clean'
+    _d(f"R2-report: {summary}")
+
 # ───────────────────── helpers de time-code ─────────────────────────
-def _sec_to_tc(sec: float) -> str:
-    h = int(sec // 3600)
-    m = int((sec % 3600) // 60)
-    s = sec - h * 3600 - m * 60
-    return f"{h:02d}:{m:02d}:{s:05.1f}"
+def _sec_to_tc(sec: float) -> float:
+    """Convert seconds to a compact float with two decimals for storage."""
+    try:
+        return round(float(sec), 2)
+    except Exception:
+        return 0.0
 
 def _similar(a: str, b: str) -> bool:
     # reutiliza el import existente
@@ -345,12 +361,30 @@ def build_rows_wordlevel(ref: str, asr_word_json: str) -> list[list]:
     if leftover:
         rows.append([
             len(rows),
-            "❌",
+            "KO",
             100.0,
             _sec_to_tc(words[min(leftover)]["start"]),
             "",
             " ".join(hyp_tok[min(leftover):]),
         ])
+
+    if words and not os.getenv("QC_SKIP_REFINER"):
+        try:
+            csv_words = [w["norm"] for w in words]
+            csv_tcs = [w["start"] for w in words]
+            refined, report = rectify_rows(
+                rows, csv_words, csv_tcs, log=_d, flag_fn=_flag_wer, return_report=True
+            )
+            rows = refined
+            _log_rectify_report(report)
+            if report.anomalies:
+                for idx in report.anomalies:
+                    if 0 <= idx < len(rows):
+                        flag = str(rows[idx][1])
+                        if flag not in {"KO", "bad"}:
+                            rows[idx][1] = "??"
+        except Exception as exc:
+            _d(f"Rectify failed: {exc}")
     return rows
 
 # NUEVA función: alinea usando palabras+tiempos del CSV
@@ -407,5 +441,24 @@ def build_rows_from_words(ref: str, csv_words: list[str], csv_tcs: list[float]) 
         rows.append([len(rows), flag, round(werp,1), tc, " ".join(ref_seg), asr_text])
 
     if last_h < len(hyp_tok):
-        rows.append([len(rows), "❌", 100.0, _sec_to_tc(csv_tcs[last_h]), "", " ".join(hyp_tok[last_h:])])
-    return rows
+        rows.append([
+            len(rows), "KO", 100.0, _sec_to_tc(csv_tcs[last_h]), "", " ".join(hyp_tok[last_h:])
+        ])
+
+    if csv_words and not os.getenv("QC_SKIP_REFINER"):
+        try:
+            norm_words = [normalize(w, strip_punct=False) for w in csv_words]
+            refined, report = rectify_rows(
+                rows, norm_words, csv_tcs, log=_d, flag_fn=_flag_wer, return_report=True
+            )
+            rows = refined
+            _log_rectify_report(report)
+            if report.anomalies:
+                for idx in report.anomalies:
+                    if 0 <= idx < len(rows):
+                        flag = str(rows[idx][1])
+                        if flag not in {"KO", "bad"}:
+                            rows[idx][1] = "??"
+        except Exception as exc:
+            _d(f"Rectify failed: {exc}")
+

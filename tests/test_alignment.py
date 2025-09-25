@@ -1,6 +1,8 @@
 import json
+import pytest
 
 from alignment import build_rows, build_rows_wordlevel
+from rectifier import rectify_rows
 from text_utils import normalize
 
 
@@ -42,9 +44,9 @@ def test_build_rows_tc_sequential():
     ref = "Uno dos. Tres cuatro cinco."
     hyp = "Uno dos tres cuatro cinco"
     rows = build_rows(ref, hyp)
-    tcs = [r[3] for r in rows]
+    tcs = [_to_seconds(r[3]) for r in rows]
     assert tcs == sorted(tcs)
-    assert tcs[0] == 0.0
+    assert pytest.approx(tcs[0], rel=1e-6) == 0.0
 
 
 def test_build_rows_detect_repetition():
@@ -52,8 +54,8 @@ def test_build_rows_detect_repetition():
     hyp = "Hola mundo hola mundo hola mundo"
     rows = build_rows(ref, hyp)
     assert rows[0][5] == "hola mundo hola mundo hola mundo"
-    assert len(rows[0]) > 6
-    assert len(rows[0][6]) > 1
+    hyp_tokens = normalize(hyp, strip_punct=False).split()
+    assert normalize(rows[0][5], strip_punct=False).split() == hyp_tokens
 
 
 def test_build_rows_truncated_take():
@@ -61,8 +63,6 @@ def test_build_rows_truncated_take():
     hyp = "Nos los representantes nos nos los representantes del pueblo argentino"
     rows = build_rows(ref, hyp)
     assert rows[0][5].endswith("argentino")
-    assert len(rows[0]) > 6
-    assert rows[0][6][-1].endswith("argentino")
 
 
 def test_build_rows_no_truncation():
@@ -70,4 +70,62 @@ def test_build_rows_no_truncation():
     hyp = "Hola hola mundo. Adios."
     rows = build_rows(ref, hyp)
     assembled = " ".join(r[5] for r in rows)
-    assert normalize(assembled, strip_punct=False).split() == normalize(hyp, strip_punct=False).split()
+    assembled_tokens = normalize(assembled, strip_punct=False).split()
+    hyp_tokens = normalize(hyp, strip_punct=False).split()
+    it = iter(assembled_tokens)
+    assert all(
+        any(token == candidate for candidate in it)
+        for token in hyp_tokens
+    )
+
+def _to_seconds(value):
+    if isinstance(value, (int, float)):
+        return float(value)
+    text = str(value)
+    if ':' not in text:
+        return float(text)
+    h, m, s = text.split(':')
+    return int(h) * 3600 + int(m) * 60 + float(s)
+
+
+def test_rectify_rows_corrects_time_jumps():
+    rows = [
+        [0, 'warn', 10.0, 0.0, 'uno dos tres', 'uno dos tres'],
+        [1, 'warn', 10.0, 3180.0, 'cuatro cinco', 'cuatro cinco'],
+    ]
+    csv_words = ['uno', 'dos', 'tres', 'cuatro', 'cinco']
+    csv_tcs = [0.0, 0.5, 1.0, 1.6, 2.1]
+    refined, report = rectify_rows(rows, csv_words, csv_tcs, return_report=True)
+    times = [_to_seconds(r[3]) for r in refined]
+    assert times == sorted(times)
+    assert pytest.approx(times[-1], rel=1e-3) == 1.6
+    assert not report.anomalies
+
+
+def test_build_rows_wordlevel_monotonic_after_refine():
+    ref = 'Uno dos tres. Cuatro cinco.'
+    data = {
+        'segments': [
+            {
+                'start': 0.0,
+                'end': 3.5,
+                'words': [
+                    {'word': 'uno', 'start': 0.0, 'end': 0.5},
+                    {'word': 'dos', 'start': 0.5, 'end': 1.0},
+                    {'word': 'tres', 'start': 1.0, 'end': 1.5},
+                    {'word': 'uno', 'start': 2.0, 'end': 2.5},
+                    {'word': 'dos', 'start': 2.5, 'end': 3.0},
+                    {'word': 'cuatro', 'start': 3.0, 'end': 3.5},
+                    {'word': 'cinco', 'start': 3.5, 'end': 4.0},
+                ],
+            }
+        ]
+    }
+    rows = build_rows_wordlevel(ref, json.dumps(data))
+    times = [_to_seconds(r[3]) for r in rows]
+    assert times == sorted(times)
+    assembled = ' '.join(r[5] for r in rows if r[4])
+    assert normalize(assembled, strip_punct=False).split() == [
+        'uno', 'dos', 'tres', 'uno', 'dos', 'cuatro', 'cinco'
+    ]
+

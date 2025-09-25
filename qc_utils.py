@@ -65,16 +65,19 @@ def merge_qc_metadata(old_rows: List[List], new_rows: List[List]) -> List[List]:
 
 
 
-def canonical_row(r: list[str|float]) -> list:
-    # r = [ID, flag, WER, tc, Original, ASR]
-    id_, flag, wer, tc, original, asr = r
-    return [
-        id_,          # ID
-        flag,         # ✓
-        "",           # OK (vacío al empezar)
-        "",           # AI (vacío al empezar)
-        wer,          # WER
-        tc,           # tc
-        original,     # Original
-        asr           # ASR
-    ]
+def canonical_row(r: list[str | float]) -> list:
+    """Normalize incoming rows to the standard 8-column layout."""
+    if len(r) >= 8:
+        id_, flag, ok, ai, wer, tc, original, asr, *extra = r
+        return [id_, flag, ok, ai, wer, tc, original, asr] + list(extra)
+    if len(r) == 7:
+        if isinstance(r[2], (int, float)):
+            base = canonical_row(r[:6])
+            return base + r[6:]
+        id_, flag, ok, wer, tc, original, asr = r
+        return [id_, flag, ok, '', wer, tc, original, asr]
+    if len(r) == 6:
+        id_, flag, wer, tc, original, asr = r
+        return [id_, flag, '', '', wer, tc, original, asr]
+    padded = list(r) + [''] * max(0, 6 - len(r))
+    return canonical_row(padded[:6])

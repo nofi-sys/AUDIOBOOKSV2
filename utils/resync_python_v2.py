@@ -133,10 +133,13 @@ def resync_rows(
     # 1) lista plana de palabras (ASR)
     j_tokens, tok2row = [], []
     for ridx, row in enumerate(rows):
-        for tok in _tok(str(row[-1])):   # siempre la última col es ASR
+        asr_field = row[-1]
+        if not isinstance(asr_field, str) and len(row) >= 2:
+            asr_field = row[-2]
+        for tok in _tok(str(asr_field)):
             j_tokens.append(tok); tok2row.append(ridx)
 
-    # 2) anclas
+# 2) anclas
     anchors = _find_anchors(csv_words, j_tokens)
     log(f"→ anclas: {len(anchors)}")
 
@@ -155,17 +158,44 @@ def resync_rows(
         if row_tc[ridx] is None:
             row_tc[ridx] = csv_tcs[cidx]
 
-    # 5) rellenar huecos con forward‑fill
+    # 5) rellenar huecos con forward-fill mejorado
+    anchors_idx = [idx for idx, tc in enumerate(row_tc) if tc is not None]
+    if anchors_idx:
+        first_anchor = anchors_idx[0]
+        for i in range(first_anchor):
+            row_tc[i] = row_tc[first_anchor]
+        for a, b in zip(anchors_idx, anchors_idx[1:]):
+            ta, tb = row_tc[a], row_tc[b]
+            span = b - a
+            if span > 1:
+                step = (tb - ta) / span
+                for off in range(1, span):
+                    row_tc[a + off] = ta + step * off
+        last_anchor = anchors_idx[-1]
+        last_time = row_tc[last_anchor]
+        trailing = len(rows) - last_anchor - 1
+        if trailing > 0:
+            target = csv_tcs[-1] if csv_tcs else last_time
+            if target < last_time:
+                target = last_time
+            step = (target - last_time) / trailing if trailing else 0.0
+            for off in range(1, trailing + 1):
+                row_tc[last_anchor + off] = last_time + step * off
+    else:
+        base = csv_tcs[0] if csv_tcs else 0.0
+        for i in range(len(row_tc)):
+            row_tc[i] = base * i
+
     last = 0.0
     for i, tc in enumerate(row_tc):
         if tc is None:
             row_tc[i] = last
         else:
-            last = tc
+            last = row_tc[i]
 
-    # 6) escribir tc en columna len(row)‑3  (justo antes de Original y ASR)
+# 6) escribir tc en columna len(row)‑3  (justo antes de Original y ASR)
     for i, row in enumerate(rows):
-        idx_tc = max(0, len(row) - 3)
+        idx_tc = 5 if len(row) >= 6 else max(0, len(row) - 3)
         if len(row) <= idx_tc:
             row.extend("" for _ in range(idx_tc - len(row) + 1))
         row[idx_tc] = f"{row_tc[i]:.2f}"

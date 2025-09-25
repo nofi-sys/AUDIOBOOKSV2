@@ -9,16 +9,24 @@ from __future__ import annotations
 """
 
 import io
+import time
 import json
 import os
 import queue
 import threading
 import traceback
+import shutil
+import subprocess
 from pathlib import Path
 
 import pygame
 import tkinter as tk
 from tkinter import filedialog, messagebox, scrolledtext, ttk
+import time
+try:
+    import vlc  # opcional, para control de velocidad suave
+except Exception:
+    vlc = None
 
 from utils.gui_errors import show_error
 
@@ -105,6 +113,32 @@ class App(tk.Tk):
         self._clip_start = 0.0
         self._clip_end: float | None = None
         self._clip_offset = 0.0  # offset within the current clip
+
+        # Velocidad de reproducción
+        self._play_rate: float = 1.0
+        self._rate_wall_start: float | None = None
+        self._rate_pos_start: float | None = None
+        self._rate_job: str | None = None
+
+        # Motor de audio
+        self._audio_engine: str = "pygame"
+        self._vlc_instance = None
+        self._vlc_player = None
+        if vlc is not None:
+            try:
+                self._vlc_instance = vlc.Instance()
+                self._audio_engine = "vlc"
+            except Exception:
+                self._vlc_instance = None
+                self._audio_engine = "pygame"
+        # Preferir ffplay si está disponible
+        self._ffplay_path: str | None = shutil.which("ffplay")
+        self._ffplay_proc = None
+        if self._ffplay_path:
+            self._audio_engine = "ffplay"
+        # Soporte de velocidad acelerada solo si hay ffplay
+        self._supports_fast: bool = bool(self._ffplay_path)
+        self._warned_fast: bool = False
 
         self.marker_path: Path | None = None
         self.audio_session: AudacityLabelSession | None = None
@@ -251,6 +285,8 @@ class App(tk.Tk):
         ttk.Button(bar, text="OK", command=self._clip_ok).pack(side="left", padx=4)
         ttk.Button(bar, text="mal", command=self._clip_bad).pack(side="left", padx=4)
         ttk.Button(bar, text="Marcar", command=self.set_marker).pack(side="left", padx=4)
+        ttk.Button(bar, text="Guardar punto", command=self.save_bookmark).pack(side="left", padx=4)
+        ttk.Button(bar, text="Ir al punto", command=self.goto_bookmark).pack(side="left", padx=4)
 
     # ---------------------------------------------------------------------------------
     # navegación de archivos ----------------------------------------------------------
@@ -277,7 +313,8 @@ class App(tk.Tk):
         try:
             rows = [list(self.tree.item(i)["values"]) for i in self.tree.get_children()]
             for r in rows:
-                r[5] = _parse_tc(str(r[5]))
+                idx_tc = max(0, len(r) - 3)
+                r[idx_tc] = _parse_tc(str(r[idx_tc]))
             Path(self.v_json.get()).write_text(
                 json.dumps(rows, ensure_ascii=False, indent=2), encoding="utf8"
             )
@@ -327,8 +364,31 @@ class App(tk.Tk):
     # Orden final: [ID, ✓, OK, AI, WER, tc, Original, ASR]
     # ──────────────────────────────────────────────────────────────────────────────
     def _row_from_alignment(self, r: list) -> list:
-        # r ya viene en el orden correcto de 6 columnas
-        return r
+        # Devuelve SIEMPRE 8 columnas y formatea tc como HH:MM:SS.d
+        try:
+            vals = list(r)
+            if not vals:
+                return ["", "", "", "", "", "", "", ""]
+            idx_tc = len(vals) - 3 if len(vals) >= 3 else 0
+            try:
+                vals[idx_tc] = _format_tc(vals[idx_tc])
+            except Exception:
+                pass
+            if len(vals) == 6:
+                out = [vals[0], vals[1], "", "", vals[2], vals[3], str(vals[4]), str(vals[5])]
+            else:
+                id_  = vals[0] if len(vals) > 0 else ""
+                flag = vals[1] if len(vals) > 1 else ""
+                ok   = vals[2] if len(vals) > 2 else ""
+                ai   = vals[3] if len(vals) > 3 else ""
+                wer  = vals[4] if len(vals) > 4 else ""
+                tc   = vals[idx_tc]
+                orig = vals[-2] if len(vals) >= 2 else ""
+                asr  = vals[-1] if len(vals) >= 1 else ""
+                out = [id_, flag, ok, ai, wer, tc, str(orig), str(asr)]
+            return out
+        except Exception:
+            return list(r)
 
     # ───────────────────────────────── ventana de progreso ─────────────────────────
     def _show_progress(self, text: str = "Procesando…", *, determinate: bool = False) -> None:
@@ -515,6 +575,7 @@ class App(tk.Tk):
             self._snapshot()
             self._update_scale_range()
             self._load_marker()
+            self._load_bookmark_selection()
             self._log(f"✔ Cargado {self.v_json.get()}")
         except Exception as e:
             show_error("Error", e)
@@ -559,12 +620,190 @@ class App(tk.Tk):
     def _play_current_clip(self):
         if self._clip_item and self.v_audio.get():
             start = self._clip_start + self._clip_offset
-            play_interval(self.v_audio.get(), start, self._clip_end)
+            # Asegurar que no queden reproducciones previas activas
+            self._stop_all_audio()
+            # Si se pidió velocidad >1x y no soportamos fast, degradar a 1x con aviso
+            if abs(self._play_rate - 1.0) > 1e-6 and not self._supports_fast:
+                self._play_rate = 1.0
+                self._warn_fast_unavailable()
+            if getattr(self, "_ffplay_path", None) and getattr(self, "_audio_engine", "") == "ffplay":
+                self._play_ffplay(start, self._clip_end)
+            else:
+                # Sin ffplay: siempre 1x, sin hack de saltos
+                self._cancel_rate_job()
+                play_interval(self.v_audio.get(), start, self._clip_end)
 
     def _seek_clip(self, offset: float) -> None:
         """Move playback head to ``offset`` seconds within current clip."""
         self._clip_offset = max(0.0, offset)
+        # Reinicia reproducción limpiamente con el nuevo offset
+        self._stop_all_audio()
         self._play_current_clip()
+
+    # ----------------------------- motor FFPLAY -------------------------------------
+    def _play_ffplay(self, start: float, end: float | None) -> None:
+        # Matar cualquier reproducción previa (ffplay/pygame/vlc)
+        self._stop_all_audio()
+        # Construir comando
+        rate = max(0.5, min(2.0, float(self._play_rate)))
+        cmd = [self._ffplay_path, "-hide_banner", "-loglevel", "error", "-nodisp", "-autoexit", "-vn"]
+        if start and start > 0:
+            cmd += ["-ss", f"{start:.3f}"]
+        if end is not None and end > start:
+            dur = max(0.0, end - start + PLAYBACK_PAD)
+            cmd += ["-t", f"{dur:.3f}"]
+        if abs(rate - 1.0) > 1e-6:
+            cmd += ["-af", f"atempo={rate:.3f}"]
+        cmd += [self.v_audio.get()]
+        try:
+            self._ffplay_proc = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            self._rate_wall_start = time.monotonic()
+            self._rate_pos_start = start
+        except Exception:
+            # Fallback a pygame
+            self._audio_engine = "pygame"
+            if abs(self._play_rate - 1.0) < 1e-6:
+                play_interval(self.v_audio.get(), start, end)
+            else:
+                self._start_rate_playback()
+
+    # ----------------------------- motor VLC ---------------------------------------
+    def _play_vlc(self, start: float, end: float | None) -> None:
+        try:
+            # detener reproducción previa
+            if self._vlc_player is not None:
+                try:
+                    self._vlc_player.stop()
+                except Exception:
+                    pass
+            media = self._vlc_instance.media_new_path(self.v_audio.get())
+            opts = [f":start-time={start}"]
+            if end is not None:
+                opts.append(f":stop-time={end}")
+            try:
+                media.add_options(*opts)
+            except Exception:
+                for o in opts:
+                    try:
+                        media.add_option(o)
+                    except Exception:
+                        pass
+            player = self._vlc_instance.media_player_new()
+            player.set_media(media)
+            player.play()
+            try:
+                player.set_rate(float(self._play_rate))
+            except Exception:
+                pass
+            self._vlc_player = player
+        except Exception:
+            # Fallback a pygame
+            self._audio_engine = "pygame"
+            self._start_rate_playback() if abs(self._play_rate - 1.0) > 1e-6 else play_interval(self.v_audio.get(), start, end)
+
+    def _cancel_rate_job(self) -> None:
+        if getattr(self, "_rate_job", None):
+            try:
+                self.after_cancel(self._rate_job)
+            except Exception:
+                pass
+            self._rate_job = None
+
+    def _start_rate_playback(self) -> None:
+        # Punto de inicio deseado
+        self._stop_all_audio()
+        pos = self._clip_start + self._clip_offset
+        try:
+            pygame.mixer.init()
+            pygame.mixer.music.load(self.v_audio.get())
+            pygame.mixer.music.play(start=pos)
+        except Exception:
+            # Fallback
+            play_interval(self.v_audio.get(), pos, self._clip_end)
+        # Anclas para calcular posición deseada según la pared de tiempo
+        self._rate_wall_start = time.monotonic()
+        self._rate_pos_start = pos
+        self._schedule_rate_tick()
+
+    def _schedule_rate_tick(self) -> None:
+        self._cancel_rate_job()
+        self._rate_job = self.after(150, self._rate_tick)
+
+    def _rate_tick(self) -> None:
+        # Si no hay velocidad acelerada, no continuar
+        if abs(self._play_rate - 1.0) < 1e-6 or not self._supports_fast:
+            self._cancel_rate_job()
+            return
+        if self._rate_wall_start is None or self._rate_pos_start is None:
+            return
+        # Calcular posición deseada
+        now = time.monotonic()
+        elapsed = now - self._rate_wall_start
+        rate = max(self._play_rate, 0.1)
+        desired = self._rate_pos_start + elapsed * rate
+        clip_end = self._clip_end if self._clip_end is not None else float("inf")
+        if desired >= clip_end + PLAYBACK_PAD:
+            try:
+                pygame.mixer.music.stop()
+            except Exception:
+                pass
+            self._cancel_rate_job()
+            return
+
+        # Posición real
+        actual = desired
+        try:
+            if pygame.mixer.get_init() and pygame.mixer.music.get_busy():
+                pos_ms = pygame.mixer.music.get_pos()
+                if pos_ms >= 0:
+                    actual = self._clip_start + self._clip_offset + pos_ms / 1000.0
+        except Exception:
+            pass
+
+        # Si hay desviación, re-lanzar al punto deseado
+        if abs(desired - actual) > 0.3:
+            try:
+                pygame.mixer.music.play(start=desired)
+            except Exception:
+                pass
+
+        self._schedule_rate_tick()
+
+    def _warn_fast_unavailable(self) -> None:
+        if not self._warned_fast:
+            self._warned_fast = True
+            self._log("Velocidad >1x requiere FFmpeg/ffplay en el PATH. Reproduciendo a 1x.")
+            try:
+                messagebox.showinfo(
+                    "Velocidad no disponible",
+                    "Para reproducir a 1.5x o 2x, instala FFmpeg y asegúrate de tener ffplay en el PATH.\n\nSe usa 1x por ahora.",
+                )
+            except Exception:
+                pass
+
+    def _stop_all_audio(self) -> None:
+        """Detiene cualquier motor de audio activo y cancela timers."""
+        self._cancel_rate_job()
+        # ffplay
+        try:
+            if getattr(self, "_ffplay_proc", None) is not None:
+                self._ffplay_proc.kill()
+                self._ffplay_proc = None
+        except Exception:
+            pass
+        # vlc
+        try:
+            if getattr(self, "_vlc_player", None) is not None:
+                self._vlc_player.stop()
+                self._vlc_player = None
+        except Exception:
+            pass
+        # pygame
+        try:
+            if pygame.mixer.get_init():
+                pygame.mixer.music.stop()
+        except Exception:
+            pass
 
     def _show_text_popup(self, iid: str) -> None:
         """Display full text for Original and ASR with timeline controls."""
@@ -597,19 +836,76 @@ class App(tk.Tk):
         scale.bind("<ButtonRelease-1>", _seek)
 
         def _update():
-            if pygame.mixer.get_init() and pygame.mixer.music.get_busy():
-                pos = pygame.mixer.music.get_pos()
-                if pos >= 0:
-                    scale.set(self._clip_offset + pos / 1000)
-                win.after(100, _update)
+            if getattr(self, "_audio_engine", "") == "ffplay":
+                if self._rate_wall_start is not None and self._rate_pos_start is not None:
+                    wall_elapsed = time.monotonic() - self._rate_wall_start
+                    rel = (self._rate_pos_start - self._clip_start) + wall_elapsed * max(self._play_rate, 0.1)
+                    rel = max(0.0, min(max(dur, 0.0), rel))
+                    scale.set(rel)
+            elif getattr(self, "_audio_engine", "") == "vlc" and getattr(self, "_vlc_player", None) is not None:
+                try:
+                    cur_ms = self._vlc_player.get_time()
+                    if cur_ms >= 0:
+                        rel = (cur_ms / 1000.0) - self._clip_start
+                        rel = max(0.0, min(max(dur, 0.0), rel))
+                        scale.set(rel)
+                except Exception:
+                    pass
+            else:
+                if abs(self._play_rate - 1.0) < 1e-6:
+                    if pygame.mixer.get_init() and pygame.mixer.music.get_busy():
+                        pos = pygame.mixer.music.get_pos()
+                        if pos >= 0:
+                            scale.set(self._clip_offset + pos / 1000)
+                else:
+                    if self._rate_wall_start is not None and self._rate_pos_start is not None:
+                        wall_elapsed = time.monotonic() - self._rate_wall_start
+                        rel = (self._rate_pos_start - self._clip_start) + wall_elapsed * self._play_rate
+                        rel = max(0.0, min(max(dur, 0.0), rel))
+                        scale.set(rel)
+            win.after(100, _update)
 
         _update()
+
+        # Controles de velocidad
+        rate_frame = ttk.Frame(win)
+        rate_frame.pack(pady=(0, 6))
+
+        def _set_rate(r: float):
+            # Si no hay soporte fast, degradar a 1x y avisar
+            if abs(r - 1.0) > 1e-6 and not self._supports_fast:
+                self._play_rate = 1.0
+                self._warn_fast_unavailable()
+                return
+            self._play_rate = r
+            if getattr(self, "_audio_engine", "") == "ffplay":
+                # Reiniciar en el punto actual con nueva velocidad
+                self._clip_offset = float(scale.get())
+                self._stop_all_audio()
+                self._play_current_clip()
+            elif getattr(self, "_audio_engine", "") == "vlc" and getattr(self, "_vlc_player", None) is not None:
+                try:
+                    self._vlc_player.set_rate(float(r))
+                except Exception:
+                    pass
+            else:
+                # Sin soporte de fast, mantener 1x
+                self._play_rate = 1.0
+                self._warn_fast_unavailable()
+
+        ttk.Label(rate_frame, text="Velocidad:").pack(side="left", padx=(0, 6))
+        ttk.Button(rate_frame, text="1x", command=lambda: _set_rate(1.0)).pack(side="left", padx=2)
+        ttk.Button(rate_frame, text="1.5x", command=lambda: _set_rate(1.5)).pack(side="left", padx=2)
+        ttk.Button(rate_frame, text="2x", command=lambda: _set_rate(2.0)).pack(side="left", padx=2)
 
         btns = ttk.Frame(win)
         btns.pack(pady=(0, 10))
         ttk.Button(btns, text="OK", command=lambda: self._popup_mark_ok(iid, win)).pack(side="left", padx=4)
         ttk.Button(btns, text="Marcar", command=lambda: self.add_audacity_marker(self._clip_start + float(scale.get()))).pack(side="left", padx=4)
-        ttk.Button(btns, text="Cerrar", command=win.destroy).pack(side="left", padx=4)
+        def _close():
+            self._stop_all_audio()
+            win.destroy()
+        ttk.Button(btns, text="Cerrar", command=_close).pack(side="left", padx=4)
 
     def _toggle_ok(self, item: str) -> None:
         current = self.tree.set(item, "OK")
@@ -659,17 +955,28 @@ class App(tk.Tk):
         self.save_json()
 
     def _recompute_tc(self) -> None:
-        """Ensure monotonically increasing time codes."""
-        last = 0.0
+        """Normalise time codes while keeping large jumps visible for review."""
+        last: float | None = None
+        drift: list[str] = []
         for iid in self.tree.get_children():
+            raw = self.tree.set(iid, "tc")
             try:
-                tc = float(_parse_tc(self.tree.set(iid, "tc")))
-            except ValueError:
-                tc = last
-            if tc < last:
-                tc = last
+                tc = float(_parse_tc(raw))
+            except (TypeError, ValueError):
+                tc = last if last is not None else 0.0
+            if last is None:
+                last = tc
+            elif tc < last - 0.35:
+                if last - tc <= 1.0:
+                    tc = last
+                else:
+                    drift.append(iid)
+                    last = tc
+            else:
+                last = tc
             self.tree.set(iid, "tc", _format_tc(tc))
-            last = tc
+        if drift:
+            self._log(f"[TC] {len(drift)} filas mantienen saltos de tiempo; revisar.")
 
     def _clip_ok(self):
         if self._clip_item:
@@ -682,10 +989,7 @@ class App(tk.Tk):
         self._hide_clip()
 
     def _hide_clip(self) -> None:
-        try:
-            pygame.mixer.music.stop()
-        except Exception:
-            pass
+        self._stop_all_audio()
         self._clip_item = None
 
     def _next_bad_row(self):
@@ -898,6 +1202,103 @@ class App(tk.Tk):
         session.add_marker(time_sec)
         self._log(f"✔ Marker Audacity {time_sec:.2f}s")
 
+    # ------------------------------------------------------------- bookmark utils
+    def _bookmark_path(self) -> Path | None:
+        if not self.v_json.get():
+            return None
+        return Path(self.v_json.get()).with_suffix(".bookmark.json")
+
+    def save_bookmark(self, abs_time: float | None = None) -> None:
+        """Guarda un 'punto' para retomar. Si ``abs_time`` no se pasa, usa
+        el inicio de la fila seleccionada. Persiste en un archivo junto al JSON.
+        """
+        if not self.v_json.get():
+            messagebox.showwarning("Sin JSON", "Carga un JSON primero")
+            return
+        p = self._bookmark_path()
+        if p is None:
+            return
+        sel = self.tree.selection()
+        iid = sel[0] if sel else (self._clip_item or (self.tree.get_children()[0] if self.tree.get_children() else None))
+        if iid is None:
+            messagebox.showwarning("Sin selección", "Selecciona una fila para guardar el punto")
+            return
+        idx = self.tree.index(iid)
+        if abs_time is None:
+            # Intentar capturar la posición actual de reproducción si hay clip activo
+            if self._clip_item:
+                try:
+                    if getattr(self, "_audio_engine", "") == "ffplay" and self._rate_wall_start is not None and self._rate_pos_start is not None:
+                        abs_time = self._rate_pos_start + (time.monotonic() - self._rate_wall_start) * max(self._play_rate, 0.1)
+                    elif pygame.mixer.get_init() and pygame.mixer.music.get_busy():
+                        pos = pygame.mixer.music.get_pos()
+                        if pos >= 0:
+                            abs_time = self._clip_start + self._clip_offset + pos / 1000.0
+                    elif getattr(self, "_audio_engine", "") == "vlc" and getattr(self, "_vlc_player", None) is not None:
+                        cur_ms = self._vlc_player.get_time()
+                        if cur_ms >= 0:
+                            abs_time = cur_ms / 1000.0
+                except Exception:
+                    pass
+            if abs_time is None:
+                try:
+                    abs_time = float(_parse_tc(self.tree.set(iid, "tc")))
+                except Exception:
+                    abs_time = 0.0
+        data = {
+            "row_index": int(idx),
+            "time": float(abs_time),
+            "rate": float(self._play_rate),
+        }
+        try:
+            p.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf8")
+            self._log(f"Punto guardado (fila {idx + 1}, t={abs_time:.2f}s)")
+        except Exception as exc:
+            show_error("Error", exc)
+
+    def goto_bookmark(self) -> None:
+        p = self._bookmark_path()
+        if p is None or not p.exists():
+            messagebox.showinfo("Punto", "No hay punto guardado")
+            return
+        try:
+            data = json.loads(p.read_text(encoding="utf8"))
+            idx = int(data.get("row_index", 0))
+            t = float(data.get("time", 0.0))
+            rate = float(data.get("rate", self._play_rate))
+        except Exception as exc:
+            show_error("Error", exc)
+            return
+        children = self.tree.get_children()
+        if not children:
+            return
+        idx = max(0, min(len(children) - 1, idx))
+        iid = children[idx]
+        self.tree.selection_set(iid)
+        self.tree.see(iid)
+        self._update_position()
+        self._play_rate = rate
+        if self.v_audio.get():
+            try:
+                row_tc = float(_parse_tc(self.tree.set(iid, "tc")))
+            except Exception:
+                row_tc = t
+            self._clip_item = iid
+            self._clip_start = row_tc
+            self._clip_offset = max(0.0, t - row_tc)
+            end = None
+            for next_iid in children[idx + 1 :]:
+                try:
+                    tt = float(_parse_tc(self.tree.set(next_iid, "tc")))
+                except Exception:
+                    continue
+                if tt > row_tc:
+                    end = tt
+                    break
+            self._clip_end = end
+            self._show_text_popup(iid)
+            self._play_current_clip()
+
     def _load_marker(self) -> None:
         if not self.v_json.get():
             return
@@ -913,6 +1314,24 @@ class App(tk.Tk):
                     self._update_position()
             except Exception:
                 pass
+
+    def _load_bookmark_selection(self) -> None:
+        p = self._bookmark_path()
+        if p is None or not p.exists():
+            return
+        try:
+            data = json.loads(p.read_text(encoding="utf8"))
+            idx = int(data.get("row_index", 0))
+        except Exception:
+            return
+        children = self.tree.get_children()
+        if not children:
+            return
+        if 0 <= idx < len(children):
+            iid = children[idx]
+            self.tree.selection_set(iid)
+            self.tree.see(iid)
+            self._update_position()
 
     def _merge_selected_rows(self) -> None:
         sel = list(self.tree.selection())
@@ -1105,7 +1524,18 @@ class App(tk.Tk):
 
                 elif isinstance(msg, tuple) and msg[0] == "PROGRESS":
                     pct = int(msg[1])
+                    # soporta tuplas ("PROGRESS", pct) o ("PROGRESS", pct, eta)
                     self._update_progress(pct)
+                    if len(msg) >= 3 and self._prog_label:
+                        def _fmt_eta(secs: float) -> str:
+                            try:
+                                secs = float(secs)
+                            except Exception:
+                                return ""
+                            m = int(secs // 60)
+                            s = int(secs % 60)
+                            return f" — ETA {m}:{s:02d}"
+                        self._prog_label["text"] = f"{pct}%" + _fmt_eta(msg[2])
 
                 elif isinstance(msg, tuple) and msg[0] == "RELOAD":
                     self.load_json()
