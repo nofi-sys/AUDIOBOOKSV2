@@ -173,8 +173,9 @@ class App(tk.Tk):
 
         ttk.Button(top, text="AI Review (o3)", command=self.ai_review).grid(row=3, column=3, padx=6)
         ttk.Checkbutton(top, text="una fila", variable=self.ai_one).grid(row=3, column=4, padx=4)
-        ttk.Button(top, text="Detener análisis", command=self.stop_ai_review).grid(row=3, column=5, padx=6)
-        ttk.Button(top, text="Crear EDL", command=self.create_edl).grid(row=3, column=6, padx=6)
+        ttk.Button(top, text="AI Correct", command=self.ai_correct_row).grid(row=3, column=5, padx=6)
+        ttk.Button(top, text="Detener análisis", command=self.stop_ai_review).grid(row=3, column=6, padx=6)
+        ttk.Button(top, text="Crear EDL", command=self.create_edl).grid(row=3, column=7, padx=6)
 
         # Tabla principal -----------------------------------------------------------
         self._build_table()
@@ -479,6 +480,41 @@ class App(tk.Tk):
                 args=(items,),
                 daemon=True,
             ).start()
+
+    def ai_correct_row(self):
+        sel = self.tree.selection()
+        if not sel:
+            messagebox.showwarning("Falta info", "Selecciona una fila para corregir")
+            return
+        iid = sel[0]
+        original = self.tree.set(iid, "Original")
+        asr = self.tree.set(iid, "ASR")
+        self._log(f"⏳ Corrección AI para fila {self.tree.set(iid, 'ID')}…")
+
+        tags = list(self.tree.item(iid, "tags"))
+        if "processing" not in tags:
+            tags.append("processing")
+            self.tree.item(iid, tags=tuple(tags))
+
+        threading.Thread(
+            target=self._ai_correct_worker,
+            args=(iid, original, asr),
+            daemon=True,
+        ).start()
+
+    def _ai_correct_worker(self, iid: str, original: str, asr: str) -> None:
+        try:
+            from ai_review import ai_correct
+            corrected_text = ai_correct(original, asr)
+            self.q.put(("AI_CORRECT", (iid, corrected_text)))
+        except Exception:
+            buf = io.StringIO()
+            traceback.print_exc(file=buf)
+            err = buf.getvalue()
+            print(err)
+            self.q.put(err)
+        finally:
+            self.q.put(("AI_DONE", iid))
 
     def stop_ai_review(self):
         try:
@@ -1559,6 +1595,19 @@ class App(tk.Tk):
                             self.ok_rows.add(line_id)
                         except Exception:
                             pass
+                    tags = list(self.tree.item(iid, "tags"))
+                    if "processing" in tags:
+                        tags.remove("processing")
+                        self.tree.item(iid, tags=tuple(tags))
+
+                elif isinstance(msg, tuple) and msg[0] == "AI_CORRECT":
+                    iid, corrected_text = msg[1]
+                    self.tree.set(iid, "ASR", corrected_text)
+                    self._update_metrics(iid)
+                    self.save_json()
+
+                elif isinstance(msg, tuple) and msg[0] == "AI_DONE":
+                    iid = msg[1]
                     tags = list(self.tree.item(iid, "tags"))
                     if "processing" in tags:
                         tags.remove("processing")
