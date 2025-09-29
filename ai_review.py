@@ -189,6 +189,42 @@ RETRANS_PROMPT = (
 # Respond clearly with one of these words: ok, mal, or dudoso, followed by a
 # brief explanation when necessary.
 
+CORRECTION_PROMPT = """
+You are an expert audio editor. Your task is to correct an ASR (Automatic Speech Recognition) transcript based on a provided ORIGINAL script. The ASR may contain phonetic mistakes, misinterpretations, or minor omissions.
+
+Your goal is to produce a corrected version of the ASR text that is as faithful as possible to the ORIGINAL script, while only using words that are phonetically plausible from the audio. DO NOT invent information or add words from the original script that were clearly not spoken in the ASR.
+
+Analyze the ASR and the ORIGINAL text. Then, return ONLY the corrected ASR text. Do not include any explanations, greetings, or extra formatting.
+
+Example:
+ORIGINAL: "The quick brown fox jumps over the lazy dog."
+ASR: "the Glick brown fox dumps over the hazy dog"
+
+Your response should be:
+"the quick brown fox jumps over the hazy dog"
+
+(Note: "hazy" is kept because it's phonetically similar and could be a valid interpretation of the audio, whereas "Glick" and "dumps" are clear errors corrected to match the original script.)
+
+Return only the corrected text.
+"""
+
+
+def ai_correct(original: str, asr: str) -> str:
+    """Send a correction request and return the corrected ASR text."""
+    logger.info("AI correction request ORIGINAL=%s | ASR=%s", original, asr)
+    resp = _chat_with_backoff(
+        model=MODEL,
+        messages=[
+            {"role": "system", "content": CORRECTION_PROMPT},
+            {"role": "user", "content": f"ORIGINAL:\n{original}\n\nASR:\n{asr}"},
+        ],
+        max_completion_tokens=2000,
+        stop=None,
+    )
+    corrected_text = resp.choices[0].message.content.strip()
+    logger.info("AI corrected ASR: %s", corrected_text)
+    return corrected_text
+
 
 def ai_verdict(
     original: str,

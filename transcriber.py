@@ -13,6 +13,7 @@ from time import monotonic
 from pathlib import Path
 
 import torch
+import av
 
 from text_utils import read_script, extract_word_list
 from alignment import build_rows
@@ -82,25 +83,25 @@ def _extract_audio(path: str) -> tuple[str, str]:
         tmp = tempfile.NamedTemporaryFile(suffix=".wav", delete=False)
         tmp_path = tmp.name
         tmp.close()
-        cmd = [
-            "ffmpeg",
-            "-y",
-            "-i",
-            path,
-            "-vn",
-            "-acodec",
-            "pcm_s16le",
-            "-ar",
-            "16000",
-            "-ac",
-            "1",
-            tmp_path,
-        ]
-        subprocess.run(
-            cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
-        )
-        print(f"[Transcriber] Audio temporal en {tmp_path}")
-        return tmp_path, base
+        try:
+            with av.open(path) as in_container:
+                in_stream = in_container.streams.audio[0]
+                with av.open(tmp_path, "w") as out_container:
+                    out_stream = out_container.add_stream(
+                        "pcm_s16le", rate=16000, layout="mono"
+                    )
+                    for frame in in_container.decode(in_stream):
+                        for packet in out_stream.encode(frame):
+                            out_container.mux(packet)
+                    # Flush stream
+                    for packet in out_stream.encode(None):
+                        out_container.mux(packet)
+            print(f"[Transcriber] Audio temporal en {tmp_path}")
+            return tmp_path, base
+        except Exception as e:
+            print(f"Error extracting audio with PyAV: {e}")
+            raise e
+
     print(f"[Transcriber] Usando audio original {path}")
     return path, base
 
@@ -196,6 +197,39 @@ def transcribe_wordlevel(
     return out
 
 
+def _extract_chunk(src: str, start_s: float, end_s: float | None) -> str:
+    """Extracts a chunk of audio using PyAV."""
+    tmp = tempfile.NamedTemporaryFile(suffix=".wav", delete=False)
+    tmp_path = tmp.name
+    tmp.close()
+
+    start_s = max(0.0, start_s)
+
+    with av.open(src) as in_container:
+        in_stream = in_container.streams.audio[0]
+        with av.open(tmp_path, "w") as out_container:
+            out_stream = out_container.add_stream("pcm_s16le", rate=16000, layout="mono")
+
+            # Seek to the start time. The seek is not always accurate.
+            # We seek to a keyframe before the start time and then decode forward.
+            in_container.seek(int(start_s * 1_000_000), backward=True, any_frame=False, stream=in_stream)
+
+            for frame in in_container.decode(in_stream):
+                frame_time = frame.pts * in_stream.time_base
+                if frame_time < start_s:
+                    continue
+                if end_s is not None and frame_time >= end_s:
+                    break
+
+                frame.pts = None
+                for packet in out_stream.encode(frame):
+                    out_container.mux(packet)
+
+            for packet in out_stream.encode(None):
+                out_container.mux(packet)
+    return tmp_path
+
+
 def transcribe_wordlevel_ckpt(
     audio_path: str,
     model_name: str = "large-v3",
@@ -263,17 +297,6 @@ def transcribe_wordlevel_ckpt(
     completed = set(man.get("completed", [])) if isinstance(man.get("completed"), list) else set()
     man.update({"audio": str(base_audio), "duration": duration, "model": model_name, "chunk_seconds": int(chunk_seconds)})
     _save_manifest({**man, "completed": sorted(completed)})
-
-    def _extract_chunk(src: str, start_s: float, end_s: float | None) -> str:
-        tmp = tempfile.NamedTemporaryFile(suffix=".wav", delete=False)
-        tmp_path = tmp.name
-        tmp.close()
-        cmd = ["ffmpeg", "-y", "-ss", f"{max(0.0, start_s):.3f}"]
-        if end_s is not None:
-            cmd += ["-to", f"{max(0.0, end_s):.3f}"]
-        cmd += ["-i", src, "-vn", "-acodec", "pcm_s16le", "-ar", "16000", "-ac", "1", tmp_path]
-        subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        return tmp_path
 
     # continuity for prompts between chunks
     tail_words: list[str] = []
@@ -377,25 +400,15 @@ def transcribe_wordlevel_ckpt(
 
 
 def _probe_duration(path: str) -> float:
-    """Return audio duration in seconds using ffprobe if available."""
+    """Return audio duration in seconds using PyAV."""
     try:
-        out = subprocess.check_output(
-            [
-                "ffprobe",
-                "-v",
-                "error",
-                "-show_entries",
-                "format=duration",
-                "-of",
-                "default=nw=1:nk=1",
-                path,
-            ],
-            text=True,
-        ).strip()
-        dur = float(out)
-        print(f"[Transcriber] Duración detectada: {dur:.1f}s")
-        return dur
-    except Exception:
+        with av.open(path) as container:
+            # Duration is in microseconds, convert to seconds
+            duration = container.duration / 1_000_000
+        print(f"[Transcriber] Duración detectada: {duration:.1f}s")
+        return duration
+    except Exception as e:
+        print(f"Error getting duration with PyAV: {e}")
         return 0.0
 
 
@@ -622,7 +635,7 @@ def guided_transcribe(
     script_path: str,
     *,
     fast_model: str = "base",
-    heavy_model: str = "large-v3",
+    heavy_model: str = "medium",
     chunk_margin: float = 3.0,
     use_ai_post: bool = False,
 ) -> dict:
@@ -633,12 +646,16 @@ def guided_transcribe(
     """
 
     # Heavy pass to get word timings (segments + words)
-    words_json = transcribe_wordlevel(
+    base = Path(audio_path).with_suffix("")
+    words_json = transcribe_wordlevel_ckpt(
         audio_path,
         model_name=heavy_model,
         script_path=script_path,
         initial_prompt=None,
         detailed=True,
+        resume=True,
+        artifacts_base=str(base),
+        chunk_seconds=180,
     )
 
     # Convert to CSV for build_rows_from_words
@@ -683,6 +700,101 @@ def guided_transcribe(
     }
 
 
+def super_guided_transcribe(
+    audio_path: str,
+    script_path: str,
+    *,
+    fast_model: str = "tiny",
+    heavy_model: str = "tiny",
+) -> dict:
+    """
+    Super-guided transcription v2:
+    1. Fast pass to get a rough alignment between script and audio.
+    2. Slow, prompted pass, feeding the correct text for each audio chunk.
+    """
+    print("[Transcriber] Super-Guided v2 - Paso 1/3: Transcripción rápida inicial")
+    base = Path(audio_path).with_suffix("")
+
+    # 1. Fast pass for rough alignment
+    rough_words_json = transcribe_wordlevel_ckpt(
+        audio_path,
+        model_name=fast_model,
+        script_path=script_path,
+        detailed=True,
+        resume=True,
+        artifacts_base=str(base.with_suffix(".rough")),
+        chunk_seconds=180,
+    )
+    print("[Transcriber] Super-Guided v2 - Paso 2/3: Alineación inicial")
+
+    # 2. Get script-to-audio mapping
+    ref_text = read_script(script_path)
+    rough_json_text = rough_words_json.read_text(encoding="utf8")
+    # Use word-level alignment to get rows with text and timestamps
+    rows = alignment.build_rows_wordlevel(ref_text, rough_json_text)
+
+    # 3. Prompted pass, chunk by chunk
+    print("[Transcriber] Super-Guided v2 - Paso 3/3: Transcripción guiada por prompt")
+    final_words = []
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    compute_type = "int8_float16" if device == "cuda" else "int8"
+    model = WhisperModel(heavy_model, device=device, compute_type=compute_type)
+
+    total_rows = len(rows)
+    for i, row in enumerate(tqdm(rows, desc="Procesando chunks")):
+        start_time = float(row[3]) # tc is at index 3
+        # Determine end_time for the chunk
+        if i + 1 < total_rows:
+            end_time = float(rows[i+1][3])
+        else:
+            end_time = _probe_duration(audio_path)
+
+        # Skip if chunk is invalid
+        if end_time <= start_time:
+            continue
+
+        prompt_text = row[4] # Original text is at index 4
+
+        # Extract audio chunk
+        chunk_audio_path = _extract_chunk(audio_path, start_time, end_time)
+
+        try:
+            segments, _info = model.transcribe(
+                chunk_audio_path,
+                word_timestamps=True,
+                initial_prompt=prompt_text,
+            )
+            for seg in segments:
+                for w in seg.words:
+                    final_words.append({
+                        "word": w.word,
+                        "start": (w.start or 0.0) + start_time,
+                        "end": (w.end or 0.0) + start_time,
+                    })
+        finally:
+            os.remove(chunk_audio_path)
+
+    # Save the final high-quality words
+    final_words_path = base.with_suffix(".super_guided.words.json")
+    final_words_path.write_text(json.dumps(final_words, ensure_ascii=False, indent=2), "utf8")
+
+    # Final alignment
+    # Filter out garbage tokens that can break the alignment
+    clean_final_words = [w for w in final_words if "<" not in w["word"] and ">" not in w["word"]]
+
+    csv_words = [w["word"] for w in clean_final_words]
+    csv_tcs = [w["start"] for w in clean_final_words]
+    final_rows = alignment.build_rows_from_words(ref_text, csv_words, csv_tcs)
+
+    out_qc = base.with_suffix(".super_guided.qc.json")
+    out_qc.write_text(json.dumps(final_rows, ensure_ascii=False, indent=2), "utf8")
+
+    return {
+        "final_words_json": str(final_words_path),
+        "final_qc_json": str(out_qc),
+    }
+
+
 def main(argv: list[str] | None = None) -> None:
     """CLI entry point."""
 
@@ -717,6 +829,11 @@ def main(argv: list[str] | None = None) -> None:
         action="store_true",
         help="Guided multi-stage transcription using heavy word-level alignment",
     )
+    parser.add_argument(
+        "--super-guided",
+        action="store_true",
+        help="Super-guided (v2) transcription using prompted chunks.",
+    )
     args = parser.parse_args(argv)
     if args.resync_csv:
         if not args.input:
@@ -740,6 +857,16 @@ def main(argv: list[str] | None = None) -> None:
             parser.error("--guided requires input audio")
         print("[Transcriber] Transcripción guiada (heavy word-level)")
         artifacts = guided_transcribe(args.input, args.script)
+        for k, v in artifacts.items():
+            print(f"{k}: {v}")
+        return
+    if args.super_guided:
+        if not args.script:
+            parser.error("--super-guided requires --script")
+        if not args.input:
+            parser.error("--super-guided requires input audio")
+        print("[Transcriber] Super-guiada (v2) - dos pasadas")
+        artifacts = super_guided_transcribe(args.input, args.script)
         for k, v in artifacts.items():
             print(f"{k}: {v}")
         return

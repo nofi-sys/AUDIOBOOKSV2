@@ -462,3 +462,4 @@ def build_rows_from_words(ref: str, csv_words: list[str], csv_tcs: list[float]) 
         except Exception as exc:
             _d(f"Rectify failed: {exc}")
 
+    return rows
