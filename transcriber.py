@@ -1,12 +1,10 @@
-"""Local audio transcription using Whisper."""
-
 from __future__ import annotations
 
+"""Local audio transcription using Whisper."""
 import argparse
 import json
 import csv
 import os
-import subprocess
 import tempfile
 import queue
 from time import monotonic
@@ -212,7 +210,8 @@ def _extract_chunk(src: str, start_s: float, end_s: float | None) -> str:
 
             # Seek to the start time. The seek is not always accurate.
             # We seek to a keyframe before the start time and then decode forward.
-            in_container.seek(int(start_s * 1_000_000), backward=True, any_frame=False, stream=in_stream)
+            seek_target = int(start_s * 1_000_000)
+            in_container.seek(seek_target, backward=True, any_frame=False, stream=in_stream)
 
             for frame in in_container.decode(in_stream):
                 frame_time = frame.pts * in_stream.time_base
@@ -295,7 +294,14 @@ def transcribe_wordlevel_ckpt(
 
     man = _load_manifest() if resume else {}
     completed = set(man.get("completed", [])) if isinstance(man.get("completed"), list) else set()
-    man.update({"audio": str(base_audio), "duration": duration, "model": model_name, "chunk_seconds": int(chunk_seconds)})
+    man.update(
+        {
+            "audio": str(base_audio),
+            "duration": duration,
+            "model": model_name,
+            "chunk_seconds": int(chunk_seconds),
+        }
+    )
     _save_manifest({**man, "completed": sorted(completed)})
 
     # continuity for prompts between chunks
@@ -314,7 +320,11 @@ def transcribe_wordlevel_ckpt(
         start_s = idx * float(chunk_seconds)
         end_s = None if not duration else min(duration, (idx + 1) * float(chunk_seconds))
 
-        chunk_path = ckpt_dir / (f"chunk_{idx:04d}.word.json" if detailed else f"chunk_{idx:04d}.json")
+        chunk_path = (
+            ckpt_dir / f"chunk_{idx:04d}.word.json"
+            if detailed
+            else f"chunk_{idx:04d}.json"
+        )
         if resume and chunk_path.exists() and chunk_path.stat().st_size > 0:
             completed.add(str(idx))
             _save_manifest({**man, "completed": sorted(completed)})
@@ -351,16 +361,26 @@ def transcribe_wordlevel_ckpt(
                     words_list = []
                     last_words: list[str] = []
                     for w in seg.words:
-                        words_list.append({"word": w.word, "start": (w.start or 0.0) + start_s, "end": (w.end or 0.0) + start_s})
+                        words_list.append(
+                            {
+                                "word": w.word,
+                                "start": (w.start or 0.0) + start_s,
+                                "end": (w.end or 0.0) + start_s,
+                            }
+                        )
                         last_words.append(w.word)
-                    payload["segments"].append({
-                        "seg_start": (seg.start or 0.0) + start_s,
-                        "seg_end": (seg.end or 0.0) + start_s,
-                        "text": seg.text,
-                        "words": words_list,
-                    })
+                    payload["segments"].append(
+                        {
+                            "seg_start": (seg.start or 0.0) + start_s,
+                            "seg_end": (seg.end or 0.0) + start_s,
+                            "text": seg.text,
+                            "words": words_list,
+                        }
+                    )
                     tail_words.extend(last_words[-10:])
-                chunk_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf8")
+                chunk_path.write_text(
+                    json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf8"
+                )
             else:
                 words: list[dict] = []
                 for seg in segments:
@@ -374,9 +394,17 @@ def transcribe_wordlevel_ckpt(
                             eta = max(0.0, elapsed / ge * max(0.0, duration - ge))
                         progress_queue.put(("PROGRESS", pct, eta))
                     for w in seg.words:
-                        words.append({"word": w.word, "start": (w.start or 0.0) + start_s, "end": (w.end or 0.0) + start_s})
+                        words.append(
+                            {
+                                "word": w.word,
+                                "start": (w.start or 0.0) + start_s,
+                                "end": (w.end or 0.0) + start_s,
+                            }
+                        )
                         tail_words.append(w.word)
-                chunk_path.write_text(json.dumps(words, ensure_ascii=False, indent=2), encoding="utf8")
+                chunk_path.write_text(
+                    json.dumps(words, ensure_ascii=False, indent=2), encoding="utf8"
+                )
 
             completed.add(str(idx))
             _save_manifest({**man, "completed": sorted(completed)})
@@ -412,18 +440,27 @@ def _probe_duration(path: str) -> float:
         return 0.0
 
 
-def _merge_all_chunks(ckpt_dir: Path, final_out: Path, *, detailed: bool, partial_suffix: bool) -> None:
+def _merge_all_chunks(
+    ckpt_dir: Path, final_out: Path, *, detailed: bool, partial_suffix: bool
+) -> None:
     """Merge chunk JSONs into a single output.
 
     If ``partial_suffix`` is True, writes to ``*.part`` alongside the final.
     """
-    chunks = sorted([
-        p for p in ckpt_dir.iterdir()
-        if p.is_file() and p.name.startswith("chunk_") and p.suffix in (".json", ".word.json")
-    ])
+    chunks = sorted(
+        [
+            p
+            for p in ckpt_dir.iterdir()
+            if p.is_file()
+            and p.name.startswith("chunk_")
+            and p.suffix in (".json", ".word.json")
+        ]
+    )
     if not chunks:
         return
-    out_path = final_out if not partial_suffix else final_out.with_suffix(final_out.suffix + ".part")
+    out_path = (
+        final_out if not partial_suffix else final_out.with_suffix(final_out.suffix + ".part")
+    )
     if detailed:
         merged = {"segments": []}
         for p in chunks:
@@ -489,9 +526,7 @@ def transcribe_file(
 
     print(f"[Transcriber] Dispositivo {device}")
 
-    model = WhisperModel(
-        model_size_or_path=model_size, device=device, compute_type=compute_type
-    )
+    model = WhisperModel(model_size_or_path=model_size, device=device, compute_type=compute_type)
 
     print("[Transcriber] Ejecutando primera pasada…")
 
@@ -638,6 +673,7 @@ def guided_transcribe(
     heavy_model: str = "medium",
     chunk_margin: float = 3.0,
     use_ai_post: bool = False,
+    progress_queue: "queue.Queue" | None = None,
 ) -> dict:
     """Guided transcription v1: heavy word-level alignment against script.
 
@@ -671,6 +707,7 @@ def guided_transcribe(
     os.environ.setdefault("QC_INSERT_SOLO_ASR", "1")
     rows = alignment.build_rows_from_words(ref, csv_words, csv_tcs)
     from qc_utils import canonical_row
+
     rows = [canonical_row(r) for r in rows]
 
     base = Path(audio_path).with_suffix("")
@@ -742,10 +779,10 @@ def super_guided_transcribe(
 
     total_rows = len(rows)
     for i, row in enumerate(tqdm(rows, desc="Procesando chunks")):
-        start_time = float(row[3]) # tc is at index 3
+        start_time = float(row[3])  # tc is at index 3
         # Determine end_time for the chunk
         if i + 1 < total_rows:
-            end_time = float(rows[i+1][3])
+            end_time = float(rows[i + 1][3])
         else:
             end_time = _probe_duration(audio_path)
 
@@ -753,7 +790,7 @@ def super_guided_transcribe(
         if end_time <= start_time:
             continue
 
-        prompt_text = row[4] # Original text is at index 4
+        prompt_text = row[4]  # Original text is at index 4
 
         # Extract audio chunk
         chunk_audio_path = _extract_chunk(audio_path, start_time, end_time)
@@ -766,11 +803,13 @@ def super_guided_transcribe(
             )
             for seg in segments:
                 for w in seg.words:
-                    final_words.append({
-                        "word": w.word,
-                        "start": (w.start or 0.0) + start_time,
-                        "end": (w.end or 0.0) + start_time,
-                    })
+                    final_words.append(
+                        {
+                            "word": w.word,
+                            "start": (w.start or 0.0) + start_time,
+                            "end": (w.end or 0.0) + start_time,
+                        }
+                    )
         finally:
             os.remove(chunk_audio_path)
 
@@ -840,8 +879,10 @@ def main(argv: list[str] | None = None) -> None:
             parser.error("--resync-csv requires a QC JSON path")
         print("[Transcriber] Re-sincronizando JSON con CSV…")
         from utils.resync_python_v2 import load_words_csv, resync_rows
+
         raw_rows = json.loads(Path(args.input).read_text(encoding="utf8"))
         from qc_utils import canonical_row
+
         rows = [canonical_row(r) for r in raw_rows]
         csv_words, csv_tcs = load_words_csv(Path(args.resync_csv))
         resync_rows(rows, csv_words, csv_tcs)
@@ -897,9 +938,12 @@ def main(argv: list[str] | None = None) -> None:
         ref = read_script(args.script)
         hyp = Path(txt).read_text(encoding="utf8", errors="ignore")
         from qc_utils import canonical_row
+
         rows = [canonical_row(r) for r in build_rows(ref, hyp)]
 
         csv_path = Path(args.input).with_suffix(".words.csv")
+        from utils.resync_python_v2 import load_words_csv, resync_rows
+
         csv_words, csv_tcs = load_words_csv(csv_path)
         resync_rows(rows, csv_words, csv_tcs)
         base = Path(args.input).with_suffix("")

@@ -28,7 +28,7 @@ if os.getenv("AI_REVIEW_DEBUG", "").lower() in ("1", "true", "yes"):
 load_dotenv()
 
 # Use o3 model family
-#MODEL = "o3"
+# MODEL = "o3"
 MODEL = "gpt-5"
 _client_instance: OpenAI | None = None
 # Global flag to allow cancelling a long batch review
@@ -76,7 +76,7 @@ def _chat_with_backoff(**kwargs):
                 logger.warning(
                     "OpenAI error %s on attempt %s, retrying in %.1fs",
                     exc,
-                    attempt+1,
+                    attempt + 1,
                     delay,
                 )
                 time.sleep(delay)
@@ -96,7 +96,9 @@ def load_prompt(path: str = "prompt.txt") -> str:
         return DEFAULT_PROMPT
 
 
-def _ai_verdict_with_timeout(original: str, asr: str, prompt: str | None, timeout_sec: int) -> str:
+def _ai_verdict_with_timeout(
+    original: str, asr: str, prompt: str | None, timeout_sec: int
+) -> str:
     """Run ai_verdict in a helper thread and enforce a timeout.
 
     Returns the verdict string or raises TimeoutError/propagates exceptions.
@@ -139,25 +141,29 @@ You are an audiobook QA assistant. Your job is to compare an ORIGINAL sentence
 (the correct text from the book) with an ASR sentence (automatic speech-to-text
 transcription, known to be phonetically imperfect).
 
-Your ONLY goal is to detect clear AUDIO READING or EDITING ERRORS that significantly affect the meaning, such as:
+Your ONLY goal is to detect clear AUDIO READING or EDITING ERRORS that
+significantly affect the meaning, such as:
 
 - Entire words or phrases clearly omitted.
 - Entire words or phrases clearly repeated by mistake, causing confusion.
-- Completely different words clearly added or read incorrectly, substantially changing the meaning of the sentence.
+- Completely different words clearly added or read incorrectly, substantially
+  changing the meaning of the sentence.
 
 DO NOT consider the following as mistakes:
 
-- Punctuation, accents, capitalization, spelling errors. Non standard characters (like ||)
+- Punctuation, accents, capitalization, spelling errors. Non standard
+  characters (like ||)
 - Minor phonetic variations, especially in proper names or foreign words.
-- Slight repetitions or brief pauses if they do not significantly alter the sentence's meaning.
+- Slight repetitions or brief pauses if they do not significantly alter the
+  sentence's meaning.
 - Transcription inaccuracies that don't significantly impact understanding.
 
 Evaluation criteria:
 
-- If the ASR line does NOT show clear evidence of unacceptable reading or editing
-  errors (as described above), respond exactly with: ok
-- If the ASR line shows clear evidence of unacceptable reading or editing errors,
-  respond exactly with: mal
+- If the ASR line does NOT show clear evidence of unacceptable reading or
+  editing errors (as described above), respond exactly with: ok
+- If the ASR line shows clear evidence of unacceptable reading or editing
+  errors, respond exactly with: mal
 
 Respond EXACTLY with one word, without explanations or punctuation:
 
@@ -184,17 +190,23 @@ RETRANS_PROMPT = (
     + "Line 0 must be compared with the ORIGINAL text. The other lines are"
     + " context."
 )
-# This is a testing phase: if you respond "mal" or "dudoso", provide a brief
-# explanation of the specific reason for your assessment.
-# Respond clearly with one of these words: ok, mal, or dudoso, followed by a
-# brief explanation when necessary.
+# # This is a testing phase: if you respond "mal" or "dudoso", provide a brief
+# # explanation of the specific reason for your assessment.
+# # Respond clearly with one of these words: ok, mal, or dudoso, followed by a
+# # brief explanation when necessary.
 
 CORRECTION_PROMPT = """
-You are an expert audio editor. Your task is to correct an ASR (Automatic Speech Recognition) transcript based on a provided ORIGINAL script. The ASR may contain phonetic mistakes, misinterpretations, or minor omissions.
+You are an expert audio editor. Your task is to correct an ASR (Automatic
+Speech Recognition) transcript based on a provided ORIGINAL script. The ASR
+may contain phonetic mistakes, misinterpretations, or minor omissions.
 
-Your goal is to produce a corrected version of the ASR text that is as faithful as possible to the ORIGINAL script, while only using words that are phonetically plausible from the audio. DO NOT invent information or add words from the original script that were clearly not spoken in the ASR.
+Your goal is to produce a corrected version of the ASR text that is as
+faithful as possible to the ORIGINAL script, while only using words that are
+phonetically plausible from the audio. DO NOT invent information or add words
+from the original script that were clearly not spoken in the ASR.
 
-Analyze the ASR and the ORIGINAL text. Then, return ONLY the corrected ASR text. Do not include any explanations, greetings, or extra formatting.
+Analyze the ASR and the ORIGINAL text. Then, return ONLY the corrected ASR
+text. Do not include any explanations, greetings, or extra formatting.
 
 Example:
 ORIGINAL: "The quick brown fox jumps over the lazy dog."
@@ -203,7 +215,9 @@ ASR: "the Glick brown fox dumps over the hazy dog"
 Your response should be:
 "the quick brown fox jumps over the hazy dog"
 
-(Note: "hazy" is kept because it's phonetically similar and could be a valid interpretation of the audio, whereas "Glick" and "dumps" are clear errors corrected to match the original script.)
+(Note: "hazy" is kept because it's phonetically similar and could be a valid
+interpretation of the audio, whereas "Glick" and "dumps" are clear errors
+corrected to match the original script.)
 
 Return only the corrected text.
 """
@@ -259,9 +273,7 @@ def ai_verdict(
     trimmed = content.strip()
     word = trimmed.split()[0].lower() if trimmed else ""
     if word not in {"ok", "mal", "dudoso", "error"}:
-        logger.warning(
-            "Unexpected AI response '%s', defaulting to dudoso", trimmed
-        )
+        logger.warning("Unexpected AI response '%s', defaulting to dudoso", trimmed)
         word = "dudoso"
     if return_feedback:
         return word, trimmed
@@ -427,7 +439,9 @@ def review_file(
                 )
             except TimeoutError:
                 attempts += 1
-                logger.warning("Row %d timed out after %ds (attempt %d)", i, ROW_TIMEOUT_SEC, attempts)
+                logger.warning(
+                    "Row %d timed out after %ds (attempt %d)", i, ROW_TIMEOUT_SEC, attempts
+                )
                 if attempts >= 2:
                     # Stop processing; show popup and exit loop
                     try:
@@ -499,8 +513,8 @@ def review_file(
                 logger.exception("progress_callback done failed")
         if _stop_review or (max_requests and sent >= max_requests):
             break
-    logger.info("Approved %d / Remaining %d", approved, sent-approved)
-    return approved, sent-approved
+    logger.info("Approved %d / Remaining %d", approved, sent - approved)
+    return approved, sent - approved
 
 
 def review_file_feedback(

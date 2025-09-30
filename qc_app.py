@@ -1528,13 +1528,14 @@ class App(tk.Tk):
             self.q.put(("ROWS", rows))
             self.q.put(f"✔ Listo. Guardado en {out}")
             self.v_json.set(str(out))
-        except Exception:
+        except Exception as e:
             buf = io.StringIO()
             traceback.print_exc(file=buf)
             err = buf.getvalue()
             debug(f"DEBUG: error en worker:\n{err}")
-            self.q.put(err)
+            self.q.put(("ERROR", "Error en el procesamiento", err))
         finally:
+            self.q.put(("CLOSE_PROGRESS", None))
             from alignment import set_debug_logger
             set_debug_logger(print)
 
@@ -1612,6 +1613,13 @@ class App(tk.Tk):
                     if "processing" in tags:
                         tags.remove("processing")
                         self.tree.item(iid, tags=tuple(tags))
+
+                elif isinstance(msg, tuple) and msg[0] == "ERROR":
+                    self._close_progress()
+                    show_error(msg[1], msg[2])
+
+                elif isinstance(msg, tuple) and msg[0] == "CLOSE_PROGRESS":
+                    self._close_progress()
 
                 else:
                     self._log(str(msg))
