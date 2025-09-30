@@ -320,11 +320,11 @@ def transcribe_wordlevel_ckpt(
         start_s = idx * float(chunk_seconds)
         end_s = None if not duration else min(duration, (idx + 1) * float(chunk_seconds))
 
-        chunk_path = (
-            ckpt_dir / f"chunk_{idx:04d}.word.json"
-            if detailed
-            else f"chunk_{idx:04d}.json"
-        )
+        if detailed:
+            filename = f"chunk_{idx:04d}.word.json"
+        else:
+            filename = f"chunk_{idx:04d}.json"
+        chunk_path = ckpt_dir / filename
         if resume and chunk_path.exists() and chunk_path.stat().st_size > 0:
             completed.add(str(idx))
             _save_manifest({**man, "completed": sorted(completed)})
