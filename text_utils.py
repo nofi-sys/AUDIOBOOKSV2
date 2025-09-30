@@ -77,6 +77,11 @@ ANCHOR_MAX_FREQ = 2
 def normalize(text: str, strip_punct: bool = True) -> str:
     """Lowercase, remove accents and optionally strip punctuation."""
 
+
+    # Handle special quotes and add spaces around punctuation
+    text = text.replace('', ' " ').replace('', ' " ')
+    text = re.sub(r'([.,;?!])', r' \1 ', text)
+
     text = unidecode.unidecode(text.lower())
     # remove dots from common single-letter abbreviations
     text = re.sub(r"\b([a-z])\.\b", r"\1", text)

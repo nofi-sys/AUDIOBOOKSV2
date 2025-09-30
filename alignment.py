@@ -248,6 +248,9 @@ def build_rows(ref: str, hyp: str) -> list[list]:
     Devuelve filas con orden:
         [ID, flag, WER, tc, Original, ASR]
     """
+    # Pre-process ref to handle paragraphs
+    ref = ref.replace('\n\n', '. ').replace('\n', ' ')
+
     ref_tok = normalize(ref, strip_punct=False).split()
     hyp_tok = normalize(hyp, strip_punct=False).split()
 
