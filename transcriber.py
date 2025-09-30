@@ -210,7 +210,7 @@ def _extract_chunk(src: str, start_s: float, end_s: float | None) -> str:
 
             # Seek to the start time. The seek is not always accurate.
             # We seek to a keyframe before the start time and then decode forward.
-            seek_target = int(start_s * 1_000_000)
+            seek_target = int(start_s / in_stream.time_base)
             in_container.seek(seek_target, backward=True, any_frame=False, stream=in_stream)
 
             for frame in in_container.decode(in_stream):
