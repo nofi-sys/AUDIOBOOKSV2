@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import datetime
+from pathlib import Path
 from typing import List
 
 from rapidfuzz.distance import Levenshtein
@@ -81,3 +83,29 @@ def canonical_row(r: list[str | float]) -> list:
         return [id_, flag, '', '', wer, tc, original, asr]
     padded = list(r) + [''] * max(0, 6 - len(r))
     return canonical_row(padded[:6])
+
+
+def log_correction_metadata(
+    json_path: str,
+    row_id: str,
+    original_asr: str,
+    proposed_asr: str,
+    verdict: str,
+) -> None:
+    """Logs the details of a supervised AI correction attempt."""
+    if not json_path:
+        return
+    log_file = Path(json_path).with_suffix(".metadata.log")
+    timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    log_entry = (
+        f"[{timestamp}] - Fila ID: {row_id}\n"
+        f"  Veredicto: {verdict.upper()}\n"
+        f"  ASR Original : {original_asr}\n"
+        f"  ASR Propuesto: {proposed_asr}\n"
+        f"--------------------------------------------------\n"
+    )
+    try:
+        with log_file.open("a", encoding="utf-8") as f:
+            f.write(log_entry)
+    except Exception as e:
+        print(f"Error al escribir en el log de metadatos: {e}")
