@@ -96,6 +96,7 @@ class App(tk.Tk):
         self.v_audio = tk.StringVar(self)
         self.v_json  = tk.StringVar(self)
         self.ai_one  = tk.BooleanVar(self, value=False)
+        self.v_ai_model = tk.StringVar(self, value="gpt-5")
 
         # Estados internos
         self.q:   queue.Queue = queue.Queue()
@@ -171,11 +172,19 @@ class App(tk.Tk):
         ttk.Entry(top, textvariable=self.v_json, width=70).grid(row=3, column=1)
         ttk.Button(top, text="Abrir JSON…", command=self.load_json).grid(row=3, column=2)
 
-        ttk.Button(top, text="AI Review (o3)", command=self.ai_review).grid(row=3, column=3, padx=6)
-        ttk.Checkbutton(top, text="una fila", variable=self.ai_one).grid(row=3, column=4, padx=4)
-        ttk.Button(top, text="AI Correct", command=self.ai_correct_row).grid(row=3, column=5, padx=6)
-        ttk.Button(top, text="Detener análisis", command=self.stop_ai_review).grid(row=3, column=6, padx=6)
-        ttk.Button(top, text="Crear EDL", command=self.create_edl).grid(row=3, column=7, padx=6)
+        ttk.Button(top, text="AI Review", command=self.ai_review).grid(row=3, column=3, padx=6)
+
+        # Selector de modelo AI
+        ai_models = ["gpt-5", "gpt-5-mini", "gpt-5-nano"]
+        self.ai_model_combo = ttk.Combobox(top, textvariable=self.v_ai_model, values=ai_models, width=12)
+        self.ai_model_combo.grid(row=3, column=4, padx=(0, 6))
+        self.ai_model_combo.set(ai_models[0])
+
+        ttk.Checkbutton(top, text="una fila", variable=self.ai_one).grid(row=3, column=5, padx=4)
+        ttk.Button(top, text="AI Correct", command=self.ai_correct_row).grid(row=3, column=6, padx=6)
+        ttk.Button(top, text="Corregir Desplazamientos", command=self.second_pass_sync).grid(row=3, column=7, padx=6)
+        ttk.Button(top, text="Detener análisis", command=self.stop_ai_review).grid(row=3, column=8, padx=6)
+        ttk.Button(top, text="Crear EDL", command=self.create_edl).grid(row=3, column=9, padx=6)
 
         # Tabla principal -----------------------------------------------------------
         self._build_table()
@@ -456,6 +465,8 @@ class App(tk.Tk):
                 "Configura la variable OPENAI_API_KEY antes de continuar",
             )
             return
+
+        model = self.v_ai_model.get()
         if self.ai_one.get():
             sel = self.tree.selection()
             if not sel:
@@ -464,10 +475,13 @@ class App(tk.Tk):
             iid = sel[0]
             original = self.tree.set(iid, "Original")
             asr = self.tree.set(iid, "ASR")
+            if not original.strip() or not asr.strip():
+                messagebox.showwarning("Falta texto", "La fila seleccionada no tiene texto en 'Original' o 'ASR'.")
+                return
             self._log("⏳ Revisión AI fila…")
             threading.Thread(
                 target=self._ai_review_one_worker,
-                args=(iid, original, asr),
+                args=(iid, original, asr, model),
                 daemon=True,
             ).start()
         else:
@@ -477,7 +491,7 @@ class App(tk.Tk):
             items = list(self.tree.get_children())
             threading.Thread(
                 target=self._ai_review_worker,
-                args=(items,),
+                args=(items, model),
                 daemon=True,
             ).start()
 
@@ -489,6 +503,9 @@ class App(tk.Tk):
         iid = sel[0]
         original = self.tree.set(iid, "Original")
         asr = self.tree.set(iid, "ASR")
+        if not original.strip() or not asr.strip():
+            messagebox.showwarning("Falta texto", "La fila seleccionada no tiene texto en 'Original' o 'ASR' para corregir.")
+            return
         self._log(f"⏳ Corrección AI para fila {self.tree.set(iid, 'ID')}…")
 
         tags = list(self.tree.item(iid, "tags"))
@@ -496,19 +513,20 @@ class App(tk.Tk):
             tags.append("processing")
             self.tree.item(iid, tags=tuple(tags))
 
+        model = self.v_ai_model.get()
         threading.Thread(
             target=self._ai_correct_worker,
-            args=(iid, original, asr),
+            args=(iid, original, asr, model),
             daemon=True,
         ).start()
 
-    def _ai_correct_worker(self, iid: str, original: str, asr: str) -> None:
+    def _ai_correct_worker(self, iid: str, original: str, asr: str, model: str) -> None:
         try:
             from ai_review import ai_correct
-            corrected_text = ai_correct(original, asr)
+            corrected_text = ai_correct(original, asr, model=model)
             self.q.put(("AI_CORRECT", (iid, corrected_text)))
         except Exception:
-            buf = io.StringIO()
+            buf = io. StringIO()
             traceback.print_exc(file=buf)
             err = buf.getvalue()
             print(err)
@@ -525,13 +543,15 @@ class App(tk.Tk):
         except Exception as exc:
             self._log(str(exc))
 
-    def _ai_review_worker(self, items: list[str] | None = None) -> None:
+    def _ai_review_worker(self, items: list[str] | None = None, model: str | None = None) -> None:
         """Run batch AI review updating the GUI incrementally."""
         try:
             import ai_review
 
+            model = model or self.v_ai_model.get()
+
             if not items:
-                approved, remaining = ai_review.review_file(self.v_json.get())
+                approved, remaining = ai_review.review_file(self.v_json.get(), model=model)
                 self.q.put(("RELOAD", None))
                 if ai_review._stop_review:
                     self.q.put("⚠ Revisión detenida")
@@ -550,10 +570,11 @@ class App(tk.Tk):
 
             try:
                 approved, remaining = ai_review.review_file(
-                    self.v_json.get(), progress_callback=progress
+                    self.v_json.get(), progress_callback=progress, model=model
                 )
             except TypeError:
-                approved, remaining = ai_review.review_file(self.v_json.get())
+                # Fallback for older ai_review versions without progress_callback
+                approved, remaining = ai_review.review_file(self.v_json.get(), model=model)
                 self.q.put(("RELOAD", None))
                 if ai_review._stop_review:
                     self.q.put("⚠ Revisión detenida")
@@ -576,12 +597,12 @@ class App(tk.Tk):
             print(err)
             self.q.put(err)
 
-    def _ai_review_one_worker(self, iid: str, original: str, asr: str) -> None:
+    def _ai_review_one_worker(self, iid: str, original: str, asr: str, model: str) -> None:
         try:
             from ai_review import review_row
 
             row = [0, "", "", 0.0, 0.0, original, asr]
-            review_row(row)
+            review_row(row, model=model)
             self.q.put(("AI_ROW", (iid, row[3], row[2])))
         except Exception:
             buf = io.StringIO()
@@ -967,7 +988,7 @@ class App(tk.Tk):
         win.destroy()
         self.save_json()
 
-    def _update_metrics(self, iid: str) -> None:
+    def _update_metrics(self, iid: str, *, save: bool = True) -> None:
         """Recalculate flag and WER after modifying text."""
         original = self.tree.set(iid, "Original")
         asr = self.tree.set(iid, "ASR")
@@ -988,7 +1009,8 @@ class App(tk.Tk):
             flag = "✅" if wer_val <= thr else ("⚠️" if wer_val <= 0.20 else "❌")
         self.tree.set(iid, "✓", flag)
         self.tree.set(iid, "WER", f"{wer_val*100:.1f}")
-        self.save_json()
+        if save:
+            self.save_json()
 
     def _recompute_tc(self) -> None:
         """Normalise time codes while keeping large jumps visible for review."""
@@ -1685,6 +1707,109 @@ class App(tk.Tk):
             messagebox.showinfo("EDL", f"Guardado {out}")
         except Exception as exc:
             show_error("Error", exc)
+
+    def second_pass_sync(self) -> None:
+        """
+        Runs a second pass to fix word alignment issues by shifting words
+        between adjacent rows that are not marked as correct (✅).
+        """
+        self._log("⏳ Iniciando segunda pasada de sincronización...")
+        self._snapshot()
+
+        children = list(self.tree.get_children())
+        if not children:
+            self._log("La tabla está vacía.")
+            return
+
+        changes_count = 0
+        for i in range(1, len(children)):
+            prev_iid = children[i - 1]
+            curr_iid = children[i]
+
+            # Skip if either row is already perfect or merged.
+            if self.tree.set(prev_iid, "✓") == "✅" or self.tree.set(curr_iid, "✓") == "✅":
+                continue
+            if self.merged_tag in self.tree.item(prev_iid, "tags") or self.merged_tag in self.tree.item(curr_iid, "tags"):
+                continue
+
+            # --- Store original state ---
+            prev_orig = self.tree.set(prev_iid, "Original")
+            prev_asr = self.tree.set(prev_iid, "ASR")
+            curr_orig = self.tree.set(curr_iid, "Original")
+            curr_asr = self.tree.set(curr_iid, "ASR")
+
+            if not all([prev_orig, prev_asr, curr_orig, curr_asr]):
+                continue
+
+            prev_orig_words = prev_orig.split()
+            prev_asr_words = prev_asr.split()
+            curr_orig_words = curr_orig.split()
+            curr_asr_words = curr_asr.split()
+
+            if not all([prev_orig_words, prev_asr_words, curr_orig_words, curr_asr_words]):
+                continue
+
+            def get_wer(ref, hyp):
+                ref_t = normalize(ref, strip_punct=False).split()
+                hyp_t = normalize(hyp, strip_punct=False).split()
+                if not hyp_t:
+                    return 1.0
+                return Levenshtein.normalized_distance(ref_t, hyp_t)
+
+            original_wer1 = get_wer(prev_orig, prev_asr)
+            original_wer2 = get_wer(curr_orig, curr_asr)
+            original_combined_wer = original_wer1 + original_wer2
+
+            best_wer = original_combined_wer
+            best_config = None
+
+            # --- Scenario 1: Move last word from previous to current ---
+            if len(prev_orig_words) > 1 and len(prev_asr_words) > 1:
+                p_orig_last = prev_orig_words[-1]
+                new_prev_orig_s1 = " ".join(prev_orig_words[:-1])
+                new_curr_orig_s1 = f"{p_orig_last} {curr_orig}"
+                p_asr_last = prev_asr_words[-1]
+                new_prev_asr_s1 = " ".join(prev_asr_words[:-1])
+                new_curr_asr_s1 = f"{p_asr_last} {curr_asr}"
+                wer1 = get_wer(new_prev_orig_s1, new_prev_asr_s1)
+                wer2 = get_wer(new_curr_orig_s1, new_curr_asr_s1)
+                if wer1 + wer2 < best_wer:
+                    best_wer = wer1 + wer2
+                    best_config = (new_prev_orig_s1, new_prev_asr_s1, new_curr_orig_s1, new_curr_asr_s1)
+
+            # --- Scenario 2: Move first word from current to previous ---
+            if len(curr_orig_words) > 1 and len(curr_asr_words) > 1:
+                c_orig_first = curr_orig_words[0]
+                new_curr_orig_s2 = " ".join(curr_orig_words[1:])
+                new_prev_orig_s2 = f"{prev_orig} {c_orig_first}"
+                c_asr_first = curr_asr_words[0]
+                new_curr_asr_s2 = " ".join(curr_asr_words[1:])
+                new_prev_asr_s2 = f"{prev_asr} {c_asr_first}"
+                wer1 = get_wer(new_prev_orig_s2, new_prev_asr_s2)
+                wer2 = get_wer(new_curr_orig_s2, new_curr_asr_s2)
+                if wer1 + wer2 < best_wer:
+                    best_wer = wer1 + wer2
+                    best_config = (new_prev_orig_s2, new_prev_asr_s2, new_curr_orig_s2, new_curr_asr_s2)
+
+            # --- Apply best change if any ---
+            if best_config:
+                changes_count += 1
+                new_prev_orig_txt, new_prev_asr_txt, new_curr_orig_txt, new_curr_asr_txt = best_config
+                self.tree.set(prev_iid, "Original", new_prev_orig_txt)
+                self.tree.set(prev_iid, "ASR", new_prev_asr_txt)
+                self.tree.set(curr_iid, "Original", new_curr_orig_txt)
+                self.tree.set(curr_iid, "ASR", new_curr_asr_txt)
+                self._update_metrics(prev_iid, save=False)
+                self._update_metrics(curr_iid, save=False)
+                prev_id = self.tree.set(prev_iid, "ID")
+                curr_id = self.tree.set(curr_iid, "ID")
+                self._log(f"  - Corrección entre filas {prev_id} y {curr_id} (WER: {original_combined_wer:.2f} → {best_wer:.2f})")
+
+        if changes_count > 0:
+            self.save_json()
+            self._log(f"✔ Segunda pasada completada. Se aplicaron {changes_count} correcciones.")
+        else:
+            self._log("✔ Segunda pasada completada. No se encontraron correcciones obvias.")
 
 
 # --------------------------------------------------------------------------------------
