@@ -98,6 +98,13 @@ class App(tk.Tk):
         self.ai_one  = tk.BooleanVar(self, value=False)
         self.v_ai_model = tk.StringVar(self, value="gpt-5")
 
+        # --- Estadísticas y Filtros ---
+        self.v_stats_total = tk.StringVar(self, value="Total: 0")
+        self.v_stats_mal = tk.StringVar(self, value="Filas 'mal': 0")
+        self.v_stats_pct = tk.StringVar(self, value="(0.0%)")
+        self.v_filter_mal = tk.BooleanVar(self, value=False)
+        self.all_rows: list[list] = []  # Almacén persistente de filas
+
         # Estados internos
         self.q:   queue.Queue = queue.Queue()
         self.ok_rows: set[int] = set()
@@ -226,6 +233,27 @@ class App(tk.Tk):
         self.bind_all("<Control-z>", self.undo)
         self.bind_all("<Control-Shift-Z>", self.redo)
 
+        # Frame para estadísticas y filtros
+        stats_filter_frame = ttk.LabelFrame(self.bottom_frame, text="Estadísticas", padding=5)
+        stats_filter_frame.pack(fill="x", padx=3, pady=2)
+
+        stats_labels_frame = ttk.Frame(stats_filter_frame)
+        stats_labels_frame.pack(side="left", padx=5)
+
+        ttk.Label(stats_labels_frame, textvariable=self.v_stats_total).pack(side="left", padx=4)
+        ttk.Label(stats_labels_frame, textvariable=self.v_stats_mal).pack(side="left", padx=4)
+        ttk.Label(stats_labels_frame, textvariable=self.v_stats_pct).pack(side="left", padx=4)
+
+        # Controles de filtro
+        filter_controls_frame = ttk.Frame(stats_filter_frame)
+        filter_controls_frame.pack(side="right", padx=5)
+        ttk.Checkbutton(
+            filter_controls_frame,
+            text="Mostrar solo filas 'mal'",
+            variable=self.v_filter_mal,
+            command=self._apply_filter,
+        ).pack()
+
         # Cuadro de log -------------------------------------------------------
         self.log_box = scrolledtext.ScrolledText(self.bottom_frame, height=5, state="disabled")
         self.log_box.pack(fill="x", padx=3, pady=2)
@@ -250,7 +278,7 @@ class App(tk.Tk):
     # ---------------------------------------------------------------- table ----------
     def _build_table(self) -> None:
         cols = ("ID", "✓", "OK", "AI", "WER", "tc", "Original", "ASR")
-        widths = (50, 30, 40, 40, 60, 60, 800, 800)
+        widths = (50, 30, 40, 40, 60, 60, 750, 750)
 
         table_frame = ttk.Frame(self)
         table_frame.pack(fill="both", expand=True, padx=3, pady=2)
@@ -258,7 +286,10 @@ class App(tk.Tk):
         self.tree = ttk.Treeview(table_frame, columns=cols, show="headings", height=27, selectmode="extended")
         for c, w in zip(cols, widths):
             self.tree.heading(c, text=c)
-            self.tree.column(c, width=w, anchor="w")
+            if c not in ("Original", "ASR"):
+                self.tree.column(c, width=w, anchor="w", stretch=False)
+            else:
+                self.tree.column(c, width=w, anchor="w")
         self.tree.pack(fill="both", expand=True, side="left")
 
         sb = ttk.Scrollbar(table_frame, orient="vertical", command=self.tree.yview)
@@ -301,6 +332,33 @@ class App(tk.Tk):
         ttk.Button(bar, text="Guardar punto", command=self.save_bookmark).pack(side="left", padx=4)
         ttk.Button(bar, text="Ir al punto", command=self.goto_bookmark).pack(side="left", padx=4)
 
+    def _update_stats(self) -> None:
+        """Calcula y muestra las estadísticas de filas 'mal' usando self.all_rows."""
+        total_rows = len(self.all_rows)
+        mal_rows = sum(1 for row in self.all_rows if row[3] == "mal")
+
+        pct = (mal_rows / total_rows * 100) if total_rows > 0 else 0.0
+        self.v_stats_total.set(f"Total: {total_rows}")
+        self.v_stats_mal.set(f"Filas 'mal': {mal_rows}")
+        self.v_stats_pct.set(f"({pct:.1f}%)")
+
+    def _apply_filter(self) -> None:
+        """Rellena la tabla aplicando el filtro actual y actualiza UI."""
+        self.tree.delete(*self.tree.get_children())  # Limpiar vista actual
+
+        show_only_mal = self.v_filter_mal.get()
+        rows_to_display = self.all_rows
+        if show_only_mal:
+            rows_to_display = [r for r in self.all_rows if r[3] == "mal"]
+
+        for r in rows_to_display:
+            vals = self._row_from_alignment(r)
+            vals[6], vals[7] = str(vals[6]), str(vals[7])
+            self.tree.insert("", tk.END, values=vals)
+
+        self._update_scale_range()
+        self._update_stats()
+
     # ---------------------------------------------------------------------------------
     # navegación de archivos ----------------------------------------------------------
     def _browse(self, var: tk.StringVar, ft: tuple[str, str]):
@@ -312,7 +370,9 @@ class App(tk.Tk):
     def clear_table(self) -> None:
         self.tree.delete(*self.tree.get_children())
         self.ok_rows.clear()
+        self.all_rows.clear()
         self._update_scale_range()
+        self._update_stats()
 
     def save_json(self) -> None:
         if not self.v_json.get():
@@ -633,24 +693,15 @@ class App(tk.Tk):
             self.v_json.set(p)
 
         try:
-            rows = json.loads(Path(self.v_json.get()).read_text(encoding="utf8"))
-            self.clear_table()
+            self.all_rows = json.loads(Path(self.v_json.get()).read_text(encoding="utf8"))
             self.correction_stats.clear()
-
-            for r in rows:
-                vals = self._row_from_alignment(r)
-                # Treeview no admite números; asegúrate de que llegan como str
-                vals[6], vals[7] = str(vals[6]), str(vals[7])
-                self.tree.insert("", tk.END, values=vals)
+            self._apply_filter()  # Rellena la tabla y actualiza stats
             self._snapshot()
-            self._update_scale_range()
             self._load_marker()
             self._load_bookmark_selection()
             self._log(f"✔ Cargado {self.v_json.get()}")
         except Exception as e:
             show_error("Error", e)
-
-    # ---------------------------------------------------------------------------------
     # Reproducción -------------------------------------------------------------------
     def _handle_double(self, event: tk.Event) -> None:
         item = self.tree.identify_row(event.y)
@@ -1052,11 +1103,15 @@ class App(tk.Tk):
     def _clip_ok(self):
         if self._clip_item:
             self.tree.set(self._clip_item, "AI", "ok")
+            self._update_row_in_all_rows(self._clip_item, "AI", "ok")
+            self._apply_filter()
         self._hide_clip()
 
     def _clip_bad(self):
         if self._clip_item:
             self.tree.set(self._clip_item, "AI", "mal")
+            self._update_row_in_all_rows(self._clip_item, "AI", "mal")
+            self._apply_filter()
         self._hide_clip()
 
     def _hide_clip(self) -> None:
@@ -1467,6 +1522,21 @@ class App(tk.Tk):
     # ---------------------------------------------------------------------------------
     # hilo worker (alinear) -----------------------------------------------------------
 
+    def _update_row_in_all_rows(self, iid: str, col_name: str, new_value: str) -> None:
+        """Actualiza un valor en la lista `self.all_rows` basado en el iid de la tabla."""
+        try:
+            row_id = self.tree.set(iid, "ID")
+            col_idx_map = {name: i for i, name in enumerate(self.tree["columns"])}
+            col_idx = col_idx_map[col_name]
+
+            for row in self.all_rows:
+                if str(row[0]) == str(row_id):
+                    row[col_idx] = new_value
+                    break
+        except (KeyError, ValueError, IndexError):
+            # No es crítico si falla, el estado se resincronizará al guardar/cargar.
+            pass
+
     def _worker(self):
         def debug(msg: str) -> None:
             print(msg)
@@ -1560,7 +1630,8 @@ class App(tk.Tk):
 
             debug(f"DEBUG: JSON guardado en {out}")
 
-            self.q.put(("ROWS", rows))
+            self.all_rows = rows
+            self.q.put(("ROWS_READY", None))
             self.q.put(f"✔ Listo. Guardado en {out}")
             self.v_json.set(str(out))
         except Exception as e:
@@ -1581,12 +1652,8 @@ class App(tk.Tk):
             while True:
                 msg = self.q.get_nowait()
 
-                if isinstance(msg, tuple) and msg[0] == "ROWS":
-                    for r in msg[1]:
-                        vals = self._row_from_alignment(r)
-                        vals[6], vals[7] = str(vals[6]), str(vals[7])
-                        self.tree.insert("", tk.END, values=vals)
-                    self._update_scale_range()
+                if isinstance(msg, tuple) and msg[0] == "ROWS_READY":
+                    self._apply_filter()
                     self._close_progress()
                     self._snapshot()
 
@@ -1624,13 +1691,16 @@ class App(tk.Tk):
                 elif isinstance(msg, tuple) and msg[0] == "AI_ROW":
                     iid, verdict, ok = msg[1]
                     self.tree.set(iid, "AI", verdict)
+                    self._update_row_in_all_rows(iid, "AI", verdict)
                     if ok:
                         self.tree.set(iid, "OK", ok)
+                        self._update_row_in_all_rows(iid, "OK", ok)
                         try:
                             line_id = int(self.tree.set(iid, "ID"))
                             self.ok_rows.add(line_id)
                         except Exception:
                             pass
+                    self._apply_filter()
                     tags = list(self.tree.item(iid, "tags"))
                     if "processing" in tags:
                         tags.remove("processing")
@@ -1672,11 +1742,14 @@ class App(tk.Tk):
 
                     # Update the 'AI' column with the new, more specific verdict
                     self.tree.set(iid, "AI", verdict)
+                    self._update_row_in_all_rows(iid, "AI", verdict)
 
                     # If the advanced review concludes the row is actually OK, mark it.
                     if verdict == "OK":
                         self.tree.set(iid, "OK", "OK")
+                        self._update_row_in_all_rows(iid, "OK", "OK")
 
+                    self._apply_filter()
                     self._log(f"Revisión avanzada Fila {row_id}: {verdict}. Comentario: {comment}")
                     self.save_json()
 
@@ -1711,14 +1784,8 @@ class App(tk.Tk):
         self.redo_stack.clear()
 
     def _restore(self, data: str) -> None:
-        rows = json.loads(data)
-        self.clear_table()
-
-        for r in rows:
-            vals = self._row_from_alignment(r)
-            vals[6], vals[7] = str(vals[6]), str(vals[7])
-            self.tree.insert("", tk.END, values=vals)
-        self._update_scale_range()
+        self.all_rows = json.loads(data)
+        self._apply_filter()
 
     def undo(self, event: tk.Event | None = None) -> None:
         if not self.undo_stack:
