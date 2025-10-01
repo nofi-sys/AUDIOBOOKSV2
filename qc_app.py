@@ -33,7 +33,7 @@ from utils.gui_errors import show_error
 from alignment import build_rows, build_rows_from_words, WARN_WER
 from text_utils import read_script, normalize
 from rapidfuzz.distance import Levenshtein
-from qc_utils import canonical_row
+from qc_utils import canonical_row, log_correction_metadata
 from audacity_session import AudacityLabelSession
 
 from audio_video_editor import build_intervals
@@ -104,6 +104,7 @@ class App(tk.Tk):
         self.undo_stack: list[str] = []
         self.redo_stack: list[str] = []
         self.merged_rows: dict[str, list[list[str]]] = {}
+        self.correction_stats: dict[str, int] = {}
 
         self.selected_cell: tuple[str, str] | None = None
         self.tree_tag = "sel_cell"
@@ -181,10 +182,12 @@ class App(tk.Tk):
         self.ai_model_combo.set(ai_models[0])
 
         ttk.Checkbutton(top, text="una fila", variable=self.ai_one).grid(row=3, column=5, padx=4)
-        ttk.Button(top, text="AI Correct", command=self.ai_correct_row).grid(row=3, column=6, padx=6)
+        ttk.Button(top, text="Corregir transcript con AI", command=self.ai_correct_row).grid(row=3, column=6, padx=6)
         ttk.Button(top, text="Corregir Desplazamientos", command=self.second_pass_sync).grid(row=3, column=7, padx=6)
         ttk.Button(top, text="Detener análisis", command=self.stop_ai_review).grid(row=3, column=8, padx=6)
         ttk.Button(top, text="Crear EDL", command=self.create_edl).grid(row=3, column=9, padx=6)
+        ttk.Button(top, text="Informe Corrección", command=self.generate_correction_report).grid(row=3, column=10, padx=6)
+        ttk.Button(top, text="Revisión AI Avanzada", command=self.advanced_ai_review).grid(row=3, column=11, padx=6)
 
         # Tabla principal -----------------------------------------------------------
         self._build_table()
@@ -506,7 +509,9 @@ class App(tk.Tk):
         if not original.strip() or not asr.strip():
             messagebox.showwarning("Falta texto", "La fila seleccionada no tiene texto en 'Original' o 'ASR' para corregir.")
             return
-        self._log(f"⏳ Corrección AI para fila {self.tree.set(iid, 'ID')}…")
+
+        self._snapshot() # For undo functionality
+        self._log(f"⏳ Corrección y supervisión AI para fila {self.tree.set(iid, 'ID')}…")
 
         tags = list(self.tree.item(iid, "tags"))
         if "processing" not in tags:
@@ -522,11 +527,18 @@ class App(tk.Tk):
 
     def _ai_correct_worker(self, iid: str, original: str, asr: str, model: str) -> None:
         try:
-            from ai_review import ai_correct
-            corrected_text = ai_correct(original, asr, model=model)
-            self.q.put(("AI_CORRECT", (iid, corrected_text)))
+            from ai_review import correct_and_supervise_text
+            final_asr, verdict, proposed = correct_and_supervise_text(
+                original, asr, model=model
+            )
+            self.q.put(
+                (
+                    "AI_CORRECTION_SUPERVISED",
+                    (iid, original, asr, final_asr, verdict, proposed),
+                )
+            )
         except Exception:
-            buf = io. StringIO()
+            buf = io.StringIO()
             traceback.print_exc(file=buf)
             err = buf.getvalue()
             print(err)
@@ -623,6 +635,7 @@ class App(tk.Tk):
         try:
             rows = json.loads(Path(self.v_json.get()).read_text(encoding="utf8"))
             self.clear_table()
+            self.correction_stats.clear()
 
             for r in rows:
                 vals = self._row_from_alignment(r)
@@ -1623,10 +1636,48 @@ class App(tk.Tk):
                         tags.remove("processing")
                         self.tree.item(iid, tags=tuple(tags))
 
-                elif isinstance(msg, tuple) and msg[0] == "AI_CORRECT":
-                    iid, corrected_text = msg[1]
-                    self.tree.set(iid, "ASR", corrected_text)
-                    self._update_metrics(iid)
+                elif isinstance(msg, tuple) and msg[0] == "AI_CORRECTION_SUPERVISED":
+                    (
+                        iid,
+                        original_text,
+                        original_asr,
+                        final_asr,
+                        verdict,
+                        proposed_asr,
+                    ) = msg[1]
+
+                    row_id = self.tree.set(iid, "ID")
+                    log_correction_metadata(
+                        self.v_json.get(),
+                        row_id,
+                        original_asr,
+                        proposed_asr,
+                        verdict,
+                    )
+
+                    # Update stats
+                    self.correction_stats[verdict] = self.correction_stats.get(verdict, 0) + 1
+
+                    if original_asr.strip() != final_asr.strip():
+                        self.tree.set(iid, "ASR", final_asr)
+                        self._update_metrics(iid) # This also saves
+                        self._log(f"  - Fila {row_id} actualizada. Veredicto supervisor: {verdict}")
+                    else:
+                        self._log(f"  - Fila {row_id} no modificada. Veredicto supervisor: {verdict}")
+
+
+                elif isinstance(msg, tuple) and msg[0] == "ADVANCED_AI_REVIEW_DONE":
+                    iid, verdict, comment = msg[1]
+                    row_id = self.tree.set(iid, "ID")
+
+                    # Update the 'AI' column with the new, more specific verdict
+                    self.tree.set(iid, "AI", verdict)
+
+                    # If the advanced review concludes the row is actually OK, mark it.
+                    if verdict == "OK":
+                        self.tree.set(iid, "OK", "OK")
+
+                    self._log(f"Revisión avanzada Fila {row_id}: {verdict}. Comentario: {comment}")
                     self.save_json()
 
                 elif isinstance(msg, tuple) and msg[0] == "AI_DONE":
@@ -1810,6 +1861,103 @@ class App(tk.Tk):
             self._log(f"✔ Segunda pasada completada. Se aplicaron {changes_count} correcciones.")
         else:
             self._log("✔ Segunda pasada completada. No se encontraron correcciones obvias.")
+
+    def generate_correction_report(self) -> None:
+        """Generates and saves a summary report of AI correction stats."""
+        if not self.v_json.get():
+            messagebox.showwarning("Sin JSON", "Carga un JSON para generar un informe.")
+            return
+        if not self.correction_stats:
+            messagebox.showinfo("Sin datos", "No hay estadísticas de corrección para informar.")
+            return
+
+        total = sum(self.correction_stats.values())
+        plausible = self.correction_stats.get("plausible", 0)
+        implausible = self.correction_stats.get("implausible", 0)
+        no_change = self.correction_stats.get("no_change", 0)
+
+        report_lines = [
+            "Informe de Corrección de Transcripción con IA",
+            "==============================================",
+            f"Total de filas analizadas: {total}",
+            f"  - Correcciones aplicadas (Plausible): {plausible} ({plausible/total:.1%})",
+            f"  - Correcciones revocadas (Implausible): {implausible} ({implausible/total:.1%})",
+            f"  - Sin cambios propuestos: {no_change} ({no_change/total:.1%})",
+        ]
+        report_str = "\n".join(report_lines)
+
+        try:
+            report_path = Path(self.v_json.get()).with_suffix(".correction_report.txt")
+            report_path.write_text(report_str, encoding="utf-8")
+            self._log(f"✔ Informe de corrección guardado en: {report_path}")
+            messagebox.showinfo("Informe Guardado", f"El informe se ha guardado en:\n{report_path}")
+        except Exception as e:
+            show_error("Error al guardar informe", e)
+
+    def advanced_ai_review(self) -> None:
+        """Runs an advanced, contextual AI review on the selected row."""
+        sel = self.tree.selection()
+        if len(sel) != 1:
+            messagebox.showwarning("Selección inválida", "Selecciona una única fila para la revisión avanzada.")
+            return
+
+        iid = sel[0]
+        if self.tree.set(iid, "AI").lower() != "mal":
+            messagebox.showinfo("No es necesario", "La revisión avanzada es para filas marcadas como 'mal'.")
+            return
+
+        children = list(self.tree.get_children())
+        idx = children.index(iid)
+
+        # Gather context
+        context = {}
+        context["current"] = {
+            "id": self.tree.set(iid, "ID"),
+            "original": self.tree.set(iid, "Original"),
+            "asr": self.tree.set(iid, "ASR"),
+        }
+        if idx > 0:
+            prev_iid = children[idx - 1]
+            context["previous"] = {
+                "id": self.tree.set(prev_iid, "ID"),
+                "original": self.tree.set(prev_iid, "Original"),
+                "asr": self.tree.set(prev_iid, "ASR"),
+            }
+        if idx < len(children) - 1:
+            next_iid = children[idx + 1]
+            context["next"] = {
+                "id": self.tree.set(next_iid, "ID"),
+                "original": self.tree.set(next_iid, "Original"),
+                "asr": self.tree.set(next_iid, "ASR"),
+            }
+
+        self._log(f"⏳ Revisión AI Avanzada para fila {context['current']['id']}…")
+
+        tags = list(self.tree.item(iid, "tags"))
+        if "processing" not in tags:
+            tags.append("processing")
+            self.tree.item(iid, tags=tuple(tags))
+
+        threading.Thread(
+            target=self._advanced_ai_review_worker,
+            args=(iid, context),
+            daemon=True,
+        ).start()
+
+    def _advanced_ai_review_worker(self, iid: str, context: dict) -> None:
+        """Worker for advanced AI review."""
+        try:
+            from ai_review import get_advanced_review_verdict
+            verdict, comment = get_advanced_review_verdict(context)
+            self.q.put(("ADVANCED_AI_REVIEW_DONE", (iid, verdict, comment)))
+        except Exception:
+            buf = io.StringIO()
+            traceback.print_exc(file=buf)
+            err = buf.getvalue()
+            print(err)
+            self.q.put(err)
+        finally:
+            self.q.put(("AI_DONE", iid))
 
 
 # --------------------------------------------------------------------------------------
