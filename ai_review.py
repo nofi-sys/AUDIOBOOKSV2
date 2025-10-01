@@ -28,8 +28,7 @@ if os.getenv("AI_REVIEW_DEBUG", "").lower() in ("1", "true", "yes"):
 load_dotenv()
 
 # Use o3 model family
-# MODEL = "o3"
-MODEL = "gpt-5"
+MODEL_DEFAULT = "gpt-5"
 _client_instance: OpenAI | None = None
 # Global flag to allow cancelling a long batch review
 _stop_review = False
@@ -97,7 +96,7 @@ def load_prompt(path: str = "prompt.txt") -> str:
 
 
 def _ai_verdict_with_timeout(
-    original: str, asr: str, prompt: str | None, timeout_sec: int
+    original: str, asr: str, prompt: str | None, timeout_sec: int, model: str | None = None
 ) -> str:
     """Run ai_verdict in a helper thread and enforce a timeout.
 
@@ -108,7 +107,7 @@ def _ai_verdict_with_timeout(
 
     def _runner():
         try:
-            result["v"] = ai_verdict(original, asr, prompt)
+            result["v"] = ai_verdict(original, asr, prompt, model=model)
         except BaseException as exc:  # noqa: BLE001
             error["e"] = exc
 
@@ -223,11 +222,12 @@ Return only the corrected text.
 """
 
 
-def ai_correct(original: str, asr: str) -> str:
+def ai_correct(original: str, asr: str, model: str | None = None) -> str:
     """Send a correction request and return the corrected ASR text."""
     logger.info("AI correction request ORIGINAL=%s | ASR=%s", original, asr)
+    current_model = model or MODEL_DEFAULT
     resp = _chat_with_backoff(
-        model=MODEL,
+        model=current_model,
         messages=[
             {"role": "system", "content": CORRECTION_PROMPT},
             {"role": "user", "content": f"ORIGINAL:\n{original}\n\nASR:\n{asr}"},
@@ -245,6 +245,7 @@ def ai_verdict(
     asr: str,
     base_prompt: str | None = None,
     return_feedback: bool = False,
+    model: str | None = None,
 ) -> str | tuple[str, str]:
     """Send a single comparison request and return the verdict.
 
@@ -256,8 +257,9 @@ def ai_verdict(
     # Debug prints
     print(f"DEBUG ai_verdict: ORIGINAL={original}")
     print(f"DEBUG ai_verdict: ASR={asr}")
+    current_model = model or MODEL_DEFAULT
     resp = _chat_with_backoff(
-        model=MODEL,
+        model=current_model,
         messages=[
             {"role": "system", "content": prompt},
             {"role": "user", "content": f"ORIGINAL:\n{original}\n\nASR:\n{asr}"},
@@ -280,11 +282,11 @@ def ai_verdict(
     return word
 
 
-def review_row(row: List, base_prompt: str | None = None) -> str:
+def review_row(row: List, base_prompt: str | None = None, model: str | None = None) -> str:
     """Annotate a single QC row with AI verdict."""
     orig, asr = row[-2], row[-1]
     try:
-        verdict = ai_verdict(str(orig), str(asr), base_prompt)
+        verdict = ai_verdict(str(orig), str(asr), base_prompt, model=model)
     except BadRequestError as exc:
         if "max_tokens" in str(exc) or "model output limit" in str(exc):
             _mark_error(row)
@@ -306,7 +308,7 @@ def review_row(row: List, base_prompt: str | None = None) -> str:
     return verdict
 
 
-def review_row_feedback(row: List, base_prompt: str | None = None) -> tuple[str, str]:
+def review_row_feedback(row: List, base_prompt: str | None = None, model: str | None = None) -> tuple[str, str]:
     """Like :func:`review_row` but also return the model feedback text."""
 
     orig, asr = row[-2], row[-1]
@@ -316,6 +318,7 @@ def review_row_feedback(row: List, base_prompt: str | None = None) -> tuple[str,
             str(asr),
             base_prompt,
             return_feedback=True,
+            model=model,
         )
     except BadRequestError as exc:
         if "max_tokens" in str(exc) or "model output limit" in str(exc):
@@ -341,13 +344,15 @@ def ai_score(
     asr: str,
     base_prompt: str | None = None,
     return_feedback: bool = False,
+    model: str | None = None,
 ) -> str | tuple[str, str]:
     """Send a single re-review request and return a 1-5 score."""
 
     prompt = base_prompt or REREVIEW_PROMPT
     logger.info("AI score request ORIGINAL=%s | ASR=%s", original, asr)
+    current_model = model or MODEL_DEFAULT
     resp = _chat_with_backoff(
-        model=MODEL,
+        model=current_model,
         messages=[
             {"role": "system", "content": prompt},
             {"role": "user", "content": f"ORIGINAL:\n{original}\n\nASR:\n{asr}"},
@@ -366,12 +371,12 @@ def ai_score(
     return rating
 
 
-def score_row(row: List, base_prompt: str | None = None) -> str:
+def score_row(row: List, base_prompt: str | None = None, model: str | None = None) -> str:
     """Return 1-5 score for a single QC row."""
 
     orig, asr = row[-2], row[-1]
     try:
-        rating = ai_score(str(orig), str(asr), base_prompt)
+        rating = ai_score(str(orig), str(asr), base_prompt, model=model)
     except BadRequestError as exc:
         if "max_tokens" in str(exc) or "model output limit" in str(exc):
             _mark_error(row)
@@ -385,6 +390,7 @@ def review_file(
     prompt_path: str = "prompt.txt",
     limit: int | None = None,
     progress_callback: Callable[[str, int, list], None] | None = None,
+    model: str | None = None,
 ) -> tuple[int, int]:
     """Batch review QC JSON file, auto-approve lines marked ok.
 
@@ -411,6 +417,7 @@ def review_file(
         )
     prompt = load_prompt(prompt_path)
     sent = approved = 0
+    current_model = model or MODEL_DEFAULT
     max_requests = limit if limit is not None else MAX_MESSAGES
     for i, row in enumerate(rows):
         if _stop_review or (max_requests and sent >= max_requests):
@@ -421,6 +428,14 @@ def review_file(
         # Skip rows already reviewed by AI regardless of verdict
         if tick == "✅" or ok.lower() == "ok" or ai:
             continue
+
+        # Skip rows with empty Original or ASR text
+        original_text = str(row[-2]).strip()
+        asr_text = str(row[-1]).strip()
+        if not original_text or not asr_text:
+            logger.info(f"Skipping row {i+1} due to missing Original or ASR text.")
+            continue
+
         if progress_callback:
             try:
                 progress_callback("start", i, row)
@@ -435,7 +450,7 @@ def review_file(
             sent += 1
             try:
                 verdict = _ai_verdict_with_timeout(
-                    str(row[-2]), str(row[-1]), prompt, ROW_TIMEOUT_SEC
+                    str(row[-2]), str(row[-1]), prompt, ROW_TIMEOUT_SEC, model=current_model
                 )
             except TimeoutError:
                 attempts += 1
@@ -521,6 +536,7 @@ def review_file_feedback(
     qc_json: str,
     prompt_path: str = "prompt.txt",
     limit: int | None = None,
+    model: str | None = None,
 ) -> tuple[int, int, List[str]]:
     """Batch review returning feedback strings for each processed row.
 
@@ -538,6 +554,7 @@ def review_file_feedback(
     sent = approved = 0
     max_requests = limit if limit is not None else MAX_MESSAGES
     feedback: List[str] = []
+    current_model = model or MODEL_DEFAULT
     for i, row in enumerate(rows):
         if _stop_review or (max_requests and sent >= max_requests):
             break
@@ -554,6 +571,7 @@ def review_file_feedback(
                 str(row[-1]),
                 prompt,
                 return_feedback=True,
+                model=current_model,
             )
         except BadRequestError as exc:
             if "max_tokens" in str(exc) or "model output limit" in str(exc):
