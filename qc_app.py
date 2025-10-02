@@ -22,7 +22,7 @@ from pathlib import Path
 import pygame
 import tkinter as tk
 from tkinter import filedialog, messagebox, scrolledtext, ttk
-import time
+
 try:
     import vlc  # opcional, para control de velocidad suave
 except Exception:
@@ -91,11 +91,11 @@ class App(tk.Tk):
         self.geometry("1850x760")
 
         # ------------------------- variables de la interfaz --------------------------
-        self.v_ref   = tk.StringVar(self)
-        self.v_asr   = tk.StringVar(self)
+        self.v_ref = tk.StringVar(self)
+        self.v_asr = tk.StringVar(self)
         self.v_audio = tk.StringVar(self)
-        self.v_json  = tk.StringVar(self)
-        self.ai_one  = tk.BooleanVar(self, value=False)
+        self.v_json = tk.StringVar(self)
+        self.ai_one = tk.BooleanVar(self, value=False)
         self.v_ai_model = tk.StringVar(self, value="gpt-5")
 
         # --- Estadísticas y Filtros ---
@@ -106,7 +106,7 @@ class App(tk.Tk):
         self.all_rows: list[list] = []  # Almacén persistente de filas
 
         # Estados internos
-        self.q:   queue.Queue = queue.Queue()
+        self.q: queue.Queue = queue.Queue()
         self.ok_rows: set[int] = set()
         self.undo_stack: list[str] = []
         self.redo_stack: list[str] = []
@@ -174,7 +174,8 @@ class App(tk.Tk):
                         ("Media", "*.mp3;*.wav;*.m4a;*.flac;*.ogg;*.aac;*.mp4"))
 
         ttk.Button(top, text="Transcribir", command=self.transcribe).grid(row=2, column=3, padx=6)
-        ttk.Button(top, text="Procesar", width=11, command=self.launch).grid(row=0, column=3, rowspan=2, padx=6)
+        ttk.Button(top, text="Procesar", width=11, command=self.launch).grid(
+            row=0, column=3, rowspan=2, padx=6)
 
         ttk.Label(top, text="JSON:").grid(row=3, column=0, sticky="e")
         ttk.Entry(top, textvariable=self.v_json, width=70).grid(row=3, column=1)
@@ -184,17 +185,28 @@ class App(tk.Tk):
 
         # Selector de modelo AI
         ai_models = ["gpt-5", "gpt-5-mini", "gpt-5-nano"]
-        self.ai_model_combo = ttk.Combobox(top, textvariable=self.v_ai_model, values=ai_models, width=12)
+        self.ai_model_combo = ttk.Combobox(
+            top, textvariable=self.v_ai_model, values=ai_models, width=12)
         self.ai_model_combo.grid(row=3, column=4, padx=(0, 6))
         self.ai_model_combo.set(ai_models[0])
 
         ttk.Checkbutton(top, text="una fila", variable=self.ai_one).grid(row=3, column=5, padx=4)
-        ttk.Button(top, text="Corregir transcript con AI", command=self.ai_correct_row).grid(row=3, column=6, padx=6)
-        ttk.Button(top, text="Corregir Desplazamientos", command=self.second_pass_sync).grid(row=3, column=7, padx=6)
-        ttk.Button(top, text="Detener análisis", command=self.stop_ai_review).grid(row=3, column=8, padx=6)
-        ttk.Button(top, text="Crear EDL", command=self.create_edl).grid(row=3, column=9, padx=6)
-        ttk.Button(top, text="Informe Corrección", command=self.generate_correction_report).grid(row=3, column=10, padx=6)
-        ttk.Button(top, text="Revisión AI Avanzada", command=self.advanced_ai_review).grid(row=3, column=11, padx=6)
+        ttk.Button(
+            top, text="Corregir transcript con AI", command=self.ai_correct_row
+        ).grid(row=3, column=6, padx=6)
+        ttk.Button(
+            top, text="Corregir Desplazamientos", command=self.second_pass_sync
+        ).grid(row=3, column=7, padx=6)
+        ttk.Button(top, text="Detener análisis", command=self.stop_ai_review).grid(
+            row=3, column=8, padx=6)
+        ttk.Button(top, text="Crear EDL", command=self.create_edl).grid(
+            row=3, column=9, padx=6)
+        ttk.Button(
+            top, text="Informe Corrección", command=self.generate_correction_report
+        ).grid(row=3, column=10, padx=6)
+        ttk.Button(
+            top, text="Revisión AI Avanzada", command=self.advanced_ai_review
+        ).grid(row=3, column=11, padx=6)
 
         # Frame para estadísticas y filtros
         stats_filter_frame = ttk.LabelFrame(self, text="Estadísticas y Filtros", padding=5)
@@ -273,7 +285,8 @@ class App(tk.Tk):
     def _lbl_entry(self, parent, text, var, row, ft):
         ttk.Label(parent, text=text).grid(row=row, column=0, sticky="e")
         ttk.Entry(parent, textvariable=var, width=70).grid(row=row, column=1)
-        ttk.Button(parent, text="…", command=lambda: self._browse(var, ft)).grid(row=row, column=2)
+        ttk.Button(parent, text="…", command=lambda: self._browse(var, ft)).grid(
+            row=row, column=2)
 
     # ---------------------------------------------------------------- table ----------
     def _build_table(self) -> None:
@@ -283,7 +296,8 @@ class App(tk.Tk):
         table_frame = ttk.Frame(self)
         table_frame.pack(fill="both", expand=True, padx=3, pady=2)
 
-        self.tree = ttk.Treeview(table_frame, columns=cols, show="headings", height=27, selectmode="extended")
+        self.tree = ttk.Treeview(
+            table_frame, columns=cols, show="headings", height=27, selectmode="extended")
         for c, w in zip(cols, widths):
             self.tree.heading(c, text=c)
             if c not in ("Original", "ASR"):
@@ -331,8 +345,10 @@ class App(tk.Tk):
         ttk.Button(bar, text="OK", command=self._clip_ok).pack(side="left", padx=4)
         ttk.Button(bar, text="mal", command=self._clip_bad).pack(side="left", padx=4)
         ttk.Button(bar, text="Marcar", command=self.set_marker).pack(side="left", padx=4)
-        ttk.Button(bar, text="Guardar punto", command=self.save_bookmark).pack(side="left", padx=4)
-        ttk.Button(bar, text="Ir al punto", command=self.goto_bookmark).pack(side="left", padx=4)
+        ttk.Button(bar, text="Guardar punto", command=self.save_bookmark).pack(
+            side="left", padx=4)
+        ttk.Button(bar, text="Ir al punto", command=self.goto_bookmark).pack(
+            side="left", padx=4)
 
     def _update_stats(self) -> None:
         """Calcula y muestra las estadísticas de filas 'mal' usando self.all_rows."""
@@ -452,14 +468,14 @@ class App(tk.Tk):
             if len(vals) == 6:
                 out = [vals[0], vals[1], "", "", vals[2], vals[3], str(vals[4]), str(vals[5])]
             else:
-                id_  = vals[0] if len(vals) > 0 else ""
+                id_ = vals[0] if len(vals) > 0 else ""
                 flag = vals[1] if len(vals) > 1 else ""
-                ok   = vals[2] if len(vals) > 2 else ""
-                ai   = vals[3] if len(vals) > 3 else ""
-                wer  = vals[4] if len(vals) > 4 else ""
-                tc   = vals[idx_tc]
+                ok = vals[2] if len(vals) > 2 else ""
+                ai = vals[3] if len(vals) > 3 else ""
+                wer = vals[4] if len(vals) > 4 else ""
+                tc = vals[idx_tc]
                 orig = vals[-2] if len(vals) >= 2 else ""
-                asr  = vals[-1] if len(vals) >= 1 else ""
+                asr = vals[-1] if len(vals) >= 1 else ""
                 out = [id_, flag, ok, ai, wer, tc, str(orig), str(asr)]
             return out
         except Exception:
@@ -541,6 +557,16 @@ class App(tk.Tk):
             row_id = self.tree.set(iid, "ID")
             self._log(f"⏳ Revisión AI fila {row_id}…")
             self.q.put(("AI_START_ID", row_id))
+
+            original = self.tree.set(iid, "Original")
+            asr = self.tree.set(iid, "ASR")
+            if not original.strip() or not asr.strip():
+                messagebox.showwarning(
+                    "Falta texto",
+                    "La fila seleccionada no tiene texto en 'Original' o 'ASR'.")
+                return
+            self._log("⏳ Revisión AI fila…")
+
             threading.Thread(
                 target=self._ai_review_one_worker,
                 args=(row_id, model),
@@ -570,12 +596,20 @@ class App(tk.Tk):
         original, asr = row_data[6], row_data[7]
 
         if not original.strip() or not asr.strip():
-            messagebox.showwarning("Falta texto", "La fila seleccionada no tiene texto en 'Original' o 'ASR' para corregir.")
+            messagebox.showwarning(
+                "Falta texto",
+                "La fila seleccionada no tiene texto en 'Original' o 'ASR' para corregir.")
             return
 
         self._snapshot()
         self._log(f"⏳ Corrección y supervisión AI para fila {row_id}…")
         self.q.put(("AI_START_ID", row_id))
+
+        tags = list(self.tree.item(iid, "tags"))
+        if "processing" not in tags:
+            tags.append("processing")
+            self.tree.item(iid, tags=tuple(tags))
+
 
         model = self.v_ai_model.get()
         threading.Thread(
@@ -700,6 +734,7 @@ class App(tk.Tk):
         except Exception as e:
             show_error("Error", e)
     # Reproducción -------------------------------------------------------------------
+
     def _handle_double(self, event: tk.Event) -> None:
         item = self.tree.identify_row(event.y)
         col = self.tree.identify_column(event.x)
@@ -722,7 +757,7 @@ class App(tk.Tk):
         children = list(self.tree.get_children())
         idx = children.index(iid)
         end = None
-        for next_iid in children[idx + 1 :]:
+        for next_iid in children[idx + 1:]:
             try:
                 t = float(_parse_tc(self.tree.set(next_iid, "tc")))
             except ValueError:
@@ -744,7 +779,8 @@ class App(tk.Tk):
             if abs(self._play_rate - 1.0) > 1e-6 and not self._supports_fast:
                 self._play_rate = 1.0
                 self._warn_fast_unavailable()
-            if getattr(self, "_ffplay_path", None) and getattr(self, "_audio_engine", "") == "ffplay":
+            if (getattr(self, "_ffplay_path", None)
+                    and getattr(self, "_audio_engine", "") == "ffplay"):
                 self._play_ffplay(start, self._clip_end)
             else:
                 # Sin ffplay: siempre 1x, sin hack de saltos
@@ -764,7 +800,10 @@ class App(tk.Tk):
         self._stop_all_audio()
         # Construir comando
         rate = max(0.5, min(2.0, float(self._play_rate)))
-        cmd = [self._ffplay_path, "-hide_banner", "-loglevel", "error", "-nodisp", "-autoexit", "-vn"]
+        cmd = [
+            self._ffplay_path, "-hide_banner", "-loglevel", "error",
+            "-nodisp", "-autoexit", "-vn"
+        ]
         if start and start > 0:
             cmd += ["-ss", f"{start:.3f}"]
         if end is not None and end > start:
@@ -774,7 +813,8 @@ class App(tk.Tk):
             cmd += ["-af", f"atempo={rate:.3f}"]
         cmd += [self.v_audio.get()]
         try:
-            self._ffplay_proc = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            self._ffplay_proc = subprocess.Popen(
+                cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
             self._rate_wall_start = time.monotonic()
             self._rate_pos_start = start
         except Exception:
@@ -817,7 +857,10 @@ class App(tk.Tk):
         except Exception:
             # Fallback a pygame
             self._audio_engine = "pygame"
-            self._start_rate_playback() if abs(self._play_rate - 1.0) > 1e-6 else play_interval(self.v_audio.get(), start, end)
+            if abs(self._play_rate - 1.0) > 1e-6:
+                self._start_rate_playback()
+            else:
+                play_interval(self.v_audio.get(), start, end)
 
     def _cancel_rate_job(self) -> None:
         if getattr(self, "_rate_job", None):
@@ -894,7 +937,8 @@ class App(tk.Tk):
             try:
                 messagebox.showinfo(
                     "Velocidad no disponible",
-                    "Para reproducir a 1.5x o 2x, instala FFmpeg y asegúrate de tener ffplay en el PATH.\n\nSe usa 1x por ahora.",
+                    "Para reproducir a 1.5x o 2x, instala FFmpeg y asegúrate de "
+                    "tener ffplay en el PATH.\n\nSe usa 1x por ahora.",
                 )
             except Exception:
                 pass
@@ -957,10 +1001,12 @@ class App(tk.Tk):
             if getattr(self, "_audio_engine", "") == "ffplay":
                 if self._rate_wall_start is not None and self._rate_pos_start is not None:
                     wall_elapsed = time.monotonic() - self._rate_wall_start
-                    rel = (self._rate_pos_start - self._clip_start) + wall_elapsed * max(self._play_rate, 0.1)
+                    rate = max(self._play_rate, 0.1)
+                    rel = (self._rate_pos_start - self._clip_start) + wall_elapsed * rate
                     rel = max(0.0, min(max(dur, 0.0), rel))
                     scale.set(rel)
-            elif getattr(self, "_audio_engine", "") == "vlc" and getattr(self, "_vlc_player", None) is not None:
+            elif (getattr(self, "_audio_engine", "") == "vlc"
+                    and getattr(self, "_vlc_player", None) is not None):
                 try:
                     cur_ms = self._vlc_player.get_time()
                     if cur_ms >= 0:
@@ -978,7 +1024,8 @@ class App(tk.Tk):
                 else:
                     if self._rate_wall_start is not None and self._rate_pos_start is not None:
                         wall_elapsed = time.monotonic() - self._rate_wall_start
-                        rel = (self._rate_pos_start - self._clip_start) + wall_elapsed * self._play_rate
+                        rel = (self._rate_pos_start - self._clip_start)
+                        rel += wall_elapsed * self._play_rate
                         rel = max(0.0, min(max(dur, 0.0), rel))
                         scale.set(rel)
             win.after(100, _update)
@@ -1001,7 +1048,8 @@ class App(tk.Tk):
                 self._clip_offset = float(scale.get())
                 self._stop_all_audio()
                 self._play_current_clip()
-            elif getattr(self, "_audio_engine", "") == "vlc" and getattr(self, "_vlc_player", None) is not None:
+            elif (getattr(self, "_audio_engine", "") == "vlc"
+                    and getattr(self, "_vlc_player", None) is not None):
                 try:
                     self._vlc_player.set_rate(float(r))
                 except Exception:
@@ -1012,17 +1060,28 @@ class App(tk.Tk):
                 self._warn_fast_unavailable()
 
         ttk.Label(rate_frame, text="Velocidad:").pack(side="left", padx=(0, 6))
-        ttk.Button(rate_frame, text="1x", command=lambda: _set_rate(1.0)).pack(side="left", padx=2)
-        ttk.Button(rate_frame, text="1.5x", command=lambda: _set_rate(1.5)).pack(side="left", padx=2)
-        ttk.Button(rate_frame, text="2x", command=lambda: _set_rate(2.0)).pack(side="left", padx=2)
+        ttk.Button(rate_frame, text="1x", command=lambda: _set_rate(1.0)).pack(
+            side="left", padx=2)
+        ttk.Button(rate_frame, text="1.5x", command=lambda: _set_rate(1.5)).pack(
+            side="left", padx=2)
+        ttk.Button(rate_frame, text="2x", command=lambda: _set_rate(2.0)).pack(
+            side="left", padx=2)
 
         btns = ttk.Frame(win)
         btns.pack(pady=(0, 10))
-        ttk.Button(btns, text="OK", command=lambda: self._popup_mark_ok(iid, win)).pack(side="left", padx=4)
-        ttk.Button(btns, text="Marcar", command=lambda: self.add_audacity_marker(self._clip_start + float(scale.get()))).pack(side="left", padx=4)
+        ttk.Button(btns, text="OK", command=lambda: self._popup_mark_ok(iid, win)).pack(
+            side="left", padx=4)
+        ttk.Button(
+            btns, text="Marcar",
+            command=lambda: self.add_audacity_marker(
+                self._clip_start + float(scale.get()))
+        ).pack(side="left", padx=4)
+
         def _close():
             self._stop_all_audio()
             win.destroy()
+
+        win.protocol("WM_DELETE_WINDOW", _close)
         ttk.Button(btns, text="Cerrar", command=_close).pack(side="left", padx=4)
 
     def _toggle_ok(self, item: str) -> None:
@@ -1342,7 +1401,11 @@ class App(tk.Tk):
         if p is None:
             return
         sel = self.tree.selection()
-        iid = sel[0] if sel else (self._clip_item or (self.tree.get_children()[0] if self.tree.get_children() else None))
+        if sel:
+            iid = sel[0]
+        else:
+            children = self.tree.get_children()
+            iid = self._clip_item or (children[0] if children else None)
         if iid is None:
             messagebox.showwarning("Sin selección", "Selecciona una fila para guardar el punto")
             return
@@ -1351,13 +1414,18 @@ class App(tk.Tk):
             # Intentar capturar la posición actual de reproducción si hay clip activo
             if self._clip_item:
                 try:
-                    if getattr(self, "_audio_engine", "") == "ffplay" and self._rate_wall_start is not None and self._rate_pos_start is not None:
-                        abs_time = self._rate_pos_start + (time.monotonic() - self._rate_wall_start) * max(self._play_rate, 0.1)
+                    if (getattr(self, "_audio_engine", "") == "ffplay"
+                            and self._rate_wall_start is not None
+                            and self._rate_pos_start is not None):
+                        rate = max(self._play_rate, 0.1)
+                        abs_time = self._rate_pos_start + (
+                            time.monotonic() - self._rate_wall_start) * rate
                     elif pygame.mixer.get_init() and pygame.mixer.music.get_busy():
                         pos = pygame.mixer.music.get_pos()
                         if pos >= 0:
                             abs_time = self._clip_start + self._clip_offset + pos / 1000.0
-                    elif getattr(self, "_audio_engine", "") == "vlc" and getattr(self, "_vlc_player", None) is not None:
+                    elif (getattr(self, "_audio_engine", "") == "vlc"
+                            and getattr(self, "_vlc_player", None) is not None):
                         cur_ms = self._vlc_player.get_time()
                         if cur_ms >= 0:
                             abs_time = cur_ms / 1000.0
@@ -1392,7 +1460,7 @@ class App(tk.Tk):
         except Exception as exc:
             show_error("Error", exc)
             return
-        children = self.tree.get_children()
+        children = list(self.tree.get_children())
         if not children:
             return
         idx = max(0, min(len(children) - 1, idx))
@@ -1410,7 +1478,7 @@ class App(tk.Tk):
             self._clip_start = row_tc
             self._clip_offset = max(0.0, t - row_tc)
             end = None
-            for next_iid in children[idx + 1 :]:
+            for next_iid in children[idx + 1:]:
                 try:
                     tt = float(_parse_tc(self.tree.set(next_iid, "tc")))
                 except Exception:
@@ -1553,7 +1621,7 @@ class App(tk.Tk):
             asr_path = Path(self.v_asr.get())
             debug(f"DEBUG: Leyendo ASR {asr_path}")
             if asr_path.suffix.lower() == ".csv":
-                from utils.resync_python_v2 import load_words_csv, resync_rows
+                from utils.resync_python_v2 import load_words_csv
                 csv_words, csv_tcs = load_words_csv(asr_path)
                 hyp = " ".join(csv_words)
                 use_csv = True
@@ -1631,7 +1699,7 @@ class App(tk.Tk):
             self.q.put(("ROWS_READY", None))
             self.q.put(f"✔ Listo. Guardado en {out}")
             self.v_json.set(str(out))
-        except Exception as e:
+        except Exception:
             buf = io.StringIO()
             traceback.print_exc(file=buf)
             err = buf.getvalue()
@@ -1722,6 +1790,7 @@ class App(tk.Tk):
                     self.correction_stats[verdict] = self.correction_stats.get(verdict, 0) + 1
 
                     if original_asr.strip() != final_asr.strip():
+
                         asr_idx = self.tree["columns"].index("ASR")
                         for row in self.all_rows:
                             if str(row[0]) == str(row_id):
@@ -1734,10 +1803,14 @@ class App(tk.Tk):
                             if self.tree.set(iid, "ID") == str(row_id):
                                 self._update_metrics(iid)
                                 break
+
+                        self.tree.set(iid, "ASR", final_asr)
+                        self._update_metrics(iid)  # This also saves
+
                         self._log(f"  - Fila {row_id} actualizada. Veredicto supervisor: {verdict}")
                     else:
-                        self._log(f"  - Fila {row_id} no modificada. Veredicto supervisor: {verdict}")
-
+                        self._log(
+                            f"  - Fila {row_id} no modificada. Veredicto supervisor: {verdict}")
 
                 elif isinstance(msg, tuple) and msg[0] == "AI_START_ID":
                     row_id = msg[1]
@@ -1871,7 +1944,8 @@ class App(tk.Tk):
             # Skip if either row is already perfect or merged.
             if self.tree.set(prev_iid, "✓") == "✅" or self.tree.set(curr_iid, "✓") == "✅":
                 continue
-            if self.merged_tag in self.tree.item(prev_iid, "tags") or self.merged_tag in self.tree.item(curr_iid, "tags"):
+            if (self.merged_tag in self.tree.item(prev_iid, "tags")
+                    or self.merged_tag in self.tree.item(curr_iid, "tags")):
                 continue
 
             # --- Store original state ---
@@ -1888,7 +1962,9 @@ class App(tk.Tk):
             curr_orig_words = curr_orig.split()
             curr_asr_words = curr_asr.split()
 
-            if not all([prev_orig_words, prev_asr_words, curr_orig_words, curr_asr_words]):
+            if not all([
+                prev_orig_words, prev_asr_words, curr_orig_words, curr_asr_words
+            ]):
                 continue
 
             def get_wer(ref, hyp):
@@ -1917,7 +1993,9 @@ class App(tk.Tk):
                 wer2 = get_wer(new_curr_orig_s1, new_curr_asr_s1)
                 if wer1 + wer2 < best_wer:
                     best_wer = wer1 + wer2
-                    best_config = (new_prev_orig_s1, new_prev_asr_s1, new_curr_orig_s1, new_curr_asr_s1)
+                    best_config = (
+                        new_prev_orig_s1, new_prev_asr_s1,
+                        new_curr_orig_s1, new_curr_asr_s1)
 
             # --- Scenario 2: Move first word from current to previous ---
             if len(curr_orig_words) > 1 and len(curr_asr_words) > 1:
@@ -1931,12 +2009,15 @@ class App(tk.Tk):
                 wer2 = get_wer(new_curr_orig_s2, new_curr_asr_s2)
                 if wer1 + wer2 < best_wer:
                     best_wer = wer1 + wer2
-                    best_config = (new_prev_orig_s2, new_prev_asr_s2, new_curr_orig_s2, new_curr_asr_s2)
+                    best_config = (
+                        new_prev_orig_s2, new_prev_asr_s2,
+                        new_curr_orig_s2, new_curr_asr_s2)
 
             # --- Apply best change if any ---
             if best_config:
                 changes_count += 1
-                new_prev_orig_txt, new_prev_asr_txt, new_curr_orig_txt, new_curr_asr_txt = best_config
+                (new_prev_orig_txt, new_prev_asr_txt,
+                 new_curr_orig_txt, new_curr_asr_txt) = best_config
                 self.tree.set(prev_iid, "Original", new_prev_orig_txt)
                 self.tree.set(prev_iid, "ASR", new_prev_asr_txt)
                 self.tree.set(curr_iid, "Original", new_curr_orig_txt)
@@ -1945,7 +2026,9 @@ class App(tk.Tk):
                 self._update_metrics(curr_iid, save=False)
                 prev_id = self.tree.set(prev_iid, "ID")
                 curr_id = self.tree.set(curr_iid, "ID")
-                self._log(f"  - Corrección entre filas {prev_id} y {curr_id} (WER: {original_combined_wer:.2f} → {best_wer:.2f})")
+                self._log(
+                    f"  - Corrección entre filas {prev_id} y {curr_id} "
+                    f"(WER: {original_combined_wer:.2f} → {best_wer:.2f})")
 
         if changes_count > 0:
             self.save_json()
@@ -1986,6 +2069,7 @@ class App(tk.Tk):
             show_error("Error al guardar informe", e)
 
     def advanced_ai_review(self) -> None:
+
         """Runs an advanced, contextual AI review on selected or all relevant rows."""
         # Single row mode
         if self.ai_one.get():
@@ -2008,6 +2092,7 @@ class App(tk.Tk):
                 return
 
             self._start_advanced_review_thread_for_id(row_id)
+
             return
 
         # Batch mode
