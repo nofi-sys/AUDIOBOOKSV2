@@ -340,7 +340,7 @@ Respond with a single line in the format: `VERDICT: <category> | COMMENT: <your 
 Now, analyze the following context:
 """
 
-def get_advanced_review_verdict(context: dict) -> tuple[str, str]:
+def get_advanced_review_verdict(context: dict, model: str | None = None) -> tuple[str, str]:
     """
     Performs an advanced, contextual AI review.
     Returns a tuple of (verdict, comment).
@@ -365,9 +365,9 @@ def get_advanced_review_verdict(context: dict) -> tuple[str, str]:
 
     full_prompt = ADVANCED_REVIEW_PROMPT + user_prompt
 
-    # Always use the best model for this advanced review
+    current_model = model or MODEL_DEFAULT
     resp = _chat_with_backoff(
-        model="gpt-5",
+        model=current_model,
         messages=[
             {"role": "system", "content": "You are a senior QA analyst for audiobooks."},
             {"role": "user", "content": full_prompt},
@@ -410,9 +410,6 @@ def ai_verdict(
     """
     prompt = base_prompt or DEFAULT_PROMPT
     logger.info("AI review request ORIGINAL=%s | ASR=%s", original, asr)
-    # Debug prints
-    print(f"DEBUG ai_verdict: ORIGINAL={original}")
-    print(f"DEBUG ai_verdict: ASR={asr}")
     current_model = model or MODEL_DEFAULT
     resp = _chat_with_backoff(
         model=current_model,
@@ -423,11 +420,7 @@ def ai_verdict(
         max_completion_tokens=2000,
         stop=None,
     )
-    # Debug full response
-    print("DEBUG: full response:", resp)
     content = resp.choices[0].message.content
-    # Debug raw content
-    print("DEBUG: raw verdict repr:", repr(content))
     trimmed = content.strip()
     word = trimmed.split()[0].lower() if trimmed else ""
     if word not in {"ok", "mal", "dudoso", "error"}:

@@ -17,6 +17,7 @@ import threading
 import traceback
 import shutil
 import subprocess
+import tempfile
 from pathlib import Path
 
 import pygame
@@ -102,7 +103,9 @@ class App(tk.Tk):
         self.v_stats_total = tk.StringVar(self, value="Total: 0")
         self.v_stats_mal = tk.StringVar(self, value="Filas 'mal': 0")
         self.v_stats_pct = tk.StringVar(self, value="(0.0%)")
-        self.v_filter_mal = tk.BooleanVar(self, value=False)
+        self.v_filter_text = tk.StringVar(self)
+        self.v_filter_mal = tk.BooleanVar(self, value=False) # Keep for now, replace UI later
+        self.filter_verdicts: dict[str, tk.BooleanVar] = {}
         self.all_rows: list[list] = []  # Almacén persistente de filas
 
         # Estados internos
@@ -112,6 +115,9 @@ class App(tk.Tk):
         self.redo_stack: list[str] = []
         self.merged_rows: dict[str, list[list[str]]] = {}
         self.correction_stats: dict[str, int] = {}
+        self.prev_asr: dict[str, str] = {}
+        self.asr_confidence: dict[str, float] = {}
+        self._stop_reprocess = False
 
         self.selected_cell: tuple[str, str] | None = None
         self.tree_tag = "sel_cell"
@@ -164,49 +170,56 @@ class App(tk.Tk):
 
     # ---------------------------------------------------------------- build UI ------
     def _build_ui(self) -> None:
-        top = ttk.Frame(self)
-        top.pack(fill="x", padx=3, pady=2)
+        # Main container for top controls
+        controls_frame = ttk.Frame(self)
+        controls_frame.pack(fill="x", padx=3, pady=2)
 
-        # Entradas de archivos -------------------------------------------------------
-        self._lbl_entry(top, "Guion:", self.v_ref, 0, ("PDF/TXT", "*.pdf;*.txt"))
-        self._lbl_entry(top, "TXT ASR:", self.v_asr, 1, ("TXT/CSV", "*.txt;*.csv"))
-        self._lbl_entry(top, "Audio:", self.v_audio, 2,
-                        ("Media", "*.mp3;*.wav;*.m4a;*.flac;*.ogg;*.aac;*.mp4"))
+        # --- Frame for Archivos y Procesamiento ---
+        files_frame = ttk.LabelFrame(controls_frame, text="Archivos y Procesamiento")
+        files_frame.pack(side="left", fill="y", padx=5, pady=5, anchor="n")
 
-        ttk.Button(top, text="Transcribir", command=self.transcribe).grid(row=2, column=3, padx=6)
-        ttk.Button(top, text="Procesar", width=11, command=self.launch).grid(
-            row=0, column=3, rowspan=2, padx=6)
+        self._lbl_entry(files_frame, "Guion:", self.v_ref, 0, ("PDF/TXT", "*.pdf;*.txt"))
+        self._lbl_entry(files_frame, "TXT ASR:", self.v_asr, 1, ("TXT/CSV", "*.txt;*.csv"))
+        self._lbl_entry(files_frame, "Audio:", self.v_audio, 2, ("Media", "*.mp3;*.wav;*.m4a;*.flac;*.ogg;*.aac;*.mp4"))
+        ttk.Label(files_frame, text="JSON:").grid(row=3, column=0, sticky="e", pady=(4,0))
+        ttk.Entry(files_frame, textvariable=self.v_json, width=50).grid(row=3, column=1, pady=(4,0))
+        ttk.Button(files_frame, text="Abrir JSON…", command=self.load_json).grid(row=3, column=2, pady=(4,0))
+        ttk.Button(files_frame, text="Procesar", width=12, command=self.launch).grid(row=0, column=3, rowspan=2, padx=6, ipady=5)
 
-        ttk.Label(top, text="JSON:").grid(row=3, column=0, sticky="e")
-        ttk.Entry(top, textvariable=self.v_json, width=70).grid(row=3, column=1)
-        ttk.Button(top, text="Abrir JSON…", command=self.load_json).grid(row=3, column=2)
+        # --- Frame for AI tools ---
+        ai_tools_frame = ttk.LabelFrame(controls_frame, text="Herramientas AI")
+        ai_tools_frame.pack(side="left", fill="y", padx=5, pady=5, anchor="n")
 
-        ttk.Button(top, text="AI Review", command=self.ai_review).grid(row=3, column=3, padx=6)
+        # Row 0
+        btn_transcribe = ttk.Button(ai_tools_frame, text="Transcribir", command=self.transcribe)
+        btn_transcribe.grid(row=0, column=0, columnspan=2, sticky="ew", padx=2, pady=2)
+        btn_retranscribe = ttk.Button(ai_tools_frame, text="Re-transcribir mal", command=self.reprocess_bad)
+        btn_retranscribe.grid(row=0, column=2, columnspan=2, sticky="ew", padx=2, pady=2)
+        btn_pause_re = ttk.Button(ai_tools_frame, text="Pausar", command=self.pause_reprocess)
+        btn_pause_re.grid(row=0, column=4, padx=2, pady=2)
 
-        # Selector de modelo AI
+        # Row 1
+        ttk.Button(ai_tools_frame, text="AI Review", command=self.ai_review).grid(row=1, column=0, columnspan=2, sticky="ew", padx=2, pady=2)
         ai_models = ["gpt-5", "gpt-5-mini", "gpt-5-nano"]
-        self.ai_model_combo = ttk.Combobox(
-            top, textvariable=self.v_ai_model, values=ai_models, width=12)
-        self.ai_model_combo.grid(row=3, column=4, padx=(0, 6))
+        self.ai_model_combo = ttk.Combobox(ai_tools_frame, textvariable=self.v_ai_model, values=ai_models, width=12)
+        self.ai_model_combo.grid(row=1, column=2, columnspan=2, sticky="ew", padx=2, pady=2)
         self.ai_model_combo.set(ai_models[0])
+        ttk.Checkbutton(ai_tools_frame, text="una fila", variable=self.ai_one).grid(row=1, column=4, padx=2, pady=2)
 
-        ttk.Checkbutton(top, text="una fila", variable=self.ai_one).grid(row=3, column=5, padx=4)
-        ttk.Button(
-            top, text="Corregir transcript con AI", command=self.ai_correct_row
-        ).grid(row=3, column=6, padx=6)
-        ttk.Button(
-            top, text="Corregir Desplazamientos", command=self.second_pass_sync
-        ).grid(row=3, column=7, padx=6)
-        ttk.Button(top, text="Detener análisis", command=self.stop_ai_review).grid(
-            row=3, column=8, padx=6)
-        ttk.Button(top, text="Crear EDL", command=self.create_edl).grid(
-            row=3, column=9, padx=6)
-        ttk.Button(
-            top, text="Informe Corrección", command=self.generate_correction_report
-        ).grid(row=3, column=10, padx=6)
-        ttk.Button(
-            top, text="Revisión AI Avanzada", command=self.advanced_ai_review
-        ).grid(row=3, column=11, padx=6)
+        # Row 2
+        ttk.Button(ai_tools_frame, text="Corregir transcript con AI", command=self.ai_correct_row).grid(row=2, column=0, columnspan=3, sticky="ew", padx=2, pady=2)
+        ttk.Button(ai_tools_frame, text="Detener análisis", command=self.stop_ai_review).grid(row=2, column=3, columnspan=2, sticky="ew", padx=2, pady=2)
+
+        # Row 3
+        ttk.Button(ai_tools_frame, text="Revisión AI Avanzada", command=self.advanced_ai_review).grid(row=3, column=0, columnspan=5, sticky="ew", padx=2, pady=2)
+
+        # --- Frame for Other tools ---
+        other_tools_frame = ttk.LabelFrame(controls_frame, text="Otras Herramientas y Reportes")
+        other_tools_frame.pack(side="left", fill="y", padx=5, pady=5, anchor="n")
+
+        ttk.Button(other_tools_frame, text="Corregir Desplazamientos", command=self.second_pass_sync).grid(row=0, column=0, sticky="ew", padx=2, pady=2)
+        ttk.Button(other_tools_frame, text="Crear EDL", command=self.create_edl).grid(row=1, column=0, sticky="ew", padx=2, pady=2)
+        ttk.Button(other_tools_frame, text="Informe Corrección", command=self.generate_correction_report).grid(row=2, column=0, sticky="ew", padx=2, pady=2)
 
         # Tabla principal -----------------------------------------------------------
         self._build_table()
@@ -241,12 +254,14 @@ class App(tk.Tk):
             label="Fusionar filas seleccionadas", command=self._merge_selected_rows
         )
         self.menu.add_command(label="Desagrupar fila", command=self._unmerge_row)
+        self.menu.add_separator()
+        self.menu.add_command(label="Alternar ASR", command=self._toggle_asr)
 
         self.bind_all("<Control-z>", self.undo)
         self.bind_all("<Control-Shift-Z>", self.redo)
 
-        # Frame para estadísticas y filtros
-        stats_filter_frame = ttk.LabelFrame(self.bottom_frame, text="Estadísticas", padding=5)
+        # --- Frame for Stats and Filters ---
+        stats_filter_frame = ttk.LabelFrame(self, text="Estadísticas y Filtros", padding=5)
         stats_filter_frame.pack(fill="x", padx=3, pady=2)
 
         stats_labels_frame = ttk.Frame(stats_filter_frame)
@@ -259,12 +274,15 @@ class App(tk.Tk):
         # Controles de filtro
         filter_controls_frame = ttk.Frame(stats_filter_frame)
         filter_controls_frame.pack(side="right", padx=5)
-        ttk.Checkbutton(
-            filter_controls_frame,
-            text="Mostrar solo filas 'mal'",
-            variable=self.v_filter_mal,
-            command=self._apply_filter,
-        ).pack()
+
+        ttk.Label(filter_controls_frame, text="Buscar:").pack(side="left", padx=(10, 2))
+        search_entry = ttk.Entry(filter_controls_frame, textvariable=self.v_filter_text, width=30)
+        search_entry.pack(side="left", padx=(0, 5))
+        search_entry.bind("<Return>", lambda event: self._apply_filter())
+
+        ttk.Button(filter_controls_frame, text="Filtrar por Veredicto", command=self._open_filter_dialog).pack(side="left", padx=5)
+        ttk.Button(filter_controls_frame, text="Limpiar Filtros", command=self._clear_filters).pack(side="left", padx=5)
+
 
         # Cuadro de log -------------------------------------------------------
         self.log_box = scrolledtext.ScrolledText(self.bottom_frame, height=5, state="disabled")
@@ -283,15 +301,15 @@ class App(tk.Tk):
         self._snapshot()
 
     def _lbl_entry(self, parent, text, var, row, ft):
-        ttk.Label(parent, text=text).grid(row=row, column=0, sticky="e")
-        ttk.Entry(parent, textvariable=var, width=70).grid(row=row, column=1)
-        ttk.Button(parent, text="…", command=lambda: self._browse(var, ft)).grid(
-            row=row, column=2)
+        ttk.Label(parent, text=text).grid(row=row, column=0, sticky="e", padx=(0,4))
+        ttk.Entry(parent, textvariable=var, width=50).grid(row=row, column=1)
+        ttk.Button(parent, text="…", width=3, command=lambda: self._browse(var, ft)).grid(
+            row=row, column=2, padx=(4,0))
 
     # ---------------------------------------------------------------- table ----------
     def _build_table(self) -> None:
-        cols = ("ID", "✓", "OK", "AI", "WER", "tc", "Original", "ASR")
-        widths = (50, 30, 40, 40, 60, 60, 750, 750)
+        cols = ("ID", "✓", "OK", "AI", "Score", "WER", "tc", "Original", "ASR")
+        widths = (50, 30, 40, 40, 50, 60, 60, 750, 750)
 
         table_frame = ttk.Frame(self)
         table_frame.pack(fill="both", expand=True, padx=3, pady=2)
@@ -359,21 +377,77 @@ class App(tk.Tk):
         self.v_stats_pct.set(f"({pct:.1f}%)")
 
     def _apply_filter(self) -> None:
-        """Rellena la tabla aplicando el filtro actual y actualiza UI."""
-        self.tree.delete(*self.tree.get_children())  # Limpiar vista actual
+        """Rellena la tabla aplicando los filtros de texto y veredicto."""
+        self.tree.delete(*self.tree.get_children())
 
-        show_only_mal = self.v_filter_mal.get()
         rows_to_display = self.all_rows
-        if show_only_mal:
-            rows_to_display = [r for r in self.all_rows if r[3] == "mal"]
 
+        # 1. Filtrar por texto
+        search_term = self.v_filter_text.get().lower().strip()
+        if search_term:
+            rows_to_display = [
+                r for r in rows_to_display
+                if len(r) >= 2 and (
+                    search_term in str(r[-2]).lower() or
+                    search_term in str(r[-1]).lower()
+                )
+            ]
+
+        # 2. Filtrar por veredicto
+        active_verdict_filters = {
+            verdict for verdict, var in self.filter_verdicts.items() if var.get()
+        }
+        if active_verdict_filters:
+            rows_to_display = [
+                r for r in rows_to_display
+                if len(r) > 3 and r[3] in active_verdict_filters
+            ]
+
+        # Rellenar la tabla con las filas filtradas
         for r in rows_to_display:
             vals = self._row_from_alignment(r)
-            vals[6], vals[7] = str(vals[6]), str(vals[7])
             self.tree.insert("", tk.END, values=vals)
 
         self._update_scale_range()
         self._update_stats()
+
+    def _clear_filters(self) -> None:
+        """Resetea todos los filtros de texto y veredictos."""
+        self.v_filter_text.set("")
+        self.v_filter_mal.set(False)
+        for verdict_var in self.filter_verdicts.values():
+            verdict_var.set(False)
+        self._apply_filter()
+
+    def _open_filter_dialog(self) -> None:
+        """Abre una ventana para seleccionar los veredictos AI a filtrar."""
+        # 1. Obtener todos los veredictos únicos
+        all_verdicts = sorted(list(set(
+            r[3] for r in self.all_rows if r and len(r) > 3 and r[3]
+        )))
+        if not all_verdicts:
+            messagebox.showinfo("Sin Veredictos", "No hay veredictos 'AI' para filtrar en los datos cargados.")
+            return
+
+        # 2. Crear la ventana Toplevel
+        dialog = tk.Toplevel(self)
+        dialog.title("Filtrar por Veredicto AI")
+        dialog.transient(self)
+        dialog.grab_set()
+
+        # 3. Crear checkboxes para cada veredicto
+        for verdict in all_verdicts:
+            if verdict not in self.filter_verdicts:
+                self.filter_verdicts[verdict] = tk.BooleanVar(self, value=False)
+            var = self.filter_verdicts[verdict]
+            cb = ttk.Checkbutton(dialog, text=verdict, variable=var)
+            cb.pack(anchor="w", padx=10, pady=2)
+
+        # 4. Botones de aplicar y cerrar
+        btn_frame = ttk.Frame(dialog)
+        btn_frame.pack(pady=10)
+        ttk.Button(btn_frame, text="Aplicar", command=lambda: [self._apply_filter(), dialog.destroy()]).pack(side="left", padx=5)
+        ttk.Button(btn_frame, text="Cerrar", command=dialog.destroy).pack(side="left", padx=5)
 
     # ---------------------------------------------------------------------------------
     # navegación de archivos ----------------------------------------------------------
@@ -449,35 +523,46 @@ class App(tk.Tk):
             show_error("Error", exc)
 
     # ──────────────────────────────────────────────────────────────────────────────
-    # Normaliza la lista que llega de build_rows a las 8 columnas de la GUI
-    # Orden final: [ID, ✓, OK, AI, WER, tc, Original, ASR]
+    # Normaliza la lista que llega de build_rows a las 9 columnas de la GUI
+    # Orden final: [ID, ✓, OK, AI, Score, WER, tc, Original, ASR]
     # ──────────────────────────────────────────────────────────────────────────────
     def _row_from_alignment(self, r: list) -> list:
-        # Devuelve SIEMPRE 8 columnas y formatea tc como HH:MM:SS.d
+        # Devuelve SIEMPRE 9 columnas, rellenando las que falten.
+        # Formatea tc como HH:MM:SS.d
         try:
             vals = list(r)
-            if not vals:
-                return ["", "", "", "", "", "", "", ""]
-            idx_tc = len(vals) - 3 if len(vals) >= 3 else 0
-            try:
-                vals[idx_tc] = _format_tc(vals[idx_tc])
-            except Exception:
-                pass
+
+            # Caso base: Fila de 6 columnas del alineador
+            # [ID, flag, WER, tc, Original, ASR]
             if len(vals) == 6:
-                out = [vals[0], vals[1], "", "", vals[2], vals[3], str(vals[4]), str(vals[5])]
-            else:
-                id_ = vals[0] if len(vals) > 0 else ""
-                flag = vals[1] if len(vals) > 1 else ""
-                ok = vals[2] if len(vals) > 2 else ""
-                ai = vals[3] if len(vals) > 3 else ""
-                wer = vals[4] if len(vals) > 4 else ""
-                tc = vals[idx_tc]
-                orig = vals[-2] if len(vals) >= 2 else ""
-                asr = vals[-1] if len(vals) >= 1 else ""
-                out = [id_, flag, ok, ai, wer, tc, str(orig), str(asr)]
-            return out
+                # -> [ID, ✓, OK, AI, Score, WER, tc, Original, ASR]
+                vals.insert(2, "")  # OK
+                vals.insert(3, "")  # AI
+                vals.insert(4, "")  # Score
+                return vals
+
+            # Para filas de JSON, que pueden tener 7, 8 o 9 columnas,
+            # las normalizamos a 9 insertando Score si falta.
+            if len(vals) in (7, 8):
+                vals.insert(4, "") # Score
+
+            # Rellena por si acaso y trunca a 9
+            while len(vals) < 9:
+                vals.append("")
+            vals = vals[:9]
+
+            # Formatea tc (índice 6) y texto (índices 7, 8)
+            vals[6] = _format_tc(vals[6])
+            vals[7] = str(vals[7])
+            vals[8] = str(vals[8])
+
+            return vals
         except Exception:
-            return list(r)
+            # Fallback de emergencia
+            padded_r = list(r)
+            while len(padded_r) < 9:
+                padded_r.append("")
+            return padded_r[:9]
 
     # ───────────────────────────────── ventana de progreso ─────────────────────────
     def _show_progress(self, text: str = "Procesando…", *, determinate: bool = False) -> None:
@@ -702,6 +787,158 @@ class App(tk.Tk):
             err = buf.getvalue()
             print(err)
             self.q.put(err)
+
+    # ------------------------------------------------------------------ reprocess
+    def reprocess_bad(self) -> None:
+        """Retranscribe rows marked as 'mal' without OK."""
+        if not self.v_audio.get():
+            messagebox.showwarning("Falta audio", "Selecciona archivo de audio")
+            return
+        self._stop_reprocess = False
+        for iid in self.tree.get_children():
+            ai = self.tree.set(iid, "AI").lower()
+            ok = self.tree.set(iid, "OK").lower()
+            if ai == "mal" and ok != "ok" and iid not in self.prev_asr:
+                tags = list(self.tree.item(iid, "tags"))
+                if "processing" not in tags:
+                    tags.append("processing")
+                    self.tree.item(iid, tags=tuple(tags))
+                self.update_idletasks()
+                self._retranscribe_row(iid)
+                tags = list(self.tree.item(iid, "tags"))
+                if "processing" in tags:
+                    tags.remove("processing")
+                    self.tree.item(iid, tags=tuple(tags))
+                if self._stop_reprocess:
+                    break
+
+    def pause_reprocess(self) -> None:
+        """Signal :meth:`reprocess_bad` loop to stop."""
+        self._stop_reprocess = True
+
+    def _toggle_asr(self) -> None:
+        """Swap between original and re‑transcribed ASR for selected row."""
+        sel = self.tree.selection()
+        if not sel:
+            return
+        iid = sel[0]
+        current = self.tree.set(iid, "ASR")
+        if iid in self.prev_asr:
+            self.tree.set(iid, "ASR", self.prev_asr[iid])
+            self.prev_asr[iid] = current
+
+    def _retranscribe_row(self, iid: str) -> None:
+        """Transcribe a single row with Whisper large model."""
+        try:
+            from transcriber import transcribe_file
+        except Exception as exc:  # pragma: no cover - dependency missing
+            self._log(str(exc))
+            return
+
+        children = list(self.tree.get_children())
+        idx = children.index(iid)
+
+        try:
+            row_start = float(_parse_tc(self.tree.set(iid, "tc")))
+        except Exception:
+            row_start = 0.0
+
+        start = row_start
+
+        # Search next valid tc strictly greater than current row
+        end = None
+        for j in range(idx + 1, len(children)):
+            try:
+                next_tc = float(_parse_tc(self.tree.set(children[j], "tc")))
+            except Exception:
+                continue
+            if next_tc > row_start:
+                end = next_tc
+                break
+
+        clip_path = self._extract_clip(self.v_audio.get(), start, end)
+        if not clip_path:
+            self._log(f"Error: No se pudo extraer el clip para la fila {self.tree.set(iid, 'ID')}")
+            return
+
+        words = self.tree.set(iid, "Original")
+        prompt = " ".join(sorted(set(words.split())))
+        tmp_prompt = Path(clip_path).with_suffix(".prompt.txt")
+        tmp_prompt.write_text(prompt, encoding="utf8")
+
+        out = transcribe_file(
+            clip_path,
+            model_size="large-v3",
+            script_path=str(tmp_prompt),
+            show_messagebox=False,
+        )
+        new_text = Path(out).read_text(encoding="utf8").strip()
+        self.prev_asr[iid] = self.tree.set(iid, "ASR")
+        self.tree.set(iid, "ASR", new_text)
+
+        prev_asr = (
+            self.tree.set(children[idx - 1], "ASR") if idx - 1 >= 0 else ""
+        )
+        next_asr = (
+            self.tree.set(children[idx + 1], "ASR")
+            if idx + 1 < len(children)
+            else ""
+        )
+        enumerated = []
+        if prev_asr:
+            enumerated.append(f"-1: {prev_asr}")
+        enumerated.append(f"0: {new_text}")
+        if next_asr:
+            enumerated.append(f"1: {next_asr}")
+        ai_text = "\n".join(enumerated)
+
+        # AI re-review using new transcription
+        try:
+            from ai_review import review_row, score_row, RETRANS_PROMPT
+
+            model = self.v_ai_model.get()
+            row = [0, "", "", 0.0, 0.0, words, ai_text]
+            review_row(row, base_prompt=RETRANS_PROMPT, model=model)
+            rating = score_row(row, model=model)
+
+            self.tree.set(iid, "Score", rating)
+            if float(rating) >= 4:
+                self.tree.set(iid, "AI", "ok")
+            else:
+                self.tree.set(iid, "AI", row[3])
+            if row[2]:
+                self.tree.set(iid, "OK", row[2])
+            self.asr_confidence[iid] = float(rating)
+        except Exception as e:
+            self._log(f"Error en re-evaluación AI: {e}")
+            self.asr_confidence[iid] = 0.0
+
+        try:
+            os.remove(clip_path)
+            os.remove(tmp_prompt)
+        except OSError:
+            pass
+
+        self.save_json()
+
+    def _extract_clip(self, path: str, start: float, end: float | None) -> str | None:
+        """Return temporary audio clip from start to end using ffmpeg."""
+        ffmpeg_path = "ffmpeg"
+        if self._ffplay_path:
+            ffmpeg_path = str(Path(self._ffplay_path).parent / "ffmpeg")
+
+        tmp = tempfile.NamedTemporaryFile(suffix=Path(path).suffix, delete=False)
+        tmp.close()
+        cmd = [ffmpeg_path, "-y", "-i", path, "-ss", str(start)]
+        if end is not None:
+            cmd += ["-to", str(end)]
+        cmd += ["-c", "copy", tmp.name]
+        try:
+            subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            return tmp.name
+        except (subprocess.CalledProcessError, FileNotFoundError):
+            return None
+
 
     # ---------------------------------------------------------------------------------
     # JSON ---------------------------------------------------------------------------
