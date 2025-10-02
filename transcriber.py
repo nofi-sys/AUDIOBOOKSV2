@@ -923,7 +923,18 @@ def main(argv: list[str] | None = None) -> None:
         )
         ref = read_script(args.script)
         words_json_text = Path(words_json).read_text(encoding="utf8")
-        rows = alignment.build_rows_wordlevel(ref, words_json_text)
+        data = json.loads(words_json_text)
+        words = [
+            word.get("word", "")
+            for seg in data.get("segments", [])
+            for word in seg.get("words", [])
+        ]
+        tcs = [
+            word.get("start", 0.0)
+            for seg in data.get("segments", [])
+            for word in seg.get("words", [])
+        ]
+        rows = alignment.build_rows_from_words(ref, words, tcs)
         base = Path(args.input).with_suffix("")
         out = base.with_suffix(".word.qc.json")
         out.write_text(json.dumps(rows, ensure_ascii=False, indent=2), encoding="utf8")
