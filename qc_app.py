@@ -208,6 +208,27 @@ class App(tk.Tk):
             top, text="Revisión AI Avanzada", command=self.advanced_ai_review
         ).grid(row=3, column=11, padx=6)
 
+        # Frame para estadísticas y filtros
+        stats_filter_frame = ttk.LabelFrame(self, text="Estadísticas y Filtros", padding=5)
+        stats_filter_frame.pack(fill="x", padx=3, pady=2)
+
+        stats_labels_frame = ttk.Frame(stats_filter_frame)
+        stats_labels_frame.pack(side="left", padx=5)
+
+        ttk.Label(stats_labels_frame, textvariable=self.v_stats_total).pack(side="left", padx=4)
+        ttk.Label(stats_labels_frame, textvariable=self.v_stats_mal).pack(side="left", padx=4)
+        ttk.Label(stats_labels_frame, textvariable=self.v_stats_pct).pack(side="left", padx=4)
+
+        # Controles de filtro
+        filter_controls_frame = ttk.Frame(stats_filter_frame)
+        filter_controls_frame.pack(side="right", padx=5)
+        ttk.Checkbutton(
+            filter_controls_frame,
+            text="Mostrar solo filas 'mal'",
+            variable=self.v_filter_mal,
+            command=self._apply_filter,
+        ).pack()
+
         # Tabla principal -----------------------------------------------------------
         self._build_table()
         # Zona inferior con barra y log
@@ -244,27 +265,6 @@ class App(tk.Tk):
 
         self.bind_all("<Control-z>", self.undo)
         self.bind_all("<Control-Shift-Z>", self.redo)
-
-        # Frame para estadísticas y filtros
-        stats_filter_frame = ttk.LabelFrame(self.bottom_frame, text="Estadísticas", padding=5)
-        stats_filter_frame.pack(fill="x", padx=3, pady=2)
-
-        stats_labels_frame = ttk.Frame(stats_filter_frame)
-        stats_labels_frame.pack(side="left", padx=5)
-
-        ttk.Label(stats_labels_frame, textvariable=self.v_stats_total).pack(side="left", padx=4)
-        ttk.Label(stats_labels_frame, textvariable=self.v_stats_mal).pack(side="left", padx=4)
-        ttk.Label(stats_labels_frame, textvariable=self.v_stats_pct).pack(side="left", padx=4)
-
-        # Controles de filtro
-        filter_controls_frame = ttk.Frame(stats_filter_frame)
-        filter_controls_frame.pack(side="right", padx=5)
-        ttk.Checkbutton(
-            filter_controls_frame,
-            text="Mostrar solo filas 'mal'",
-            variable=self.v_filter_mal,
-            command=self._apply_filter,
-        ).pack()
 
         # Cuadro de log -------------------------------------------------------
         self.log_box = scrolledtext.ScrolledText(self.bottom_frame, height=5, state="disabled")
@@ -306,9 +306,11 @@ class App(tk.Tk):
                 self.tree.column(c, width=w, anchor="w")
         self.tree.pack(fill="both", expand=True, side="left")
 
-        sb = ttk.Scrollbar(table_frame, orient="vertical", command=self.tree.yview)
-        self.tree.configure(yscrollcommand=sb.set)
-        sb.pack(side="left", fill="y")
+        sb_y = ttk.Scrollbar(table_frame, orient="vertical", command=self.tree.yview)
+        sb_y.pack(side="right", fill="y")
+        sb_x = ttk.Scrollbar(table_frame, orient="horizontal", command=self.tree.xview)
+        sb_x.pack(side="bottom", fill="x")
+        self.tree.configure(yscrollcommand=sb_y.set, xscrollcommand=sb_x.set)
 
         pos_frame = ttk.Frame(table_frame)
         pos_frame.pack(side="right", fill="y", padx=(4, 0))
@@ -552,6 +554,10 @@ class App(tk.Tk):
                 messagebox.showwarning("Falta info", "Selecciona una fila")
                 return
             iid = sel[0]
+            row_id = self.tree.set(iid, "ID")
+            self._log(f"⏳ Revisión AI fila {row_id}…")
+            self.q.put(("AI_START_ID", row_id))
+
             original = self.tree.set(iid, "Original")
             asr = self.tree.set(iid, "ASR")
             if not original.strip() or not asr.strip():
@@ -560,19 +566,19 @@ class App(tk.Tk):
                     "La fila seleccionada no tiene texto en 'Original' o 'ASR'.")
                 return
             self._log("⏳ Revisión AI fila…")
+
             threading.Thread(
                 target=self._ai_review_one_worker,
-                args=(iid, original, asr, model),
+                args=(row_id, model),
                 daemon=True,
             ).start()
         else:
             self._log(
                 "⏳ Solicitando revisión AI (esto puede tardar unos segundos)…"
             )
-            items = list(self.tree.get_children())
             threading.Thread(
                 target=self._ai_review_worker,
-                args=(items, model),
+                args=(self.all_rows, model),
                 daemon=True,
             ).start()
 
@@ -582,30 +588,37 @@ class App(tk.Tk):
             messagebox.showwarning("Falta info", "Selecciona una fila para corregir")
             return
         iid = sel[0]
-        original = self.tree.set(iid, "Original")
-        asr = self.tree.set(iid, "ASR")
+        row_id = self.tree.set(iid, "ID")
+
+        row_data = next((r for r in self.all_rows if str(r[0]) == row_id), None)
+        if not row_data:
+            return
+        original, asr = row_data[6], row_data[7]
+
         if not original.strip() or not asr.strip():
             messagebox.showwarning(
                 "Falta texto",
                 "La fila seleccionada no tiene texto en 'Original' o 'ASR' para corregir.")
             return
 
-        self._snapshot()  # For undo functionality
-        self._log(f"⏳ Corrección y supervisión AI para fila {self.tree.set(iid, 'ID')}…")
+        self._snapshot()
+        self._log(f"⏳ Corrección y supervisión AI para fila {row_id}…")
+        self.q.put(("AI_START_ID", row_id))
 
         tags = list(self.tree.item(iid, "tags"))
         if "processing" not in tags:
             tags.append("processing")
             self.tree.item(iid, tags=tuple(tags))
 
+
         model = self.v_ai_model.get()
         threading.Thread(
             target=self._ai_correct_worker,
-            args=(iid, original, asr, model),
+            args=(row_id, original, asr, model),
             daemon=True,
         ).start()
 
-    def _ai_correct_worker(self, iid: str, original: str, asr: str, model: str) -> None:
+    def _ai_correct_worker(self, row_id: str, original: str, asr: str, model: str) -> None:
         try:
             from ai_review import correct_and_supervise_text
             final_asr, verdict, proposed = correct_and_supervise_text(
@@ -613,18 +626,16 @@ class App(tk.Tk):
             )
             self.q.put(
                 (
-                    "AI_CORRECTION_SUPERVISED",
-                    (iid, original, asr, final_asr, verdict, proposed),
+                    "AI_CORRECTION_SUPERVISED_ID",
+                    (row_id, original, asr, final_asr, verdict, proposed),
                 )
             )
         except Exception:
             buf = io.StringIO()
             traceback.print_exc(file=buf)
-            err = buf.getvalue()
-            print(err)
-            self.q.put(err)
+            self.q.put(buf.getvalue())
         finally:
-            self.q.put(("AI_DONE", iid))
+            self.q.put(("AI_DONE_ID", row_id))
 
     def stop_ai_review(self):
         try:
@@ -635,30 +646,27 @@ class App(tk.Tk):
         except Exception as exc:
             self._log(str(exc))
 
-    def _ai_review_worker(self, items: list[str] | None = None, model: str | None = None) -> None:
+    def _ai_review_worker(self, rows_to_review: list[list] | None = None, model: str | None = None) -> None:
         """Run batch AI review updating the GUI incrementally."""
         try:
             import ai_review
-
             model = model or self.v_ai_model.get()
 
-            if not items:
+            if not rows_to_review:
                 approved, remaining = ai_review.review_file(self.v_json.get(), model=model)
                 self.q.put(("RELOAD", None))
                 if ai_review._stop_review:
                     self.q.put("⚠ Revisión detenida")
                 else:
-                    self.q.put(
-                        f"✔ Auto-aprobadas {approved} / Restantes {remaining}"
-                    )
+                    self.q.put(f"✔ Auto-aprobadas {approved} / Restantes {remaining}")
                 return
 
             def progress(stage: str, idx: int, row: list) -> None:
-                iid = items[idx]
+                row_id = str(row[0])
                 if stage == "start":
-                    self.q.put(("AI_START", iid))
+                    self.q.put(("AI_START_ID", row_id))
                 else:
-                    self.q.put(("AI_ROW", (iid, row[3], row[2])))
+                    self.q.put(("AI_ROW_ID", (row_id, row[3], row[2])))
 
             try:
                 approved, remaining = ai_review.review_file(
@@ -689,19 +697,22 @@ class App(tk.Tk):
             print(err)
             self.q.put(err)
 
-    def _ai_review_one_worker(self, iid: str, original: str, asr: str, model: str) -> None:
+    def _ai_review_one_worker(self, row_id: str, model: str) -> None:
         try:
             from ai_review import review_row
+            row_data = next((r for r in self.all_rows if str(r[0]) == row_id), None)
+            if not row_data:
+                self.q.put(f"Error: No se encontró la fila con ID {row_id}")
+                return
 
-            row = [0, "", "", 0.0, 0.0, original, asr]
-            review_row(row, model=model)
-            self.q.put(("AI_ROW", (iid, row[3], row[2])))
+            review_row(row_data, model=model)
+            verdict = row_data[3]
+            ok = row_data[2]
+            self.q.put(("AI_ROW_ID", (row_id, verdict, ok)))
         except Exception:
             buf = io.StringIO()
             traceback.print_exc(file=buf)
-            err = buf.getvalue()
-            print(err)
-            self.q.put(err)
+            self.q.put(buf.getvalue())
 
     # ---------------------------------------------------------------------------------
     # JSON ---------------------------------------------------------------------------
@@ -1742,27 +1753,25 @@ class App(tk.Tk):
                     self.tree.see(iid)
                     self.tree.selection_set(iid)
 
-                elif isinstance(msg, tuple) and msg[0] == "AI_ROW":
-                    iid, verdict, ok = msg[1]
-                    self.tree.set(iid, "AI", verdict)
-                    self._update_row_in_all_rows(iid, "AI", verdict)
-                    if ok:
-                        self.tree.set(iid, "OK", ok)
-                        self._update_row_in_all_rows(iid, "OK", ok)
-                        try:
-                            line_id = int(self.tree.set(iid, "ID"))
-                            self.ok_rows.add(line_id)
-                        except Exception:
-                            pass
-                    self._apply_filter()
-                    tags = list(self.tree.item(iid, "tags"))
-                    if "processing" in tags:
-                        tags.remove("processing")
-                        self.tree.item(iid, tags=tuple(tags))
+                elif isinstance(msg, tuple) and msg[0] == "AI_ROW_ID":
+                    row_id, verdict, ok = msg[1]
 
-                elif isinstance(msg, tuple) and msg[0] == "AI_CORRECTION_SUPERVISED":
+                    col_map = {name: i for i, name in enumerate(self.tree["columns"])}
+                    ai_idx = col_map["AI"]
+                    ok_idx = col_map["OK"]
+
+                    for row in self.all_rows:
+                        if str(row[0]) == str(row_id):
+                            row[ai_idx] = verdict
+                            if ok:
+                                row[ok_idx] = ok
+                                self.ok_rows.add(int(row_id))
+                            break
+                    self._apply_filter()
+
+                elif isinstance(msg, tuple) and msg[0] == "AI_CORRECTION_SUPERVISED_ID":
                     (
-                        iid,
+                        row_id,
                         original_text,
                         original_asr,
                         final_asr,
@@ -1770,7 +1779,6 @@ class App(tk.Tk):
                         proposed_asr,
                     ) = msg[1]
 
-                    row_id = self.tree.set(iid, "ID")
                     log_correction_metadata(
                         self.v_json.get(),
                         row_id,
@@ -1779,33 +1787,68 @@ class App(tk.Tk):
                         verdict,
                     )
 
-                    # Update stats
                     self.correction_stats[verdict] = self.correction_stats.get(verdict, 0) + 1
 
                     if original_asr.strip() != final_asr.strip():
+
+                        asr_idx = self.tree["columns"].index("ASR")
+                        for row in self.all_rows:
+                            if str(row[0]) == str(row_id):
+                                row[asr_idx] = final_asr
+                                break
+
+                        self._apply_filter()
+
+                        for iid in self.tree.get_children():
+                            if self.tree.set(iid, "ID") == str(row_id):
+                                self._update_metrics(iid)
+                                break
+
                         self.tree.set(iid, "ASR", final_asr)
                         self._update_metrics(iid)  # This also saves
+
                         self._log(f"  - Fila {row_id} actualizada. Veredicto supervisor: {verdict}")
                     else:
                         self._log(
                             f"  - Fila {row_id} no modificada. Veredicto supervisor: {verdict}")
 
-                elif isinstance(msg, tuple) and msg[0] == "ADVANCED_AI_REVIEW_DONE":
-                    iid, verdict, comment = msg[1]
-                    row_id = self.tree.set(iid, "ID")
+                elif isinstance(msg, tuple) and msg[0] == "AI_START_ID":
+                    row_id = msg[1]
+                    for iid in self.tree.get_children():
+                        if self.tree.set(iid, "ID") == row_id:
+                            tags = list(self.tree.item(iid, "tags"))
+                            if "processing" not in tags:
+                                tags.append("processing")
+                                self.tree.item(iid, tags=tuple(tags))
+                            self.tree.see(iid)
+                            break
 
-                    # Update the 'AI' column with the new, more specific verdict
-                    self.tree.set(iid, "AI", verdict)
-                    self._update_row_in_all_rows(iid, "AI", verdict)
+                elif isinstance(msg, tuple) and msg[0] == "ADVANCED_AI_REVIEW_DONE_ID":
+                    row_id, verdict, comment = msg[1]
+                    col_idx_map = {name: i for i, name in enumerate(self.tree["columns"])}
+                    ai_col_idx = col_idx_map["AI"]
+                    ok_col_idx = col_idx_map["OK"]
 
-                    # If the advanced review concludes the row is actually OK, mark it.
-                    if verdict == "OK":
-                        self.tree.set(iid, "OK", "OK")
-                        self._update_row_in_all_rows(iid, "OK", "OK")
+                    for row in self.all_rows:
+                        if str(row[0]) == str(row_id):
+                            row[ai_col_idx] = verdict
+                            if verdict == "OK":
+                                row[ok_col_idx] = "OK"
+                            break
 
                     self._apply_filter()
                     self._log(f"Revisión avanzada Fila {row_id}: {verdict}. Comentario: {comment}")
                     self.save_json()
+
+                elif isinstance(msg, tuple) and msg[0] == "AI_DONE_ID":
+                    row_id = msg[1]
+                    for iid in self.tree.get_children():
+                        if self.tree.set(iid, "ID") == row_id:
+                            tags = list(self.tree.item(iid, "tags"))
+                            if "processing" in tags:
+                                tags.remove("processing")
+                                self.tree.item(iid, tags=tuple(tags))
+                            break
 
                 elif isinstance(msg, tuple) and msg[0] == "AI_DONE":
                     iid = msg[1]
@@ -2026,71 +2069,115 @@ class App(tk.Tk):
             show_error("Error al guardar informe", e)
 
     def advanced_ai_review(self) -> None:
-        """Runs an advanced, contextual AI review on the selected row."""
-        sel = self.tree.selection()
-        if len(sel) != 1:
-            messagebox.showwarning(
-                "Selección inválida",
-                "Selecciona una única fila para la revisión avanzada.")
+
+        """Runs an advanced, contextual AI review on selected or all relevant rows."""
+        # Single row mode
+        if self.ai_one.get():
+            sel = self.tree.selection()
+            if not sel:
+                messagebox.showwarning("Selección inválida", "Selecciona una única fila para la revisión avanzada.")
+                return
+
+            iid = sel[0]
+            row_id = self.tree.set(iid, "ID")
+
+            row_data = next((r for r in self.all_rows if str(r[0]) == row_id), None)
+            if not row_data:
+                return
+
+            ai_status = row_data[3].lower()
+            flag_status = row_data[1]
+            if ai_status != 'mal' and flag_status != '⚠️':
+                messagebox.showinfo("No es necesario", "La revisión avanzada es para filas marcadas como 'mal' o '⚠️'.")
+                return
+
+            self._start_advanced_review_thread_for_id(row_id)
+
             return
 
-        iid = sel[0]
-        if self.tree.set(iid, "AI").lower() != "mal":
-            messagebox.showinfo("No es necesario", "La revisión avanzada es para filas marcadas como 'mal'.")
+        # Batch mode
+        rows_to_review = [
+            r for r in self.all_rows
+            if r[3].lower() == 'mal' or r[1] == '⚠️'
+        ]
+
+        if not rows_to_review:
+            messagebox.showinfo("Sin filas para revisar", "No se encontraron filas marcadas como 'mal' o '⚠️'.")
             return
 
-        children = list(self.tree.get_children())
-        idx = children.index(iid)
-
-        # Gather context
-        context = {}
-        context["current"] = {
-            "id": self.tree.set(iid, "ID"),
-            "original": self.tree.set(iid, "Original"),
-            "asr": self.tree.set(iid, "ASR"),
-        }
-        if idx > 0:
-            prev_iid = children[idx - 1]
-            context["previous"] = {
-                "id": self.tree.set(prev_iid, "ID"),
-                "original": self.tree.set(prev_iid, "Original"),
-                "asr": self.tree.set(prev_iid, "ASR"),
-            }
-        if idx < len(children) - 1:
-            next_iid = children[idx + 1]
-            context["next"] = {
-                "id": self.tree.set(next_iid, "ID"),
-                "original": self.tree.set(next_iid, "Original"),
-                "asr": self.tree.set(next_iid, "ASR"),
-            }
-
-        self._log(f"⏳ Revisión AI Avanzada para fila {context['current']['id']}…")
-
-        tags = list(self.tree.item(iid, "tags"))
-        if "processing" not in tags:
-            tags.append("processing")
-            self.tree.item(iid, tags=tuple(tags))
-
+        self._log(f"⏳ Iniciando Revisión AI Avanzada para {len(rows_to_review)} filas…")
         threading.Thread(
-            target=self._advanced_ai_review_worker,
-            args=(iid, context),
-            daemon=True,
+            target=self._batch_advanced_ai_review_worker,
+            args=(rows_to_review,),
+            daemon=True
         ).start()
 
-    def _advanced_ai_review_worker(self, iid: str, context: dict) -> None:
-        """Worker for advanced AI review."""
+    def _get_row_context(self, row_id: str) -> dict | None:
+        """Builds the context for a given row ID from self.all_rows."""
+        try:
+            row_index = next(i for i, r in enumerate(self.all_rows) if str(r[0]) == row_id)
+        except StopIteration:
+            return None
+
+        context = {}
+        current_row = self.all_rows[row_index]
+        context["current"] = {
+            "id": current_row[0], "original": current_row[6], "asr": current_row[7]
+        }
+        if row_index > 0:
+            prev_row = self.all_rows[row_index - 1]
+            context["previous"] = {"id": prev_row[0], "original": prev_row[6], "asr": prev_row[7]}
+        if row_index < len(self.all_rows) - 1:
+            next_row = self.all_rows[row_index + 1]
+            context["next"] = {"id": next_row[0], "original": next_row[6], "asr": next_row[7]}
+        return context
+
+    def _start_advanced_review_thread_for_id(self, row_id: str) -> None:
+        context = self._get_row_context(row_id)
+        if not context:
+            return
+
+        self._log(f"⏳ Revisión AI Avanzada para fila {row_id}…")
+        self.q.put(("AI_START_ID", row_id))
+        threading.Thread(
+            target=self._advanced_ai_review_worker,
+            args=(context,),
+            daemon=True
+        ).start()
+
+    def _batch_advanced_ai_review_worker(self, rows_to_review: list) -> None:
+        """Worker for batch advanced AI review."""
+        for row_data in rows_to_review:
+            row_id = str(row_data[0])
+            context = self._get_row_context(row_id)
+            if not context:
+                continue
+
+            self.q.put(("AI_START_ID", row_id))
+            try:
+                from ai_review import get_advanced_review_verdict
+                verdict, comment = get_advanced_review_verdict(context)
+                self.q.put(("ADVANCED_AI_REVIEW_DONE_ID", (row_id, verdict, comment)))
+            except Exception:
+                buf = io.StringIO()
+                traceback.print_exc(file=buf)
+                self.q.put(buf.getvalue())
+            finally:
+                self.q.put(("AI_DONE_ID", row_id))
+
+    def _advanced_ai_review_worker(self, context: dict) -> None:
+        """Worker for single advanced AI review."""
+        row_id = str(context["current"]["id"])
         try:
             from ai_review import get_advanced_review_verdict
             verdict, comment = get_advanced_review_verdict(context)
-            self.q.put(("ADVANCED_AI_REVIEW_DONE", (iid, verdict, comment)))
+            self.q.put(("ADVANCED_AI_REVIEW_DONE_ID", (row_id, verdict, comment)))
         except Exception:
             buf = io.StringIO()
             traceback.print_exc(file=buf)
-            err = buf.getvalue()
-            print(err)
-            self.q.put(err)
+            self.q.put(buf.getvalue())
         finally:
-            self.q.put(("AI_DONE", iid))
+            self.q.put(("AI_DONE_ID", row_id))
 
 
 # --------------------------------------------------------------------------------------
