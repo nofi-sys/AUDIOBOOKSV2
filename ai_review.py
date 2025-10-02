@@ -144,7 +144,8 @@ Your ONLY goal is to detect clear AUDIO READING or EDITING ERRORS that
 significantly affect the meaning, such as:
 
 - Entire words or phrases clearly omitted.
-- Entire words or phrases clearly repeated by mistake, causing confusion.
+- Entire words or phrases clearly repeated by mistake. A repetition of two or
+  more consecutive words should always be considered an error.
 - Completely different words clearly added or read incorrectly, substantially
   changing the meaning of the sentence.
 
@@ -153,8 +154,6 @@ DO NOT consider the following as mistakes:
 - Punctuation, accents, capitalization, spelling errors. Non standard
   characters (like ||)
 - Minor phonetic variations, especially in proper names or foreign words.
-- Slight repetitions or brief pauses if they do not significantly alter the
-  sentence's meaning.
 - Transcription inaccuracies that don't significantly impact understanding.
 
 Evaluation criteria:
