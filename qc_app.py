@@ -235,12 +235,21 @@ class App(tk.Tk):
         # Controles de filtro
         filter_controls_frame = ttk.Frame(stats_filter_frame)
         filter_controls_frame.pack(side="right", padx=5)
+
         ttk.Checkbutton(
             filter_controls_frame,
             text="Mostrar solo filas 'mal'",
             variable=self.v_filter_mal,
             command=self._apply_filter,
-        ).pack()
+        ).pack(side="left", padx=5)
+
+        ttk.Label(filter_controls_frame, text="Buscar:").pack(side="left", padx=(10, 2))
+        search_entry = ttk.Entry(filter_controls_frame, textvariable=self.v_filter_text, width=30)
+        search_entry.pack(side="left", padx=(0, 5))
+        search_entry.bind("<Return>", lambda event: self._apply_filter())
+
+        ttk.Button(filter_controls_frame, text="Filtrar por Veredicto", command=self._open_filter_dialog).pack(side="left", padx=5)
+        ttk.Button(filter_controls_frame, text="Limpiar Filtros", command=self._clear_filters).pack(side="left", padx=5)
 
         # Tabla principal -----------------------------------------------------------
         self._build_table()
@@ -280,29 +289,6 @@ class App(tk.Tk):
 
         self.bind_all("<Control-z>", self.undo)
         self.bind_all("<Control-Shift-Z>", self.redo)
-
-        # --- Frame for Stats and Filters ---
-        stats_filter_frame = ttk.LabelFrame(self, text="Estadísticas y Filtros", padding=5)
-        stats_filter_frame.pack(fill="x", padx=3, pady=2)
-
-        stats_labels_frame = ttk.Frame(stats_filter_frame)
-        stats_labels_frame.pack(side="left", padx=5)
-
-        ttk.Label(stats_labels_frame, textvariable=self.v_stats_total).pack(side="left", padx=4)
-        ttk.Label(stats_labels_frame, textvariable=self.v_stats_mal).pack(side="left", padx=4)
-        ttk.Label(stats_labels_frame, textvariable=self.v_stats_pct).pack(side="left", padx=4)
-
-        # Controles de filtro
-        filter_controls_frame = ttk.Frame(stats_filter_frame)
-        filter_controls_frame.pack(side="right", padx=5)
-
-        ttk.Label(filter_controls_frame, text="Buscar:").pack(side="left", padx=(10, 2))
-        search_entry = ttk.Entry(filter_controls_frame, textvariable=self.v_filter_text, width=30)
-        search_entry.pack(side="left", padx=(0, 5))
-        search_entry.bind("<Return>", lambda event: self._apply_filter())
-
-        ttk.Button(filter_controls_frame, text="Filtrar por Veredicto", command=self._open_filter_dialog).pack(side="left", padx=5)
-        ttk.Button(filter_controls_frame, text="Limpiar Filtros", command=self._clear_filters).pack(side="left", padx=5)
 
 
         # Cuadro de log -------------------------------------------------------
@@ -405,7 +391,13 @@ class App(tk.Tk):
 
         rows_to_display = self.all_rows
 
-        # 1. Filtrar por texto
+        # 1. Filtrar por 'mal'
+        if self.v_filter_mal.get():
+            rows_to_display = [
+                r for r in rows_to_display if len(r) > 3 and r[3] == "mal"
+            ]
+
+        # 2. Filtrar por texto
         search_term = self.v_filter_text.get().lower().strip()
         if search_term:
             rows_to_display = [
@@ -416,7 +408,7 @@ class App(tk.Tk):
                 )
             ]
 
-        # 2. Filtrar por veredicto
+        # 3. Filtrar por veredicto
         active_verdict_filters = {
             verdict for verdict, var in self.filter_verdicts.items() if var.get()
         }
