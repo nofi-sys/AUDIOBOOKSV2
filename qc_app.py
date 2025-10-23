@@ -162,6 +162,7 @@ class App(tk.Tk):
         self._warned_fast: bool = False
 
         self.marker_path: Path | None = None
+        self.bookmark_path: Path | None = None
         self.audio_session: AudacityLabelSession | None = None
 
         self.pos_scale: tk.Scale | None = None
@@ -1000,6 +1001,7 @@ class App(tk.Tk):
             self._snapshot()
             self._update_scale_range()
             self._load_marker()
+            self._load_bookmark()
             self._log(f"Check Cargado {self.v_json.get()}")
         except Exception as e:
             show_error("Error", e)
@@ -1666,6 +1668,44 @@ class App(tk.Tk):
                     self._update_position()
             except Exception:
                 pass
+
+    def save_bookmark(self) -> None:
+        """Saves the current selected line index as a bookmark."""
+        if not self.v_json.get():
+            return
+        sel = self.tree.selection()
+        if not sel:
+            return
+        idx = self.tree.index(sel[0])
+        self.bookmark_path = Path(self.v_json.get()).with_suffix(".bookmark")
+        self.bookmark_path.write_text(str(idx), encoding="utf8")
+        self._log(f"Check Marcador guardado en la línea {idx + 1}")
+
+    def goto_bookmark(self) -> None:
+        """Jumps to the bookmarked line."""
+        if self._load_bookmark():
+            self._log("Check Saltando al marcador…")
+        else:
+            self._log("No se encontró ningún marcador para este archivo.")
+
+    def _load_bookmark(self) -> bool:
+        """Loads bookmark and jumps to the line if it exists. Returns True if successful."""
+        if not self.v_json.get():
+            return False
+        self.bookmark_path = Path(self.v_json.get()).with_suffix(".bookmark")
+        if self.bookmark_path.exists():
+            try:
+                idx = int(self.bookmark_path.read_text(encoding="utf-8"))
+                children = self.tree.get_children()
+                if 0 <= idx < len(children):
+                    iid = children[idx]
+                    self.tree.selection_set(iid)
+                    self.tree.see(iid)
+                    self._update_position()
+                    return True
+            except (ValueError, IOError):
+                return False
+        return False
 
     def _merge_selected_rows(self) -> None:
         sel = list(self.tree.selection())
