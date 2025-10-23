@@ -571,6 +571,9 @@ def transcribe_word_csv(
     model_size: str | None = None,
     script_path: str | None = None,
     *,
+    test_mode: bool = False,
+    use_vad: bool = True,
+    script_path: str | None = None,
     show_messagebox: bool = True,
     progress_queue: "queue.Queue" | None = None,
     resume: bool = True,
@@ -590,6 +593,14 @@ def transcribe_word_csv(
     print("[Transcriber] Paso 1/2: transcripción palabra a palabra")
     audio_path, base = _extract_audio(file_path)
 
+    from utils.word_timed_transcriber_2 import transcribe_audio, write_csv
+
+    words = transcribe_audio(
+        Path(audio_path),
+        test_mode=test_mode,
+        use_vad=use_vad,
+        script_path=script_path,
+        q=progress_queue,
     if progress_queue:
         try:
             progress_queue.put(("PROGRESS", 1, 0.0))
@@ -943,6 +954,7 @@ def main(argv: list[str] | None = None) -> None:
     elif args.word_align_v2:
         if not args.script:
             parser.error("--word-align-v2 requires --script")
+        txt = transcribe_word_csv(args.input, script_path=args.script)
         print("[Transcriber] Word-align v2 – doble transcripción")
         txt = transcribe_word_csv(args.input)
         print("[Transcriber] Primera etapa completada")
