@@ -57,6 +57,18 @@ def _format_tc(val: str | float) -> str:
     return f"{h:02d}:{m:02d}:{s:04.1f}"
 
 
+def _format_tc(val: str | float) -> str:
+    """Return ``val`` formatted as ``HH:MM:SS.d`` with one decimal."""
+    try:
+        t = float(val)
+    except (TypeError, ValueError):
+        return str(val)
+    h = int(t // 3600)
+    m = int((t % 3600) // 60)
+    s = t % 60
+    return f"{h:02d}:{m:02d}:{s:04.1f}"
+
+
 def _parse_tc(text: str) -> str:
     """Parse ``text`` formatted with ``_format_tc`` back to seconds string."""
     if ":" in text:
@@ -67,6 +79,10 @@ def _parse_tc(text: str) -> str:
         except Exception:
             pass
     return text
+
+
+def play_interval(path: str, start: float, end: float | None) -> None:
+    """Reproduce *path* desde *start* (seg) hasta *end* (seg) con pygame.
 
 
 def play_interval(path: str, start: float, end: float | None) -> str | None:
@@ -163,6 +179,11 @@ class App(tk.Tk):
 
         self.marker_path: Path | None = None
         self.audio_session: AudacityLabelSession | None = None
+
+        self.pos_scale: tk.Scale | None = None
+        self.pos_label: ttk.Label | None = None
+
+        self.marker_path: Path | None = None
 
         self.pos_scale: tk.Scale | None = None
         self.pos_label: ttk.Label | None = None
@@ -337,11 +358,9 @@ class App(tk.Tk):
                 self.tree.column(c, width=w, anchor="w")
         self.tree.pack(fill="both", expand=True, side="left")
 
-        sb_y = ttk.Scrollbar(table_frame, orient="vertical", command=self.tree.yview)
-        sb_y.pack(side="right", fill="y")
-        sb_x = ttk.Scrollbar(table_frame, orient="horizontal", command=self.tree.xview)
-        sb_x.pack(side="bottom", fill="x")
-        self.tree.configure(yscrollcommand=sb_y.set, xscrollcommand=sb_x.set)
+        sb = ttk.Scrollbar(table_frame, orient="vertical", command=self.tree.yview)
+        self.tree.configure(yscrollcommand=sb.set)
+        sb.pack(side="left", fill="y")
 
         pos_frame = ttk.Frame(table_frame)
         pos_frame.pack(side="right", fill="y", padx=(4, 0))
@@ -481,9 +500,7 @@ class App(tk.Tk):
     def clear_table(self) -> None:
         self.tree.delete(*self.tree.get_children())
         self.ok_rows.clear()
-        self.all_rows.clear()
         self._update_scale_range()
-        self._update_stats()
 
     def save_json(self) -> None:
         if not self.v_json.get():
@@ -497,8 +514,7 @@ class App(tk.Tk):
         try:
             rows = [list(self.tree.item(i)["values"]) for i in self.tree.get_children()]
             for r in rows:
-                idx_tc = max(0, len(r) - 3)
-                r[idx_tc] = _parse_tc(str(r[idx_tc]))
+                r[5] = _parse_tc(str(r[5]))
             Path(self.v_json.get()).write_text(
                 json.dumps(rows, ensure_ascii=False, indent=2), encoding="utf8"
             )
@@ -548,6 +564,20 @@ class App(tk.Tk):
     # Orden final: [ID, ✓, OK, AI, Score, WER, tc, Original, ASR]
     # ──────────────────────────────────────────────────────────────────────────────
     def _row_from_alignment(self, r: list) -> list:
+        """
+        build_rows genera:
+          6 col.: [ID, ✓,        WER, tc, Original, ASR]
+          7 col.: [ID, ✓,  OK,   WER, tc, Original, ASR]
+          8 col.: [ID, ✓,  OK, AI, WER, tc, Original, ASR]  (ya correcto)
+        Retorna siempre 8-columnas en el orden que usa la GUI.
+        """
+
+        from qc_utils import canonical_row
+
+        row = canonical_row(r)
+        if len(row) > 5:
+            row[5] = _format_tc(row[5])
+        return row
         # Devuelve SIEMPRE 9 columnas, rellenando las que falten.
         # Formatea tc como HH:MM:SS.d
         try:
@@ -980,12 +1010,17 @@ class App(tk.Tk):
             self.v_json.set(p)
 
         try:
-            self.all_rows = json.loads(Path(self.v_json.get()).read_text(encoding="utf8"))
-            self.correction_stats.clear()
-            self._apply_filter()  # Rellena la tabla y actualiza stats
+            rows = json.loads(Path(self.v_json.get()).read_text(encoding="utf8"))
+            self.clear_table()
+
+            for r in rows:
+                vals = self._row_from_alignment(r)
+                # Treeview no admite números; asegúrate de que llegan como str
+                vals[6], vals[7] = str(vals[6]), str(vals[7])
+                self.tree.insert("", tk.END, values=vals)
             self._snapshot()
+            self._update_scale_range()
             self._load_marker()
-            self._load_bookmark_selection()
             self._log(f"✔ Cargado {self.v_json.get()}")
         except Exception as e:
             show_error("Error", e)
@@ -1015,7 +1050,7 @@ class App(tk.Tk):
         end = None
         for next_iid in children[idx + 1:]:
             try:
-                t = float(_parse_tc(self.tree.set(next_iid, "tc")))
+                end = float(_parse_tc(self.tree.set(children[idx + 1], "tc")))
             except ValueError:
                 continue
             if t > start:
@@ -1599,21 +1634,23 @@ class App(tk.Tk):
         iid = children[idx]
         self.tree.see(iid)
         self.tree.selection_set(iid)
-        self._update_position()
+        self._update_position(update_scale=False)
 
-    def _update_position(self, event: tk.Event | None = None) -> None:
+    def _update_position(self, event: tk.Event | None = None, *, update_scale: bool = True) -> None:
         if not self.tree.get_children():
-            self.pos_label.config(text="0/0")
+            if self.pos_label:
+                self.pos_label.config(text="0/0")
             return
         sel = self.tree.selection()
         if not sel:
             return
         idx = self.tree.index(sel[0]) + 1
         total = len(self.tree.get_children())
-        self.pos_label.config(text=f"{idx}/{total}")
-        if self.pos_scale:
+        if self.pos_label:
+            self.pos_label.config(text=f"{idx}/{total}")
+        if update_scale and self.pos_scale:
             self.pos_scale.configure(to=total)
-        self.pos_scale.set(idx)
+            self.pos_scale.set(idx)
 
     def _update_scale_range(self) -> None:
         total = len(self.tree.get_children())
@@ -1636,131 +1673,6 @@ class App(tk.Tk):
         self.marker_path.write_text(str(idx), encoding="utf8")
         self._log(f"✔ Marcador en fila {idx + 1}")
 
-    def _get_audacity_session(self) -> AudacityLabelSession | None:
-        if not self.v_audio.get():
-            return None
-        if self.audio_session and self.audio_session.audio_path == Path(self.v_audio.get()):
-            return self.audio_session
-        try:
-            self.audio_session = AudacityLabelSession(self.v_audio.get())
-        except Exception as exc:
-            self._log(str(exc))
-            self.audio_session = None
-        return self.audio_session
-
-    def add_audacity_marker(self, time_sec: float) -> None:
-        session = self._get_audacity_session()
-        if not session:
-            return
-        session.add_marker(time_sec)
-        self._log(f"✔ Marker Audacity {time_sec:.2f}s")
-
-    # ------------------------------------------------------------- bookmark utils
-    def _bookmark_path(self) -> Path | None:
-        if not self.v_json.get():
-            return None
-        return Path(self.v_json.get()).with_suffix(".bookmark.json")
-
-    def save_bookmark(self, abs_time: float | None = None) -> None:
-        """Guarda un 'punto' para retomar. Si ``abs_time`` no se pasa, usa
-        el inicio de la fila seleccionada. Persiste en un archivo junto al JSON.
-        """
-        if not self.v_json.get():
-            messagebox.showwarning("Sin JSON", "Carga un JSON primero")
-            return
-        p = self._bookmark_path()
-        if p is None:
-            return
-        sel = self.tree.selection()
-        if sel:
-            iid = sel[0]
-        else:
-            children = self.tree.get_children()
-            iid = self._clip_item or (children[0] if children else None)
-        if iid is None:
-            messagebox.showwarning("Sin selección", "Selecciona una fila para guardar el punto")
-            return
-        idx = self.tree.index(iid)
-        if abs_time is None:
-            # Intentar capturar la posición actual de reproducción si hay clip activo
-            if self._clip_item:
-                try:
-                    if (getattr(self, "_audio_engine", "") == "ffplay"
-                            and self._rate_wall_start is not None
-                            and self._rate_pos_start is not None):
-                        rate = max(self._play_rate, 0.1)
-                        abs_time = self._rate_pos_start + (
-                            time.monotonic() - self._rate_wall_start) * rate
-                    elif pygame.mixer.get_init() and pygame.mixer.music.get_busy():
-                        pos = pygame.mixer.music.get_pos()
-                        if pos >= 0:
-                            abs_time = self._clip_start + self._clip_offset + pos / 1000.0
-                    elif (getattr(self, "_audio_engine", "") == "vlc"
-                            and getattr(self, "_vlc_player", None) is not None):
-                        cur_ms = self._vlc_player.get_time()
-                        if cur_ms >= 0:
-                            abs_time = cur_ms / 1000.0
-                except Exception:
-                    pass
-            if abs_time is None:
-                try:
-                    abs_time = float(_parse_tc(self.tree.set(iid, "tc")))
-                except Exception:
-                    abs_time = 0.0
-        data = {
-            "row_index": int(idx),
-            "time": float(abs_time),
-            "rate": float(self._play_rate),
-        }
-        try:
-            p.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf8")
-            self._log(f"Punto guardado (fila {idx + 1}, t={abs_time:.2f}s)")
-        except Exception as exc:
-            show_error("Error", exc)
-
-    def goto_bookmark(self) -> None:
-        p = self._bookmark_path()
-        if p is None or not p.exists():
-            messagebox.showinfo("Punto", "No hay punto guardado")
-            return
-        try:
-            data = json.loads(p.read_text(encoding="utf8"))
-            idx = int(data.get("row_index", 0))
-            t = float(data.get("time", 0.0))
-            rate = float(data.get("rate", self._play_rate))
-        except Exception as exc:
-            show_error("Error", exc)
-            return
-        children = list(self.tree.get_children())
-        if not children:
-            return
-        idx = max(0, min(len(children) - 1, idx))
-        iid = children[idx]
-        self.tree.selection_set(iid)
-        self.tree.see(iid)
-        self._update_position()
-        self._play_rate = rate
-        if self.v_audio.get():
-            try:
-                row_tc = float(_parse_tc(self.tree.set(iid, "tc")))
-            except Exception:
-                row_tc = t
-            self._clip_item = iid
-            self._clip_start = row_tc
-            self._clip_offset = max(0.0, t - row_tc)
-            end = None
-            for next_iid in children[idx + 1:]:
-                try:
-                    tt = float(_parse_tc(self.tree.set(next_iid, "tc")))
-                except Exception:
-                    continue
-                if tt > row_tc:
-                    end = tt
-                    break
-            self._clip_end = end
-            self._show_text_popup(iid)
-            self._play_current_clip()
-
     def _load_marker(self) -> None:
         if not self.v_json.get():
             return
@@ -1776,24 +1688,6 @@ class App(tk.Tk):
                     self._update_position()
             except Exception:
                 pass
-
-    def _load_bookmark_selection(self) -> None:
-        p = self._bookmark_path()
-        if p is None or not p.exists():
-            return
-        try:
-            data = json.loads(p.read_text(encoding="utf8"))
-            idx = int(data.get("row_index", 0))
-        except Exception:
-            return
-        children = self.tree.get_children()
-        if not children:
-            return
-        if 0 <= idx < len(children):
-            iid = children[idx]
-            self.tree.selection_set(iid)
-            self.tree.see(iid)
-            self._update_position()
 
     def _merge_selected_rows(self) -> None:
         sel = list(self.tree.selection())
@@ -1830,8 +1724,6 @@ class App(tk.Tk):
         for new_id, iid in enumerate(self.tree.get_children()[start_idx:], start_idx):
             self.tree.set(iid, "ID", new_id)
         self._update_scale_range()
-        self._recompute_tc()
-        self._update_metrics(first)
         self.save_json()
 
     def _unmerge_row(self) -> None:
@@ -1852,7 +1744,6 @@ class App(tk.Tk):
         for new_id, iid in enumerate(self.tree.get_children()):
             self.tree.set(iid, "ID", new_id)
         self._update_scale_range()
-        self._recompute_tc()
         self.save_json()
 
     # ---------------------------------------------------------------------------------
@@ -1988,8 +1879,12 @@ class App(tk.Tk):
             while True:
                 msg = self.q.get_nowait()
 
-                if isinstance(msg, tuple) and msg[0] == "ROWS_READY":
-                    self._apply_filter()
+                if isinstance(msg, tuple) and msg[0] == "ROWS":
+                    for r in msg[1]:
+                        vals = self._row_from_alignment(r)
+                        vals[6], vals[7] = str(vals[6]), str(vals[7])
+                        self.tree.insert("", tk.END, values=vals)
+                    self._update_scale_range()
                     self._close_progress()
                     self._snapshot()
 
@@ -2152,8 +2047,14 @@ class App(tk.Tk):
         self.redo_stack.clear()
 
     def _restore(self, data: str) -> None:
-        self.all_rows = json.loads(data)
-        self._apply_filter()
+        rows = json.loads(data)
+        self.clear_table()
+
+        for r in rows:
+            vals = self._row_from_alignment(r)
+            vals[6], vals[7] = str(vals[6]), str(vals[7])
+            self.tree.insert("", tk.END, values=vals)
+        self._update_scale_range()
 
     def undo(self, event: tk.Event | None = None) -> None:
         if not self.undo_stack:
