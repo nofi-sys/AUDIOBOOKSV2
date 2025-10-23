@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import datetime
+from pathlib import Path
 from typing import List
 
 from rapidfuzz.distance import Levenshtein
@@ -65,22 +67,45 @@ def merge_qc_metadata(old_rows: List[List], new_rows: List[List]) -> List[List]:
 
 
 
-def canonical_row(row: List) -> List:
-    """Return row in standard QC order.
+def canonical_row(r: list[str | float]) -> list:
+    """Normalize incoming rows to the standard 8-column layout."""
+    if len(r) >= 8:
+        id_, flag, ok, ai, wer, tc, original, asr, *extra = r
+        return [id_, flag, ok, ai, wer, tc, original, asr] + list(extra)
+    if len(r) == 7:
+        if isinstance(r[2], (int, float)):
+            base = canonical_row(r[:6])
+            return base + r[6:]
+        id_, flag, ok, wer, tc, original, asr = r
+        return [id_, flag, ok, '', wer, tc, original, asr]
+    if len(r) == 6:
+        id_, flag, wer, tc, original, asr = r
+        return [id_, flag, '', '', wer, tc, original, asr]
+    padded = list(r) + [''] * max(0, 6 - len(r))
+    return canonical_row(padded[:6])
 
-    The canonical format is either ``[ID, ✓, OK, AI, WER, tc, Original, ASR]``
-    or ``[ID, ✓, OK, AI, Score, WER, tc, Original, ASR]`` when a Score column is
-    present. Input rows may omit some of these columns. Missing fields are filled
-    with empty strings so that the output always has either 8 or 9 elements.
-    """
-    if len(row) >= 9:
-        return row
-    if len(row) == 8:
-        return row
-    if len(row) == 7:
-        # [ID, ✓, OK, WER, tc, Original, ASR]
-        return [row[0], row[1], row[2], "", row[3], row[4], row[5], row[6]]
-    if len(row) == 6:
-        # [ID, ✓, WER, tc, Original, ASR]
-        return [row[0], row[1], "", "", row[2], row[3], row[4], row[5]]
-    return row
+
+def log_correction_metadata(
+    json_path: str,
+    row_id: str,
+    original_asr: str,
+    proposed_asr: str,
+    verdict: str,
+) -> None:
+    """Logs the details of a supervised AI correction attempt."""
+    if not json_path:
+        return
+    log_file = Path(json_path).with_suffix(".metadata.log")
+    timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    log_entry = (
+        f"[{timestamp}] - Fila ID: {row_id}\n"
+        f"  Veredicto: {verdict.upper()}\n"
+        f"  ASR Original : {original_asr}\n"
+        f"  ASR Propuesto: {proposed_asr}\n"
+        f"--------------------------------------------------\n"
+    )
+    try:
+        with log_file.open("a", encoding="utf-8") as f:
+            f.write(log_entry)
+    except Exception as e:
+        print(f"Error al escribir en el log de metadatos: {e}")
