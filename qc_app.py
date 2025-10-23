@@ -1,10 +1,10 @@
 from __future__ import annotations
-"""Tkinter GUI for the QC application (v5.3‑tc).
+"""Tkinter GUI for the QC application (v5.3-tc).
 
-* Usa columna **tc** (time‑code) como instante de INICIO de la frase.
+* Usa columna **tc** (time-code) como instante de INICIO de la frase.
 * Para reproducir un clip se toma el tc de la fila actual y el tc de la
   fila siguiente (o el final del archivo si no hay siguiente).
-* Se mantiene **toda** la funcionalidad original: transcribe, AI‑review,
+* Se mantiene **toda** la funcionalidad original: transcribe, AI-review,
   edición de celdas, undo/redo, fusión, etc.
 """
 
@@ -57,18 +57,6 @@ def _format_tc(val: str | float) -> str:
     return f"{h:02d}:{m:02d}:{s:04.1f}"
 
 
-def _format_tc(val: str | float) -> str:
-    """Return ``val`` formatted as ``HH:MM:SS.d`` with one decimal."""
-    try:
-        t = float(val)
-    except (TypeError, ValueError):
-        return str(val)
-    h = int(t // 3600)
-    m = int((t % 3600) // 60)
-    s = t % 60
-    return f"{h:02d}:{m:02d}:{s:04.1f}"
-
-
 def _parse_tc(text: str) -> str:
     """Parse ``text`` formatted with ``_format_tc`` back to seconds string."""
     if ":" in text:
@@ -79,10 +67,6 @@ def _parse_tc(text: str) -> str:
         except Exception:
             pass
     return text
-
-
-def play_interval(path: str, start: float, end: float | None) -> None:
-    """Reproduce *path* desde *start* (seg) hasta *end* (seg) con pygame.
 
 
 def play_interval(path: str, start: float, end: float | None) -> str | None:
@@ -109,7 +93,7 @@ def play_interval(path: str, start: float, end: float | None) -> str | None:
 class App(tk.Tk):
     def __init__(self) -> None:
         super().__init__()
-        self.title("QC‑Audiolibro v5.3‑tc")
+        self.title("QC-Audiolibro v5.3-tc")
         self.geometry("1850x760")
 
         # ------------------------- variables de la interfaz --------------------------
@@ -179,11 +163,6 @@ class App(tk.Tk):
 
         self.marker_path: Path | None = None
         self.audio_session: AudacityLabelSession | None = None
-
-        self.pos_scale: tk.Scale | None = None
-        self.pos_label: ttk.Label | None = None
-
-        self.marker_path: Path | None = None
 
         self.pos_scale: tk.Scale | None = None
         self.pos_label: ttk.Label | None = None
@@ -342,7 +321,7 @@ class App(tk.Tk):
 
     # ---------------------------------------------------------------- table ----------
     def _build_table(self) -> None:
-        cols = ("ID", "✓", "OK", "AI", "Score", "WER", "tc", "Original", "ASR")
+        cols = ("ID", "Check", "OK", "AI", "Score", "WER", "tc", "Original", "ASR")
         widths = (50, 30, 40, 40, 50, 60, 60, 750, 750)
 
         table_frame = ttk.Frame(self)
@@ -518,7 +497,7 @@ class App(tk.Tk):
             Path(self.v_json.get()).write_text(
                 json.dumps(rows, ensure_ascii=False, indent=2), encoding="utf8"
             )
-            self._log(f"✔ Guardado {self.v_json.get()}")
+            self._log(f"Check Guardado {self.v_json.get()}")
         except Exception as e:
             show_error("Error", e)
 
@@ -555,20 +534,20 @@ class App(tk.Tk):
                 progress_queue=self.q,
             )
             self.q.put(("SET_ASR", str(out)))
-            self.q.put(f"✔ Transcripción guardada en {out}")
+            self.q.put(f"Check Transcripción guardada en {out}")
         except BaseException as exc:  # noqa: BLE001 - catch SystemExit too
             show_error("Error", exc)
 
     # ──────────────────────────────────────────────────────────────────────────────
     # Normaliza la lista que llega de build_rows a las 9 columnas de la GUI
-    # Orden final: [ID, ✓, OK, AI, Score, WER, tc, Original, ASR]
+    # Orden final: [ID, Check, OK, AI, Score, WER, tc, Original, ASR]
     # ──────────────────────────────────────────────────────────────────────────────
     def _row_from_alignment(self, r: list) -> list:
         """
         build_rows genera:
-          6 col.: [ID, ✓,        WER, tc, Original, ASR]
-          7 col.: [ID, ✓,  OK,   WER, tc, Original, ASR]
-          8 col.: [ID, ✓,  OK, AI, WER, tc, Original, ASR]  (ya correcto)
+          6 col.: [ID, Check,        WER, tc, Original, ASR]
+          7 col.: [ID, Check,  OK,   WER, tc, Original, ASR]
+          8 col.: [ID, Check,  OK, AI, WER, tc, Original, ASR]  (ya correcto)
         Retorna siempre 8-columnas en el orden que usa la GUI.
         """
 
@@ -586,7 +565,7 @@ class App(tk.Tk):
             # Caso base: Fila de 6 columnas del alineador
             # [ID, flag, WER, tc, Original, ASR]
             if len(vals) == 6:
-                # -> [ID, ✓, OK, AI, Score, WER, tc, Original, ASR]
+                # -> [ID, Check, OK, AI, Score, WER, tc, Original, ASR]
                 vals.insert(2, "")  # OK
                 vals.insert(3, "")  # AI
                 vals.insert(4, "")  # Score
@@ -792,7 +771,7 @@ class App(tk.Tk):
                 if ai_review._stop_review:
                     self.q.put("⚠ Revisión detenida")
                 else:
-                    self.q.put(f"✔ Auto-aprobadas {approved} / Restantes {remaining}")
+                    self.q.put(f"Check Auto-aprobadas {approved} / Restantes {remaining}")
                 return
 
             def progress(stage: str, idx: int, row: list) -> None:
@@ -814,7 +793,7 @@ class App(tk.Tk):
                     self.q.put("⚠ Revisión detenida")
                 else:
                     self.q.put(
-                        f"✔ Auto-aprobadas {approved} / Restantes {remaining}"
+                        f"Check Auto-aprobadas {approved} / Restantes {remaining}"
                     )
                 return
 
@@ -822,7 +801,7 @@ class App(tk.Tk):
                 self.q.put("⚠ Revisión detenida")
             else:
                 self.q.put(
-                    f"✔ Auto-aprobadas {approved} / Restantes {remaining}"
+                    f"Check Auto-aprobadas {approved} / Restantes {remaining}"
                 )
         except Exception:
             buf = io.StringIO()
@@ -877,7 +856,7 @@ class App(tk.Tk):
         self._stop_reprocess = True
 
     def _toggle_asr(self) -> None:
-        """Swap between original and re‑transcribed ASR for selected row."""
+        """Swap between original and re-transcribed ASR for selected row."""
         sel = self.tree.selection()
         if not sel:
             return
@@ -1021,7 +1000,7 @@ class App(tk.Tk):
             self._snapshot()
             self._update_scale_range()
             self._load_marker()
-            self._log(f"✔ Cargado {self.v_json.get()}")
+            self._log(f"Check Cargado {self.v_json.get()}")
         except Exception as e:
             show_error("Error", e)
     # Reproducción -------------------------------------------------------------------
@@ -1037,7 +1016,7 @@ class App(tk.Tk):
         self._play_clip(item)
 
     def _play_clip(self, iid: str):
-        """Calcula tc inicio ‑ fin y prepara _clip_*"""
+        """Calcula tc inicio - fin y prepara _clip_*"""
         if not self.v_audio.get():
             messagebox.showwarning("Falta audio", "Selecciona archivo de audio")
             return
@@ -1050,11 +1029,10 @@ class App(tk.Tk):
         end = None
         for next_iid in children[idx + 1:]:
             try:
-                end = float(_parse_tc(self.tree.set(children[idx + 1], "tc")))
+                end = float(_parse_tc(self.tree.set(next_iid, "tc")))
             except ValueError:
                 continue
-            if t > start:
-                end = t
+            if end > start:
                 break
         self._clip_item, self._clip_start, self._clip_end = iid, start, end
         self._clip_offset = 0.0
@@ -1429,11 +1407,11 @@ class App(tk.Tk):
             wer_val = 1.0
             base_wer = 1.0
         if base_wer <= 0.05:
-            flag = "✅"
+            flag = "Check"
         else:
             thr = 0.20 if len(ref_t) < 5 else WARN_WER
-            flag = "✅" if wer_val <= thr else ("⚠️" if wer_val <= 0.20 else "❌")
-        self.tree.set(iid, "✓", flag)
+            flag = "Check" if wer_val <= thr else ("⚠️" if wer_val <= 0.20 else "❌")
+        self.tree.set(iid, "Check", flag)
         self.tree.set(iid, "WER", f"{wer_val*100:.1f}")
         if save:
             self.save_json()
@@ -1671,7 +1649,7 @@ class App(tk.Tk):
         idx = self.tree.index(sel[0])
         self.marker_path = Path(self.v_json.get()).with_suffix(".marker")
         self.marker_path.write_text(str(idx), encoding="utf8")
-        self._log(f"✔ Marcador en fila {idx + 1}")
+        self._log(f"Check Marcador en fila {idx + 1}")
 
     def _load_marker(self) -> None:
         if not self.v_json.get():
@@ -1859,7 +1837,7 @@ class App(tk.Tk):
 
             self.all_rows = rows
             self.q.put(("ROWS_READY", None))
-            self.q.put(f"✔ Listo. Guardado en {out}")
+            self.q.put(f"Check Listo. Guardado en {out}")
             self.v_json.set(str(out))
         except Exception:
             buf = io.StringIO()
@@ -2098,7 +2076,7 @@ class App(tk.Tk):
     def second_pass_sync(self) -> None:
         """
         Runs a second pass to fix word alignment issues by shifting words
-        between adjacent rows that are not marked as correct (✅).
+        between adjacent rows that are not marked as correct (Check).
         """
         self._log("⏳ Iniciando segunda pasada de sincronización...")
         self._snapshot()
@@ -2114,7 +2092,7 @@ class App(tk.Tk):
             curr_iid = children[i]
 
             # Skip if either row is already perfect or merged.
-            if self.tree.set(prev_iid, "✓") == "✅" or self.tree.set(curr_iid, "✓") == "✅":
+            if self.tree.set(prev_iid, "Check") == "Check" or self.tree.set(curr_iid, "Check") == "Check":
                 continue
             if (self.merged_tag in self.tree.item(prev_iid, "tags")
                     or self.merged_tag in self.tree.item(curr_iid, "tags")):
@@ -2204,9 +2182,9 @@ class App(tk.Tk):
 
         if changes_count > 0:
             self.save_json()
-            self._log(f"✔ Segunda pasada completada. Se aplicaron {changes_count} correcciones.")
+            self._log(f"Check Segunda pasada completada. Se aplicaron {changes_count} correcciones.")
         else:
-            self._log("✔ Segunda pasada completada. No se encontraron correcciones obvias.")
+            self._log("Check Segunda pasada completada. No se encontraron correcciones obvias.")
 
     def generate_correction_report(self) -> None:
         """Generates and saves a summary report of AI correction stats."""
@@ -2235,7 +2213,7 @@ class App(tk.Tk):
         try:
             report_path = Path(self.v_json.get()).with_suffix(".correction_report.txt")
             report_path.write_text(report_str, encoding="utf-8")
-            self._log(f"✔ Informe de corrección guardado en: {report_path}")
+            self._log(f"Check Informe de corrección guardado en: {report_path}")
             messagebox.showinfo("Informe Guardado", f"El informe se ha guardado en:\n{report_path}")
         except Exception as e:
             show_error("Error al guardar informe", e)

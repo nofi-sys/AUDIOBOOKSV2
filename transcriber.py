@@ -569,7 +569,6 @@ def transcribe_file(
 def transcribe_word_csv(
     file_path: str | None = None,
     model_size: str | None = None,
-    script_path: str | None = None,
     *,
     test_mode: bool = False,
     use_vad: bool = True,
@@ -593,14 +592,8 @@ def transcribe_word_csv(
     print("[Transcriber] Paso 1/2: transcripción palabra a palabra")
     audio_path, base = _extract_audio(file_path)
 
-    from utils.word_timed_transcriber_2 import transcribe_audio, write_csv
+    from utils.word_timed_transcriber_2 import transcribe_audio
 
-    words = transcribe_audio(
-        Path(audio_path),
-        test_mode=test_mode,
-        use_vad=use_vad,
-        script_path=script_path,
-        q=progress_queue,
     if progress_queue:
         try:
             progress_queue.put(("PROGRESS", 1, 0.0))

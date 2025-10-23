@@ -27,7 +27,7 @@ def test_build_rows_wordlevel_basic():
     times = [0.0, 0.5]
     rows = build_rows_from_words(ref, words, times)
     assert rows[0][1] == "✅"
-    assert float(rows[0][3]) == 0.0
+    assert float(rows[0][5]) == 0.0
 
 
 def test_build_rows_tc_sequential():
@@ -43,7 +43,7 @@ def test_build_rows_detect_repetition():
     ref = "Hola mundo"
     hyp = "Hola mundo hola mundo hola mundo"
     rows = build_rows(ref, hyp)
-    assembled = " ".join(r[5] for r in rows)
+    assembled = " ".join(r[7] for r in rows)
     assert "hola mundo hola mundo hola mundo" in assembled
 
 
@@ -51,7 +51,7 @@ def test_build_rows_truncated_take():
     ref = "Nos los representantes del pueblo argentino"
     hyp = "Nos los representantes nos nos los representantes del pueblo argentino"
     rows = build_rows(ref, hyp)
-    assembled = " ".join(r[5] for r in rows)
+    assembled = " ".join(r[7] for r in rows)
     assert "nos los representantes del pueblo argentino" in assembled
 
 
@@ -59,7 +59,7 @@ def test_build_rows_no_truncation():
     ref = "Hola mundo. Adios."
     hyp = "Hola hola mundo. Adios."
     rows = build_rows(ref, hyp)
-    assembled = " ".join(r[5] for r in rows)
+    assembled = " ".join(r[7] for r in rows)
     assembled_tokens = normalize(assembled, strip_punct=False).split()
     hyp_tokens = normalize(hyp, strip_punct=False).split()
     assert " ".join(hyp_tokens) in " ".join(assembled_tokens)

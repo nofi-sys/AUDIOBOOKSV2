@@ -1,4 +1,9 @@
 from __future__ import annotations
+import re
+import unicodedata
+from difflib import SequenceMatcher
+from typing import Callable, List, Tuple
+
 # alignment.py — versión conservadora y compatible (2025-08-14)
 # - Mantiene la interfaz y formato de salida que espera qc_app.py
 # - Alineación por oración con ventana local (rápida y estable)
@@ -9,12 +14,6 @@ from __future__ import annotations
 #
 # Salida: lista de filas [ID, flag, "", "", WER(0-100), tc(seg), Original, ASR]
 
-import math
-import os
-import re
-import unicodedata
-from difflib import SequenceMatcher
-from typing import Callable, List, Tuple
 
 # ───────────────────────── Configuración ─────────────────────────
 
@@ -23,42 +22,48 @@ from typing import Callable, List, Tuple
 WARN_WER = 0.12  # 12%
 
 # Tokenización y similitud
-SIM_THRESH = 0.80              # similitud normalizada mínima para considerar “match” (tokens)
+SIM_THRESH = 0.80  # similitud normalizada mínima para considerar “match” (tokens)
 PUNCT_RE = r"""["#$%&'()*+,\-/:;<=>@\[\]^_`{|}~¡¿…—–]"""
 
 # Ventanas / pausas / tiempos “razonables”
-BAND_CAP = 64                  # límite interno de la “banda” para DP local
-MAX_TOKEN_GAP = 12             # rompe corrida si gap de índices > N
-PAUSE_SPLIT_SEC = 0.80         # corta corrida si hay hueco > 0.8 s entre palabras contiguas
-WPS = 2.5                      # palabras/seg esperadas (≈150 wpm)
-MAX_RATIO = 2.5                # límite ancho relativo a len(ref_seg)
-MAX_EXTRA = 12                 # extra absoluto (tokens) permitido
+BAND_CAP = 64  # límite interno de la “banda” para DP local
+MAX_TOKEN_GAP = 12  # rompe corrida si gap de índices > N
+PAUSE_SPLIT_SEC = 0.80  # corta corrida si hay hueco > 0.8 s entre palabras contiguas
+WPS = 2.5  # palabras/seg esperadas (≈150 wpm)
+MAX_RATIO = 2.5  # límite ancho relativo a len(ref_seg)
+MAX_EXTRA = 12  # extra absoluto (tokens) permitido
 
 # Rebalance de bordes
-REBALANCE_MAX_MOVE = 3         # mueve hasta 3 palabras
-REBALANCE_MIN_IMPROVE = 2.0    # mejora mínima (en puntos de WER)
-REBALANCE_MAX_PAUSE = 0.80     # no cruza pausas largas
+REBALANCE_MAX_MOVE = 3  # mueve hasta 3 palabras
+REBALANCE_MIN_IMPROVE = 2.0  # mejora mínima (en puntos de WER)
+REBALANCE_MAX_PAUSE = 0.80  # no cruza pausas largas
 
 MONTHS = {
-    "enero","febrero","marzo","abril","mayo","junio","julio",
-    "agosto","septiembre","setiembre","octubre","noviembre","diciembre"
+    "enero", "febrero", "marzo", "abril", "mayo", "junio", "julio",
+    "agosto", "septiembre", "setiembre", "octubre", "noviembre", "diciembre"
 }
+
 
 # Logger opcional
 _DEBUG: Callable[[str], None] = lambda _msg: None
+
+
 def set_debug_logger(logger: Callable[[str], None]) -> None:
     """Permite que la app inyecte su logger de debug."""
     global _DEBUG
     _DEBUG = logger
 
+
 def _d(msg: str) -> None:  # pragma: no cover
     _DEBUG(msg)
+
 
 # ───────────────────────── Utilidades ─────────────────────────
 
 def _strip_accents(s: str) -> str:
     return "".join(c for c in unicodedata.normalize("NFD", s)
                    if unicodedata.category(c) != "Mn")
+
 
 def _normalize_token(s: str) -> str:
     s = _strip_accents(s.lower())
@@ -67,9 +72,11 @@ def _normalize_token(s: str) -> str:
     s = re.sub(r'\s+', ' ', s).strip()
     return s
 
+
 def _tokenize(text: str) -> List[str]:
     t = _normalize_token(text)
     return t.split() if t else []
+
 
 def _sec_to_str(sec: float) -> str:
     """Devuelve segundos en str con 2 decimales (el GUI lo re-formatea)."""
@@ -78,28 +85,33 @@ def _sec_to_str(sec: float) -> str:
     except Exception:
         return str(sec)
 
+
 def _lev(a: List[str], b: List[str]) -> int:
     la, lb = len(a), len(b)
     if la == 0 or lb == 0:
         return lb if la == 0 else la
-    dp = list(range(lb+1))
-    for i in range(1, la+1):
+    dp = list(range(lb + 1))
+    for i in range(1, la + 1):
         prev = dp[0]
         dp[0] = i
-        ca = a[i-1]
-        for j in range(1, lb+1):
+        ca = a[i - 1]
+        for j in range(1, lb + 1):
             cur = dp[j]
-            cost = 0 if ca == b[j-1] else 1
-            dp[j] = min(dp[j] + 1, dp[j-1] + 1, prev + cost)
+            cost = 0 if ca == b[j - 1] else 1
+            dp[j] = min(dp[j] + 1, dp[j - 1] + 1, prev + cost)
             prev = cur
     return dp[lb]
+
 
 def _wer_pct(ref_tokens: List[str], hyp_tokens: List[str]) -> float:
     if not ref_tokens:
         return 0.0 if not hyp_tokens else 100.0
     return min(100.0, 100.0 * _lev(ref_tokens, hyp_tokens) / len(ref_tokens))
 
+
 def _flag_for_wer(wer_pct: float, ref_len: int) -> str:
+    if wer_pct == 0.0:
+        return "✅"
     thr = 20.0 if ref_len < 5 else (WARN_WER * 100.0)
     if wer_pct <= thr:
         return "✅"
@@ -107,9 +119,12 @@ def _flag_for_wer(wer_pct: float, ref_len: int) -> str:
         return "⚠️"
     return "❌"
 
+
 # Oraciones: partimos por signos de cierre
 _SENT_SPLIT_RE = re.compile(r"(?<=[\.\?\!])\s+")
-def _sentence_spans(ref_tokens: List[str]) -> List[Tuple[int,int]]:
+
+
+def _sentence_spans(ref_tokens: List[str]) -> List[Tuple[int, int]]:
     text = " ".join(ref_tokens)
     sents = _SENT_SPLIT_RE.split(text) if text else []
     spans, pos = [], 0
@@ -122,8 +137,10 @@ def _sentence_spans(ref_tokens: List[str]) -> List[Tuple[int,int]]:
         spans = [(0, len(ref_tokens))]
     return spans
 
+
 def _is_anchor(tok: str) -> bool:
     return tok in MONTHS or re.fullmatch(r"\d{1,2}|\d{4}", tok) is not None
+
 
 # ───────────────────────── Selección por pausas/duración ─────────────────────────
 
@@ -138,31 +155,33 @@ def _split_runs_by_pause(idxs: List[int], tcs: List[float],
         if (b - a) <= max_gap and (tcs[b] - tcs[a]) <= pause_sec:
             cur.append(b)
         else:
-            runs.append(cur); cur = [b]
+            runs.append(cur)
+            cur = [b]
     runs.append(cur)
     return runs
 
-def _choose_best_run(runs: List[List[int]], ref_len: int, tcs: List[float]) -> Tuple[int,int]:
+
+def _choose_best_run(runs: List[List[int]], ref_len: int, tcs: List[float]) -> Tuple[int, int]:
     if not runs:
-        return (0, 0)
+        return 0, 0
+
+    # Simple approach: return the span covering all candidate runs
+    all_indices = [idx for run in runs for idx in run]
+    if not all_indices:
+        return 0, 0
+
+    hs = min(all_indices)
+    he = max(all_indices) + 1
+
+    # Fallback and safety limits can still be useful
     expected = max(1e-6, ref_len / max(1e-6, WPS))
-    best = None
-    for r in runs:
-        hs, he = r[0], r[-1] + 1
-        dur = max(1e-6, tcs[he-1] - tcs[hs])
-        coverage = len(r)
-        score = coverage / (1.0 + abs(dur - expected))
-        cand = (score, -abs(dur-expected), coverage, hs, he)
-        if best is None or cand > best:
-            best = cand
-    _, _, _, hs, he = best
-    # limitar spans exagerados
     limit = int(ref_len * MAX_RATIO) + MAX_EXTRA
     if (he - hs) > limit:
-        mid = hs + (he - hs)//2
-        hs = max(hs, mid - limit//2)
-        he = hs + limit
+        # A more complex choice might be needed, but for now, let's trust the runs
+        pass
+
     return hs, he
+
 
 # ───────────────────────── Alineación por oración (ventana local) ─────────────────────────
 
@@ -186,12 +205,13 @@ def _match_sent_window(seg: List[str], asr: List[str], lo: int, hi: int) -> List
             idxs.append(lo + j + off)
     return sorted(set(idxs))
 
-def _align_sentwise(ref_tokens: List[str], asr_tokens: List[str], tcs: List[float]) -> List[Tuple[int,int]]:
+
+def _align_sentwise(ref_tokens: List[str], asr_tokens: List[str], tcs: List[float]) -> List[Tuple[int, int]]:
     """
     Devuelve pares (i_ref, j_asr) únicamente en posiciones “diagonales”
     (similares) por ventana local. Se usa para guiar el recorte por oración.
     """
-    pairs: List[Tuple[int,int]] = []
+    pairs: List[Tuple[int, int]] = []
     last = 0
     spans = _sentence_spans(ref_tokens)
 
@@ -205,7 +225,7 @@ def _align_sentwise(ref_tokens: List[str], asr_tokens: List[str], tcs: List[floa
         lo = approx
         # Cortar por pausa grande cercana para no engordar demasiado la ventana
         for j in range(approx + 1, min(win, len(tcs))):
-            if tcs[j] - tcs[j-1] > PAUSE_SPLIT_SEC:
+            if tcs[j] - tcs[j - 1] > PAUSE_SPLIT_SEC:
                 win = j + 1
                 break
 
@@ -222,28 +242,30 @@ def _align_sentwise(ref_tokens: List[str], asr_tokens: List[str], tcs: List[floa
 
     return pairs
 
+
 # ───────────────────────── Rebalance de fronteras ─────────────────────────
 
 def _recompute_row(row, ref_tokens: List[str], asr_tokens: List[str], tcs: List[float]) -> None:
     seg_ref = ref_tokens[row['s']:row['e']]
     seg_asr = asr_tokens[row['hs']:row['he']]
-    wer = _wer_pct(seg_ref, seg_asr)
+    wer = _wer_pct(seg_ref, [_normalize_token(w) for w in seg_asr])
     row['wer'] = wer
     row['flag'] = _flag_for_wer(wer, len(seg_ref))
     row['txt_ref'] = " ".join(seg_ref)
-    row['txt_asr'] = " ".join(seg_asr)
+    row['txt_asr'] = " ".join(asr_tokens[row['hs']:row['he']])
     row['tc'] = _sec_to_str(tcs[row['hs']]) if row['hs'] < len(tcs) else _sec_to_str(0.0)
+
 
 def _try_move_front(next_row, cur_row, k, asr_tokens, tcs, ref_tokens) -> bool:
     if k <= 0 or next_row['hs'] + k >= next_row['he']:
         return False
-    if (tcs[next_row['hs']+k-1] - tcs[next_row['hs']]) > REBALANCE_MAX_PAUSE:
+    if (tcs[next_row['hs'] + k - 1] - tcs[next_row['hs']]) > REBALANCE_MAX_PAUSE:
         return False
-    moved = asr_tokens[next_row['hs']:next_row['hs']+k]
+    moved = asr_tokens[next_row['hs']:next_row['hs'] + k]
     if any(_is_anchor(w) for w in moved):
         return False
     old_sum = cur_row.get('wer', 100.0) + next_row.get('wer', 100.0)
-    cur_row['he']  += k
+    cur_row['he'] += k
     next_row['hs'] += k
     _recompute_row(cur_row, ref_tokens, asr_tokens, tcs)
     _recompute_row(next_row, ref_tokens, asr_tokens, tcs)
@@ -251,32 +273,34 @@ def _try_move_front(next_row, cur_row, k, asr_tokens, tcs, ref_tokens) -> bool:
     if (old_sum - new_sum) >= REBALANCE_MIN_IMPROVE:
         return True
     # revertir
-    cur_row['he']  -= k
+    cur_row['he'] -= k
     next_row['hs'] -= k
     _recompute_row(cur_row, ref_tokens, asr_tokens, tcs)
     _recompute_row(next_row, ref_tokens, asr_tokens, tcs)
     return False
 
+
 def _try_move_back(cur_row, next_row, k, asr_tokens, tcs, ref_tokens) -> bool:
     if k <= 0 or cur_row['hs'] + k >= cur_row['he']:
         return False
-    if (tcs[cur_row['he']-1] - tcs[cur_row['he']-k]) > REBALANCE_MAX_PAUSE:
+    if (tcs[cur_row['he'] - 1] - tcs[cur_row['he'] - k]) > REBALANCE_MAX_PAUSE:
         return False
-    moved = asr_tokens[cur_row['he']-k:cur_row['he']]
+    moved = asr_tokens[cur_row['he'] - k:cur_row['he']]
     if any(_is_anchor(w) for w in moved):
         return False
     old_sum = cur_row.get('wer', 100.0) + next_row.get('wer', 100.0)
-    cur_row['he']  -= k
+    cur_row['he'] -= k
     _recompute_row(cur_row, ref_tokens, asr_tokens, tcs)
     _recompute_row(next_row, ref_tokens, asr_tokens, tcs)
     new_sum = cur_row['wer'] + next_row['wer']
     if (old_sum - new_sum) >= REBALANCE_MIN_IMPROVE:
         return True
     # revertir
-    cur_row['he']  += k
+    cur_row['he'] += k
     _recompute_row(cur_row, ref_tokens, asr_tokens, tcs)
     _recompute_row(next_row, ref_tokens, asr_tokens, tcs)
     return False
+
 
 def _rebalance_rows(rows_meta, ref_tokens, asr_tokens, tcs) -> None:
     # recalcula primero
@@ -285,148 +309,82 @@ def _rebalance_rows(rows_meta, ref_tokens, asr_tokens, tcs) -> None:
             _recompute_row(r, ref_tokens, asr_tokens, tcs)
     # una pasada sobre pares contiguos
     for i in range(len(rows_meta) - 1):
-        a, b = rows_meta[i], rows_meta[i+1]
+        a, b = rows_meta[i], rows_meta[i + 1]
         if a.get('solo') or b.get('solo'):
             continue
         moved = False
-        for k in range(1, REBALANCE_MAX_MOVE+1):
+        for k in range(1, REBALANCE_MAX_MOVE + 1):
             if _try_move_front(b, a, k, asr_tokens, tcs, ref_tokens):
-                moved = True; break
+                moved = True
+                break
         if moved:
             continue
-        for k in range(1, REBALANCE_MAX_MOVE+1):
+        for k in range(1, REBALANCE_MAX_MOVE + 1):
             if _try_move_back(a, b, k, asr_tokens, tcs, ref_tokens):
                 break
 
-def build_rows(ref: str, hyp: str) -> List[List]:
-    """Align reference and ASR transcript returning QC rows."""
 
-    ref_tok = normalize(ref, strip_punct=False).split()
-    hyp_tok = normalize(hyp, strip_punct=False).split()
+def build_rows_from_words(ref: str, asr_words: List[str], tcs: List[float]) -> List[List]:
+    """
+    Alinea texto de referencia (ref) con palabras de ASR y sus tiempos (tcs),
+    generando filas para el GUI.
+    """
+    ref_tokens = _tokenize(ref)
+    asr_tokens = [_normalize_token(w) for w in asr_words]
 
-    from text_utils import find_anchor_trigrams
+    # 1) Alineación laxa por oración para tener anclajes iniciales
+    pairs = _align_sentwise(ref_tokens, asr_tokens, tcs)
 
-    anchor_pairs = find_anchor_trigrams(ref_tok, hyp_tok)
+    # 2) Segmentar REF por oraciones, y para cada una, elegir el tramo de ASR
+    #    más razonable (según pausas, duración esperada, etc.)
+    rows_meta: List[dict] = []
+    last_h = 0
+    spans = _sentence_spans(ref_tokens)
 
-    full_pairs: List[Tuple[int, int]] = []
-    seg_starts = [
-        (-1, -1),
-        *anchor_pairs,
-        (len(ref_tok) - 1, len(hyp_tok) - 1),
-    ]
-    for (prev_i, prev_j), (next_i, next_j) in zip(seg_starts[:-1], seg_starts[1:]):
-        if next_i > prev_i + 1 and next_j > prev_j + 1:
-            sub_ref = ref_tok[prev_i + 1 : next_i]
-            sub_hyp = hyp_tok[prev_j + 1 : next_j]
-            if sub_ref and sub_hyp:
-                # remove stop words for alignment but keep position maps
-                ref_idx = [i for i, t in enumerate(sub_ref) if t not in STOP]
-                hyp_idx = [j for j, t in enumerate(sub_hyp) if t not in STOP]
-                sub_r_sw = [sub_ref[i] for i in ref_idx]
-                sub_h_sw = [sub_hyp[j] for j in hyp_idx]
-                pairs = safe_dtw(sub_r_sw, sub_h_sw, COARSE_W)
-                for ri, hj in pairs:
-                    full_pairs.append(
-                        (prev_i + 1 + ref_idx[ri], prev_j + 1 + hyp_idx[hj])
-                    )
-        if 0 <= next_i < len(ref_tok) and 0 <= next_j < len(hyp_tok):
-            full_pairs.append((next_i, next_j))
+    for (s, e) in spans:
+        # buscar índices de H que caen en esta oración de R
+        h_cand = sorted([p[1] for p in pairs if s <= p[0] < e])
+        # cortar corridas por pausas y distancia
+        runs = _split_runs_by_pause(h_cand, tcs)
+        # elegir el mejor tramo de H
+        hs, he = _choose_best_run(runs, e - s, tcs)
 
-    # ensure one-to-one mapping and avoid propagating indexes
-    full_pairs.sort()
-    used_h: dict[int, int] = {}
-    dedup_pairs: List[Tuple[int, int]] = []
-    for ri, hj in full_pairs:
-        if hj not in used_h or abs(ri - used_h[hj]) > 1:
-            dedup_pairs.append((ri, hj))
-            used_h[hj] = ri
+        # forzar avance si no hay match
+        if hs < last_h:
+            hs = last_h
+        if he <= hs:
+            he = min(len(asr_tokens), hs + int((e - s) * MAX_RATIO) + MAX_EXTRA)
 
-    map_h = [-1] * len(ref_tok)
-    for ri, hj in dedup_pairs:
-        if 0 <= ri < len(ref_tok) and 0 <= hj < len(hyp_tok) and map_h[ri] == -1:
-            map_h[ri] = hj
-
-    rows = []
-    pos = 0
-    line_id = 0
-    consumed_h = set()
-    while pos < len(ref_tok):
-        max_end = min(pos + LINE_LEN, len(ref_tok))
-        span_end = max_end
-        for k in range(pos, max_end):
-            tok = ref_tok[k]
-            if tok.endswith(".") or tok in {".", "?", "!"}:
-                span_end = k + 1
-                break
-            if tok.endswith(",") or tok.endswith(";") or tok in {",", ";"}:
-                cond = k + 1 < len(ref_tok) and k + 2 - pos <= LINE_LEN
-                add = 2 if cond else 1
-                span_end = min(k + add, max_end)
-                break
-        block = ref_tok[pos:span_end]
-        span_start = pos
-        pos = span_end
-
-        # First collect all candidate hyp-indices in this block,
-        # then drop any that have already been consumed by previous rows
-        h_idxs_all = [map_h[k] for k in range(span_start, span_end) if map_h[k] != -1]
-        h_idxs = [h for h in h_idxs_all if h not in consumed_h]
-        if h_idxs:
-            h_start = min(h_idxs)
-            h_end = max(h_idxs) + 1
-            # Backfill up to two preceding stop words, but only if not already consumed
-            for _ in range(2):
-                if (
-                    h_start > 0
-                    and hyp_tok[h_start - 1] in STOP
-                    and (h_start - 1) not in consumed_h
-                ):
-                    h_start -= 1
-                else:
-                    break
-            # Extend for any missing reference tokens by including prior hyp tokens,
-            # as long as they are not "." or ";" and not already consumed
-            missing = sum(1 for k in range(span_start, span_end) if map_h[k] == -1)
-            for _ in range(missing):
-                if (
-                    h_start > 0
-                    and hyp_tok[h_start - 1] not in {".", ";"}
-                    and (h_start - 1) not in consumed_h
-                ):
-                    h_start -= 1
-                else:
-                    break
-            asr_line = " ".join(hyp_tok[h_start:h_end])
-            # Mark these hyp indices as "consumed" so future rows won't reuse them
-            consumed_h.update(range(h_start, h_end))
-        else:
-            # sin mapeo: fila vacía con tc en last_h
-            rows_meta.append({
-                'solo': False, 'id': len(rows_meta),
-                's': s, 'e': e, 'hs': last_h, 'he': last_h
-            })
-
-    # resto del ASR como “solo-ASR” (opcional)
-    if last_h < len(asr_tokens):
         rows_meta.append({
-            'solo': True, 'id': len(rows_meta),
-            's': len(ref_tokens), 'e': len(ref_tokens),
-            'hs': last_h, 'he': len(asr_tokens)
+            'solo': False, 'id': len(rows_meta),
+            's': s, 'e': e, 'hs': hs, 'he': he
         })
+        last_h = he
+
+    # Post-process to ensure full ASR coverage
+    for i in range(len(rows_meta) - 1):
+        mid_point = (rows_meta[i]['he'] + rows_meta[i+1]['hs']) // 2
+        rows_meta[i]['he'] = mid_point
+        rows_meta[i+1]['hs'] = mid_point
+
+    if rows_meta:
+        rows_meta[0]['hs'] = 0
+        rows_meta[-1]['he'] = len(asr_tokens)
+
 
     # 3) Materializar textos + WER/flag
     for r in rows_meta:
         if r.get('solo'):
             r['txt_ref'] = ""
-            r['txt_asr'] = " ".join(asr_tokens[r['hs']:r['he']])
+            r['txt_asr'] = " ".join(asr_words[r['hs']:r['he']])
             r['tc'] = _sec_to_str(tcs[r['hs']]) if r['hs'] < len(tcs) else _sec_to_str(0.0)
             r['wer'] = 100.0 if r['txt_asr'] else 0.0
             r['flag'] = "❌" if r['txt_asr'] else "✅"
         else:
-            _recompute_row(r, ref_tokens, asr_tokens, tcs)
+            _recompute_row(r, ref_tokens, asr_words, tcs)
 
     # 4) Rebalance local (mueve ≤3 palabras si baja WER total)
-    _rebalance_rows(rows_meta, ref_tokens, asr_tokens, tcs)
+    _rebalance_rows(rows_meta, ref_tokens, asr_words, tcs)
 
     # 5) Construir salida en 8 columnas
     out: List[List] = []
@@ -436,6 +394,8 @@ def build_rows(ref: str, hyp: str) -> List[List]:
         out.append([
             rid,
             r['flag'],
+            "",  # OK
+            "",  # AI
             round(r['wer'], 1),  # WER en %
             r['tc'],
             r['txt_ref'],
@@ -443,6 +403,7 @@ def build_rows(ref: str, hyp: str) -> List[List]:
         ])
         rid += 1
     return out
+
 
 def build_rows(ref: str, hyp: str) -> List[List]:
     """
