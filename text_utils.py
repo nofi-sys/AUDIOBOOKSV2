@@ -164,6 +164,21 @@ def token_equal(a: str, b: str) -> bool:
         and a == b[0]
     ):
         return True
+    # handle abbreviations like "r." vs "r"
+    if (
+        len(a) == 2
+        and a[1] == "."
+        and a[0].isalpha()
+        and len(b) == 1
+        and b == a[0]
+    ) or (
+        len(b) == 2
+        and b[1] == "."
+        and b[0].isalpha()
+        and len(a) == 1
+        and a == b[0]
+    ):
+        return True
     # consider punctuation words equivalent to symbols
     punct_map = {
         ".": {"punto", "puntos"},
