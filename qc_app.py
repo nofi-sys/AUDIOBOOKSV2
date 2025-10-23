@@ -69,8 +69,12 @@ def _parse_tc(text: str) -> str:
     return text
 
 
-def play_interval(path: str, start: float, end: float | None) -> None:
-    """Play ``path`` from ``start`` seconds until ``end`` using pygame."""
+def play_interval(path: str, start: float, end: float | None) -> str | None:
+    """Play ``path`` from ``start`` seconds until ``end`` using pygame.
+
+    Returns the ``after`` job id used to stop playback, or ``None`` if
+    no stop is scheduled.
+    """
 
     pygame.mixer.init()
     pygame.mixer.music.load(path)
@@ -78,7 +82,8 @@ def play_interval(path: str, start: float, end: float | None) -> None:
     if end is not None:
         dur = max(0.0, end - start)
         ms = int((dur + PLAYBACK_PAD) * 1000)
-        tk._default_root.after(ms, pygame.mixer.music.stop)
+        return tk._default_root.after(ms, pygame.mixer.music.stop)
+    return None
 
 
 # --------------------------------------------------------------------------------------
@@ -128,6 +133,7 @@ class App(tk.Tk):
         self._clip_start = 0.0
         self._clip_end: float | None = None
         self._clip_offset = 0.0  # offset within the current clip
+        self._play_job: str | None = None
 
         # Velocidad de reproducción
         self._play_rate: float = 1.0
@@ -1023,6 +1029,14 @@ class App(tk.Tk):
     def _play_current_clip(self):
         if self._clip_item and self.v_audio.get():
             start = self._clip_start + self._clip_offset
+            if self._play_job is not None:
+                try:
+                    tk._default_root.after_cancel(self._play_job)
+                except Exception:
+                    pass
+            self._play_job = play_interval(
+                self.v_audio.get(), start, self._clip_end
+            )
             # Asegurar que no queden reproducciones previas activas
             self._stop_all_audio()
             # Si se pidió velocidad >1x y no soportamos fast, degradar a 1x con aviso
@@ -1238,9 +1252,12 @@ class App(tk.Tk):
         st_asr.pack(side="left", fill="both", expand=True, padx=(5, 0))
 
         dur = (self._clip_end or self._clip_start) - self._clip_start
-        scale = ttk.Scale(win, from_=0.0, to=max(dur, 0.0), orient="horizontal", length=400)
+        scale_frame = ttk.Frame(win)
+        scale_frame.pack(fill="x", padx=10, pady=(0, 10))
+        scale = ttk.Scale(scale_frame, from_=0.0, to=max(dur, 0.0), orient="horizontal", length=400)
         scale.set(self._clip_offset)
-        scale.pack(fill="x", padx=10, pady=(0, 10))
+        scale.pack(side="left", fill="x", expand=True)
+        ttk.Label(scale_frame, text=f"{dur:.1f}s").pack(side="right", padx=(6, 0))
 
         def _seek(event=None):
             self._seek_clip(float(scale.get()))
@@ -1248,6 +1265,10 @@ class App(tk.Tk):
         scale.bind("<ButtonRelease-1>", _seek)
 
         def _update():
+            if pygame.mixer.get_init() and pygame.mixer.music.get_busy():
+                pos = pygame.mixer.music.get_pos()
+                if pos >= 0:
+                    scale.set(self._clip_offset + pos / 1000)
             if getattr(self, "_audio_engine", "") == "ffplay":
                 if self._rate_wall_start is not None and self._rate_pos_start is not None:
                     wall_elapsed = time.monotonic() - self._rate_wall_start
