@@ -83,6 +83,7 @@ def _align_chunk(j_words: List[str], c_words: List[str]) -> List[int]:
             for k in range(i2 - i1):
                 mapping[i1 + k] = j1 + k
     last = -1
+    prev_idx = -1
     for idx, val in enumerate(mapping):
         if val != -1:
             if last == -1:

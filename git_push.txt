@@ -1,0 +1,32 @@
+﻿## Subir cambios a GitHub
+
+1. Verifica el estado actual del repo:
+   ```bash
+   git status
+   ```
+2. Revisa y agrega los archivos que quieras incluir:
+   ```bash
+   git add <ruta>    # usa `git add .` para todo
+   ```
+3. Haz el commit con un mensaje descriptivo:
+   ```bash
+   git commit -m "Mensaje del cambio"
+   ```
+4. Asegúrate de estar en la rama correcta y sincronízala:
+   ```bash
+   git branch
+   git pull --rebase
+   ```
+5. Sube los cambios normalmente:
+   ```bash
+   git push origin <rama>
+   ```
+
+### Forzar el push (solo si sabes que sobrescribirás el remoto)
+
+1. Sigue los pasos anteriores hasta el commit.
+2. Ejecuta el push forzado:
+   ```bash
+   git push --force origin <rama>
+   ```
+   Esto reemplaza el historial remoto con el local, así que coordina con el equipo antes de usarlo.

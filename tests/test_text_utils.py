@@ -36,3 +36,10 @@ def test_extract_word_list_basic():
     words = text_utils.extract_word_list(txt)
     # 'raro' should appear before common stop words
     assert words[0] == "hola" and "raro" in words
+
+
+def test_extract_word_list_proper_names():
+    txt = "El senor Echeverriano saludo a Maria y Jose."  # keep accents normalized
+    words = text_utils.extract_word_list(txt, max_words=10)
+    assert "echeverriano" in words
+    assert "maria" in words

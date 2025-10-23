@@ -1,12 +1,13 @@
 # word_timed_transcriber.py  (versión 2025-06-19)
 from __future__ import annotations
-import argparse, csv, os, queue, subprocess, sys, tempfile, unicodedata
+import argparse, csv, os, queue, subprocess, sys, tempfile
 from pathlib import Path
 from threading import Thread
 from time import monotonic
 
 from tqdm.auto import tqdm
 from faster_whisper import WhisperModel
+import torch
 
 # ───────────────────── utilidades básicas ─────────────────────
 def have_ffmpeg() -> bool:
