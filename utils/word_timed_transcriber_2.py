@@ -1,12 +1,13 @@
 # word_timed_transcriber.py  (versión 2025-06-19)
 from __future__ import annotations
-import argparse, csv, os, queue, subprocess, sys, tempfile, unicodedata
+import argparse, csv, os, queue, subprocess, sys, tempfile
 from pathlib import Path
 from threading import Thread
 from time import monotonic
 
 from tqdm.auto import tqdm
 from faster_whisper import WhisperModel
+import torch
 
 # ───────────────────── utilidades básicas ─────────────────────
 def have_ffmpeg() -> bool:
@@ -59,6 +60,9 @@ def transcribe_audio(
     path: Path,
     test_mode: bool = False,
     use_vad: bool = True,
+    *,
+    script_path: str | None = None,
+    model_name: str = "large-v3",
     q: "queue.Queue[str]" | None = None,
 ):
     tmp: Path | None = None
@@ -70,13 +74,32 @@ def transcribe_audio(
 
     duration = _probe_duration(src)
 
-    model = WhisperModel("base", device="auto", compute_type="int8")
+    hotwords = None
+    initial_prompt = None
+    if script_path:
+        try:
+            from text_utils import read_script, extract_word_list
+
+            script_text = read_script(script_path)
+            tokens = script_text.split()
+            initial_prompt = " ".join(tokens[:200]) if tokens else None
+            words = extract_word_list(script_text)
+            if words:
+                hotwords = " ".join(words)
+        except Exception:
+            pass
+
+    model = WhisperModel(model_name, device="auto", compute_type="int8")
 
     seg_gen, _info = model.transcribe(
         str(src),
         word_timestamps=True,
-        beam_size=1,
+        beam_size=7,
         vad_filter=use_vad,
+        vad_parameters=dict(min_silence_duration_ms=300),
+        temperature=0.0,
+        hotwords=hotwords,
+        initial_prompt=initial_prompt,
     )
 
     words: list[tuple[float, str]] = []
@@ -227,9 +250,17 @@ def cli_main():
     ap.add_argument("audio", help="file to transcribe")
     ap.add_argument("--test", action="store_true", help="recorta a 60 s")
     ap.add_argument("--no-vad", action="store_true", help="desactiva filtro VAD")
+    ap.add_argument("--script", help="guion para initial_prompt", default=None)
+    ap.add_argument("--model", default="large-v3", help="tamano del modelo")
     args = ap.parse_args()
 
-    words = transcribe_audio(Path(args.audio), test_mode=args.test, use_vad=not args.no_vad)
+    words = transcribe_audio(
+        Path(args.audio),
+        test_mode=args.test,
+        use_vad=not args.no_vad,
+        script_path=args.script,
+        model_name=args.model,
+    )
     out = Path(args.audio).with_suffix(".words.csv")
     write_csv(out, words)
     print("CSV guardado en", out)

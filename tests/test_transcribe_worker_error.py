@@ -17,9 +17,9 @@ def test_transcribe_worker_systemexit(monkeypatch, mod_name):
     mod = importlib.import_module(mod_name)
     app = mod.App()
     try:
-        def fake_transcribe_file(*a, **k):
+        def fake_transcribe(*a, **k):
             raise SystemExit("fail")
-        monkeypatch.setattr("transcriber.transcribe_file", fake_transcribe_file)
+        monkeypatch.setattr("transcriber.transcribe_word_csv", fake_transcribe)
         called = {}
         def fake_show_error(title, exc):
             called["msg"] = str(exc)

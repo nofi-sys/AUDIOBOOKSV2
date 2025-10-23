@@ -1,0 +1,2363 @@
+{
+  "segments": [
+    {
+      "seg_start": 180.0,
+      "seg_end": 189.68,
+      "text": " con ambas en su role de historiadoras y qué es lo que se se preguntar al lector se  del compromiso de las autoras con la rigorosidad del",
+      "words": [
+        {
+          "word": " con",
+          "start": 180.0,
+          "end": 180.5
+        },
+        {
+          "word": " ambas",
+          "start": 180.5,
+          "end": 180.98
+        },
+        {
+          "word": " en",
+          "start": 180.98,
+          "end": 181.26
+        },
+        {
+          "word": " su",
+          "start": 181.26,
+          "end": 181.38
+        },
+        {
+          "word": " role",
+          "start": 181.38,
+          "end": 181.56
+        },
+        {
+          "word": " de",
+          "start": 181.56,
+          "end": 181.8
+        },
+        {
+          "word": " historiadoras",
+          "start": 181.8,
+          "end": 182.58
+        },
+        {
+          "word": " y",
+          "start": 182.58,
+          "end": 183.02
+        },
+        {
+          "word": " qué",
+          "start": 183.02,
+          "end": 183.24
+        },
+        {
+          "word": " es",
+          "start": 183.24,
+          "end": 183.32
+        },
+        {
+          "word": " lo",
+          "start": 183.32,
+          "end": 183.46
+        },
+        {
+          "word": " que",
+          "start": 183.46,
+          "end": 183.62
+        },
+        {
+          "word": " se",
+          "start": 183.62,
+          "end": 184.18
+        },
+        {
+          "word": " se",
+          "start": 184.18,
+          "end": 184.36
+        },
+        {
+          "word": " preguntar",
+          "start": 184.36,
+          "end": 184.68
+        },
+        {
+          "word": " al",
+          "start": 184.68,
+          "end": 184.8
+        },
+        {
+          "word": " lector",
+          "start": 184.8,
+          "end": 185.16
+        },
+        {
+          "word": " se",
+          "start": 185.16,
+          "end": 186.16
+        },
+        {
+          "word": "  del",
+          "start": 186.16,
+          "end": 186.58
+        },
+        {
+          "word": " compromiso",
+          "start": 186.58,
+          "end": 187.22
+        },
+        {
+          "word": " de",
+          "start": 187.22,
+          "end": 187.38
+        },
+        {
+          "word": " las",
+          "start": 187.38,
+          "end": 187.66
+        },
+        {
+          "word": " autoras",
+          "start": 187.66,
+          "end": 188.16
+        },
+        {
+          "word": " con",
+          "start": 188.16,
+          "end": 188.54
+        },
+        {
+          "word": " la",
+          "start": 188.54,
+          "end": 188.82
+        },
+        {
+          "word": " rigorosidad",
+          "start": 188.82,
+          "end": 189.46
+        },
+        {
+          "word": " del",
+          "start": 189.46,
+          "end": 189.68
+        }
+      ]
+    },
+    {
+      "seg_start": 189.68,
+      "seg_end": 196.32,
+      "text": " contenido se de les mero y de edicación con la que buscan los hechos que redactan se de su cariño y su",
+      "words": [
+        {
+          "word": " contenido",
+          "start": 189.68,
+          "end": 190.16
+        },
+        {
+          "word": " se",
+          "start": 190.16,
+          "end": 190.82
+        },
+        {
+          "word": " de",
+          "start": 190.82,
+          "end": 190.96
+        },
+        {
+          "word": " les",
+          "start": 190.96,
+          "end": 191.12
+        },
+        {
+          "word": " mero",
+          "start": 191.12,
+          "end": 191.46
+        },
+        {
+          "word": " y",
+          "start": 191.46,
+          "end": 191.7
+        },
+        {
+          "word": " de",
+          "start": 191.7,
+          "end": 191.76
+        },
+        {
+          "word": " edicación",
+          "start": 191.76,
+          "end": 192.36
+        },
+        {
+          "word": " con",
+          "start": 192.36,
+          "end": 192.62
+        },
+        {
+          "word": " la",
+          "start": 192.62,
+          "end": 192.76
+        },
+        {
+          "word": " que",
+          "start": 192.76,
+          "end": 192.92
+        },
+        {
+          "word": " buscan",
+          "start": 192.92,
+          "end": 193.24
+        },
+        {
+          "word": " los",
+          "start": 193.24,
+          "end": 193.56
+        },
+        {
+          "word": " hechos",
+          "start": 193.56,
+          "end": 194.0
+        },
+        {
+          "word": " que",
+          "start": 194.0,
+          "end": 194.28
+        },
+        {
+          "word": " redactan",
+          "start": 194.28,
+          "end": 194.84
+        },
+        {
+          "word": " se",
+          "start": 194.84,
+          "end": 195.08
+        },
+        {
+          "word": " de",
+          "start": 195.08,
+          "end": 195.2
+        },
+        {
+          "word": " su",
+          "start": 195.2,
+          "end": 195.32
+        },
+        {
+          "word": " cariño",
+          "start": 195.32,
+          "end": 195.8
+        },
+        {
+          "word": " y",
+          "start": 195.8,
+          "end": 196.24
+        },
+        {
+          "word": " su",
+          "start": 196.24,
+          "end": 196.32
+        }
+      ]
+    },
+    {
+      "seg_start": 196.32,
+      "seg_end": 202.44,
+      "text": " pasión por la historia se del respeto por el vecino y por los distintos colaboradores que han nutrido este",
+      "words": [
+        {
+          "word": " pasión",
+          "start": 196.32,
+          "end": 196.62
+        },
+        {
+          "word": " por",
+          "start": 196.62,
+          "end": 196.84
+        },
+        {
+          "word": " la",
+          "start": 196.84,
+          "end": 196.92000000000002
+        },
+        {
+          "word": " historia",
+          "start": 196.92000000000002,
+          "end": 197.4
+        },
+        {
+          "word": " se",
+          "start": 197.4,
+          "end": 197.78
+        },
+        {
+          "word": " del",
+          "start": 197.78,
+          "end": 198.04
+        },
+        {
+          "word": " respeto",
+          "start": 198.04,
+          "end": 198.46
+        },
+        {
+          "word": " por",
+          "start": 198.46,
+          "end": 198.66
+        },
+        {
+          "word": " el",
+          "start": 198.66,
+          "end": 198.74
+        },
+        {
+          "word": " vecino",
+          "start": 198.74,
+          "end": 199.2
+        },
+        {
+          "word": " y",
+          "start": 199.2,
+          "end": 199.57999999999998
+        },
+        {
+          "word": " por",
+          "start": 199.57999999999998,
+          "end": 199.7
+        },
+        {
+          "word": " los",
+          "start": 199.7,
+          "end": 200.02
+        },
+        {
+          "word": " distintos",
+          "start": 200.02,
+          "end": 200.4
+        },
+        {
+          "word": " colaboradores",
+          "start": 200.4,
+          "end": 201.28
+        },
+        {
+          "word": " que",
+          "start": 201.28,
+          "end": 201.64
+        },
+        {
+          "word": " han",
+          "start": 201.64,
+          "end": 201.78
+        },
+        {
+          "word": " nutrido",
+          "start": 201.78,
+          "end": 202.16
+        },
+        {
+          "word": " este",
+          "start": 202.16,
+          "end": 202.44
+        }
+      ]
+    },
+    {
+      "seg_start": 202.44,
+      "seg_end": 217.64,
+      "text": " supuestoEPdit el proyecto se ha de modo que en un vehicle bombido es actual y lo構o por el recozo, se dirigidooso, se concordido lo que laίας de ellos es v exchange en su élo no se corro en víctope de lo primer apprentice era correcto con el desemple de 1400 con jedoch significación reunirémente hay Robert Sc DNA , se TRSBC, a usted y Sunny Key Cardom y tratado de la",
+      "words": [
+        {
+          "word": " supuestoEPdit",
+          "start": 202.44,
+          "end": 203.0
+        },
+        {
+          "word": " el",
+          "start": 203.0,
+          "end": 203.0
+        },
+        {
+          "word": " proyecto",
+          "start": 203.0,
+          "end": 203.0
+        },
+        {
+          "word": " se",
+          "start": 203.0,
+          "end": 203.3
+        },
+        {
+          "word": " ha",
+          "start": 203.3,
+          "end": 203.6
+        },
+        {
+          "word": " de",
+          "start": 203.6,
+          "end": 203.6
+        },
+        {
+          "word": " modo",
+          "start": 203.6,
+          "end": 203.94
+        },
+        {
+          "word": " que",
+          "start": 203.94,
+          "end": 204.94
+        },
+        {
+          "word": " en",
+          "start": 204.94,
+          "end": 205.68
+        },
+        {
+          "word": " un",
+          "start": 205.68,
+          "end": 205.82
+        },
+        {
+          "word": " vehicle",
+          "start": 205.82,
+          "end": 205.9
+        },
+        {
+          "word": " bombido",
+          "start": 205.9,
+          "end": 205.9
+        },
+        {
+          "word": " es",
+          "start": 205.9,
+          "end": 205.9
+        },
+        {
+          "word": " actual",
+          "start": 205.9,
+          "end": 205.9
+        },
+        {
+          "word": " y",
+          "start": 205.9,
+          "end": 206.48
+        },
+        {
+          "word": " lo構o",
+          "start": 206.48,
+          "end": 208.6
+        },
+        {
+          "word": " por",
+          "start": 208.6,
+          "end": 208.8
+        },
+        {
+          "word": " el",
+          "start": 208.8,
+          "end": 208.8
+        },
+        {
+          "word": " recozo,",
+          "start": 208.8,
+          "end": 208.8
+        },
+        {
+          "word": " se",
+          "start": 208.8,
+          "end": 208.8
+        },
+        {
+          "word": " dirigidooso,",
+          "start": 208.8,
+          "end": 208.8
+        },
+        {
+          "word": " se",
+          "start": 208.8,
+          "end": 208.8
+        },
+        {
+          "word": " concordido",
+          "start": 208.8,
+          "end": 208.8
+        },
+        {
+          "word": " lo",
+          "start": 208.8,
+          "end": 208.8
+        },
+        {
+          "word": " que",
+          "start": 208.8,
+          "end": 208.8
+        },
+        {
+          "word": " laίας",
+          "start": 208.8,
+          "end": 208.8
+        },
+        {
+          "word": " de",
+          "start": 208.8,
+          "end": 209.28
+        },
+        {
+          "word": " ellos",
+          "start": 209.28,
+          "end": 209.28
+        },
+        {
+          "word": " es",
+          "start": 209.28,
+          "end": 209.28
+        },
+        {
+          "word": " v",
+          "start": 209.28,
+          "end": 209.28
+        },
+        {
+          "word": " exchange",
+          "start": 209.28,
+          "end": 209.28
+        },
+        {
+          "word": " en",
+          "start": 209.28,
+          "end": 209.28
+        },
+        {
+          "word": " su",
+          "start": 209.28,
+          "end": 209.28
+        },
+        {
+          "word": " élo",
+          "start": 209.28,
+          "end": 209.28
+        },
+        {
+          "word": " no",
+          "start": 209.28,
+          "end": 209.28
+        },
+        {
+          "word": " se",
+          "start": 209.28,
+          "end": 210.57999999999998
+        },
+        {
+          "word": " corro",
+          "start": 210.57999999999998,
+          "end": 210.64
+        },
+        {
+          "word": " en",
+          "start": 210.64,
+          "end": 210.64
+        },
+        {
+          "word": " víctope",
+          "start": 210.64,
+          "end": 210.64
+        },
+        {
+          "word": " de",
+          "start": 210.64,
+          "end": 210.64
+        },
+        {
+          "word": " lo",
+          "start": 210.64,
+          "end": 210.64
+        },
+        {
+          "word": " primer",
+          "start": 210.64,
+          "end": 210.64
+        },
+        {
+          "word": " apprentice",
+          "start": 210.64,
+          "end": 210.64
+        },
+        {
+          "word": " era",
+          "start": 210.64,
+          "end": 210.64
+        },
+        {
+          "word": " correcto",
+          "start": 210.64,
+          "end": 210.64
+        },
+        {
+          "word": " con",
+          "start": 210.64,
+          "end": 210.64
+        },
+        {
+          "word": " el",
+          "start": 210.64,
+          "end": 210.64
+        },
+        {
+          "word": " desemple",
+          "start": 210.64,
+          "end": 210.64
+        },
+        {
+          "word": " de",
+          "start": 210.64,
+          "end": 210.64
+        },
+        {
+          "word": " 1400",
+          "start": 210.64,
+          "end": 210.64
+        },
+        {
+          "word": " con",
+          "start": 210.64,
+          "end": 210.64
+        },
+        {
+          "word": " jedoch",
+          "start": 210.64,
+          "end": 210.64
+        },
+        {
+          "word": " significación",
+          "start": 210.64,
+          "end": 212.6
+        },
+        {
+          "word": " reunirémente",
+          "start": 212.6,
+          "end": 214.48
+        },
+        {
+          "word": " hay",
+          "start": 214.48,
+          "end": 214.48
+        },
+        {
+          "word": " Robert",
+          "start": 214.48,
+          "end": 214.48
+        },
+        {
+          "word": " Sc",
+          "start": 214.48,
+          "end": 214.48
+        },
+        {
+          "word": " DNA",
+          "start": 214.48,
+          "end": 214.48
+        },
+        {
+          "word": " ,",
+          "start": 214.48,
+          "end": 214.48
+        },
+        {
+          "word": " se",
+          "start": 214.48,
+          "end": 214.82
+        },
+        {
+          "word": " TRSBC,",
+          "start": 214.82,
+          "end": 214.82
+        },
+        {
+          "word": " a",
+          "start": 216.0,
+          "end": 216.74
+        },
+        {
+          "word": " usted",
+          "start": 216.74,
+          "end": 217.64
+        },
+        {
+          "word": " y",
+          "start": 217.64,
+          "end": 217.64
+        },
+        {
+          "word": " Sunny",
+          "start": 217.64,
+          "end": 217.64
+        },
+        {
+          "word": " Key",
+          "start": 217.64,
+          "end": 217.64
+        },
+        {
+          "word": " Cardom",
+          "start": 217.64,
+          "end": 217.64
+        },
+        {
+          "word": " y",
+          "start": 217.64,
+          "end": 217.64
+        },
+        {
+          "word": " tratado",
+          "start": 217.64,
+          "end": 217.64
+        },
+        {
+          "word": " de",
+          "start": 217.64,
+          "end": 217.64
+        },
+        {
+          "word": " la",
+          "start": 217.64,
+          "end": 217.64
+        }
+      ]
+    },
+    {
+      "seg_start": 220.07999999999998,
+      "seg_end": 226.85,
+      "text": " transcurso de recién organiz dumplings con animas de co���cción y un conoblega cultural que es lo recomendado en un general y unión lo que cualquier",
+      "words": [
+        {
+          "word": " transcurso",
+          "start": 220.07999999999998,
+          "end": 221.22
+        },
+        {
+          "word": " de",
+          "start": 221.22,
+          "end": 221.22
+        },
+        {
+          "word": " recién",
+          "start": 221.22,
+          "end": 221.22
+        },
+        {
+          "word": " organiz",
+          "start": 221.22,
+          "end": 221.22
+        },
+        {
+          "word": " dumplings",
+          "start": 221.22,
+          "end": 221.22
+        },
+        {
+          "word": " con",
+          "start": 221.22,
+          "end": 221.44
+        },
+        {
+          "word": " animas",
+          "start": 221.44,
+          "end": 222.9
+        },
+        {
+          "word": " de",
+          "start": 222.9,
+          "end": 223.12
+        },
+        {
+          "word": " co���cción",
+          "start": 223.12,
+          "end": 223.12
+        },
+        {
+          "word": " y",
+          "start": 223.12,
+          "end": 223.12
+        },
+        {
+          "word": " un",
+          "start": 223.12,
+          "end": 223.44
+        },
+        {
+          "word": " conoblega",
+          "start": 223.44,
+          "end": 224.76
+        },
+        {
+          "word": " cultural",
+          "start": 224.76,
+          "end": 226.16
+        },
+        {
+          "word": " que",
+          "start": 226.35,
+          "end": 226.35
+        },
+        {
+          "word": " es",
+          "start": 226.35,
+          "end": 226.35
+        },
+        {
+          "word": " lo",
+          "start": 226.35,
+          "end": 226.35
+        },
+        {
+          "word": " recomendado",
+          "start": 226.35,
+          "end": 226.37
+        },
+        {
+          "word": " en",
+          "start": 226.37,
+          "end": 226.37
+        },
+        {
+          "word": " un",
+          "start": 226.37,
+          "end": 226.37
+        },
+        {
+          "word": " general",
+          "start": 226.37,
+          "end": 226.37
+        },
+        {
+          "word": " y",
+          "start": 226.37,
+          "end": 226.37
+        },
+        {
+          "word": " unión",
+          "start": 226.37,
+          "end": 226.37
+        },
+        {
+          "word": " lo",
+          "start": 226.37,
+          "end": 226.37
+        },
+        {
+          "word": " que",
+          "start": 226.37,
+          "end": 226.55
+        },
+        {
+          "word": " cualquier",
+          "start": 226.55,
+          "end": 226.85
+        }
+      ]
+    },
+    {
+      "seg_start": 226.85,
+      "seg_end": 231.75,
+      "text": " esto no becausectleo crabso de lo niña puede del de co seidables, no se queda listso y dice que obs private actubers de de tiempo con teamo",
+      "words": [
+        {
+          "word": " esto",
+          "start": 226.85,
+          "end": 226.85
+        },
+        {
+          "word": " no",
+          "start": 226.85,
+          "end": 226.85
+        },
+        {
+          "word": " becausectleo",
+          "start": 226.85,
+          "end": 226.85
+        },
+        {
+          "word": " crabso",
+          "start": 226.85,
+          "end": 226.85
+        },
+        {
+          "word": " de",
+          "start": 226.85,
+          "end": 226.85
+        },
+        {
+          "word": " lo",
+          "start": 226.85,
+          "end": 226.85
+        },
+        {
+          "word": " niña",
+          "start": 226.85,
+          "end": 226.85
+        },
+        {
+          "word": " puede",
+          "start": 226.85,
+          "end": 226.85
+        },
+        {
+          "word": " del",
+          "start": 226.85,
+          "end": 226.85
+        },
+        {
+          "word": " de",
+          "start": 226.85,
+          "end": 226.85
+        },
+        {
+          "word": " co",
+          "start": 226.85,
+          "end": 226.85
+        },
+        {
+          "word": " seidables,",
+          "start": 226.85,
+          "end": 226.85
+        },
+        {
+          "word": " no",
+          "start": 226.85,
+          "end": 226.85
+        },
+        {
+          "word": " se",
+          "start": 226.85,
+          "end": 226.85
+        },
+        {
+          "word": " queda",
+          "start": 226.85,
+          "end": 226.85
+        },
+        {
+          "word": " listso",
+          "start": 226.85,
+          "end": 226.85
+        },
+        {
+          "word": " y",
+          "start": 226.85,
+          "end": 226.85
+        },
+        {
+          "word": " dice",
+          "start": 226.85,
+          "end": 228.53
+        },
+        {
+          "word": " que",
+          "start": 228.53,
+          "end": 229.09
+        },
+        {
+          "word": " obs",
+          "start": 229.09,
+          "end": 230.97
+        },
+        {
+          "word": " private",
+          "start": 230.97,
+          "end": 230.97
+        },
+        {
+          "word": " actubers",
+          "start": 230.97,
+          "end": 230.97
+        },
+        {
+          "word": " de",
+          "start": 230.97,
+          "end": 230.97
+        },
+        {
+          "word": " de",
+          "start": 230.97,
+          "end": 230.97
+        },
+        {
+          "word": " tiempo",
+          "start": 230.97,
+          "end": 230.97
+        },
+        {
+          "word": " con",
+          "start": 230.97,
+          "end": 230.97
+        },
+        {
+          "word": " teamo",
+          "start": 230.97,
+          "end": 231.75
+        }
+      ]
+    },
+    {
+      "seg_start": 231.75,
+      "seg_end": 245.72,
+      "text": " capítulos gracias Liliana y Silvia por todo esto y gracias también por hacerme participe con estas simples líneas de su amada creación con cariño gaviel treus indice",
+      "words": [
+        {
+          "word": " capítulos",
+          "start": 231.75,
+          "end": 232.39
+        },
+        {
+          "word": " gracias",
+          "start": 232.39,
+          "end": 233.23
+        },
+        {
+          "word": " Liliana",
+          "start": 233.23,
+          "end": 234.13
+        },
+        {
+          "word": " y",
+          "start": 234.13,
+          "end": 234.39
+        },
+        {
+          "word": " Silvia",
+          "start": 234.39,
+          "end": 234.71
+        },
+        {
+          "word": " por",
+          "start": 234.71,
+          "end": 234.95
+        },
+        {
+          "word": " todo",
+          "start": 234.95,
+          "end": 235.13
+        },
+        {
+          "word": " esto",
+          "start": 235.13,
+          "end": 235.57
+        },
+        {
+          "word": " y",
+          "start": 235.57,
+          "end": 235.91
+        },
+        {
+          "word": " gracias",
+          "start": 235.91,
+          "end": 236.13
+        },
+        {
+          "word": " también",
+          "start": 236.13,
+          "end": 236.61
+        },
+        {
+          "word": " por",
+          "start": 236.61,
+          "end": 236.99
+        },
+        {
+          "word": " hacerme",
+          "start": 236.99,
+          "end": 237.32999999999998
+        },
+        {
+          "word": " participe",
+          "start": 237.32999999999998,
+          "end": 238.23
+        },
+        {
+          "word": " con",
+          "start": 238.23,
+          "end": 238.51
+        },
+        {
+          "word": " estas",
+          "start": 238.51,
+          "end": 238.73
+        },
+        {
+          "word": " simples",
+          "start": 238.73,
+          "end": 239.19
+        },
+        {
+          "word": " líneas",
+          "start": 239.19,
+          "end": 239.91
+        },
+        {
+          "word": " de",
+          "start": 239.91,
+          "end": 240.19
+        },
+        {
+          "word": " su",
+          "start": 240.19,
+          "end": 240.47
+        },
+        {
+          "word": " amada",
+          "start": 240.47,
+          "end": 240.82999999999998
+        },
+        {
+          "word": " creación",
+          "start": 240.82999999999998,
+          "end": 241.57
+        },
+        {
+          "word": " con",
+          "start": 241.57,
+          "end": 242.01
+        },
+        {
+          "word": " cariño",
+          "start": 242.01,
+          "end": 242.79
+        },
+        {
+          "word": " gaviel",
+          "start": 242.79,
+          "end": 243.32999999999998
+        },
+        {
+          "word": " treus",
+          "start": 243.32999999999998,
+          "end": 244.43
+        },
+        {
+          "word": " indice",
+          "start": 244.88,
+          "end": 245.72
+        }
+      ]
+    },
+    {
+      "seg_start": 246.92000000000002,
+      "seg_end": 256.1,
+      "text": " prólogo capítulo uno bajo el signo radical capítulo dos la restauración conservadora capítulo tres la década",
+      "words": [
+        {
+          "word": " prólogo",
+          "start": 246.92000000000002,
+          "end": 247.8
+        },
+        {
+          "word": " capítulo",
+          "start": 247.8,
+          "end": 248.64
+        },
+        {
+          "word": " uno",
+          "start": 248.64,
+          "end": 249.22
+        },
+        {
+          "word": " bajo",
+          "start": 249.22,
+          "end": 249.64
+        },
+        {
+          "word": " el",
+          "start": 249.64,
+          "end": 249.8
+        },
+        {
+          "word": " signo",
+          "start": 249.8,
+          "end": 250.06
+        },
+        {
+          "word": " radical",
+          "start": 250.06,
+          "end": 250.48000000000002
+        },
+        {
+          "word": " capítulo",
+          "start": 250.48000000000002,
+          "end": 251.6
+        },
+        {
+          "word": " dos",
+          "start": 251.6,
+          "end": 252.07999999999998
+        },
+        {
+          "word": " la",
+          "start": 252.07999999999998,
+          "end": 252.45999999999998
+        },
+        {
+          "word": " restauración",
+          "start": 252.45999999999998,
+          "end": 253.16
+        },
+        {
+          "word": " conservadora",
+          "start": 253.16,
+          "end": 254.06
+        },
+        {
+          "word": " capítulo",
+          "start": 254.06,
+          "end": 254.84
+        },
+        {
+          "word": " tres",
+          "start": 254.84,
+          "end": 255.34
+        },
+        {
+          "word": " la",
+          "start": 255.34,
+          "end": 255.72
+        },
+        {
+          "word": " década",
+          "start": 255.72,
+          "end": 256.1
+        }
+      ]
+    },
+    {
+      "seg_start": 256.1,
+      "seg_end": 267.06,
+      "text": " peronista capítulo cuatro la democracia condicionada capítulo cinco las rebeldias juveniles y los viejos liderazgos capítulo 6 la última dictadura",
+      "words": [
+        {
+          "word": " peronista",
+          "start": 256.1,
+          "end": 256.78
+        },
+        {
+          "word": " capítulo",
+          "start": 256.78,
+          "end": 257.56
+        },
+        {
+          "word": " cuatro",
+          "start": 257.56,
+          "end": 258.12
+        },
+        {
+          "word": " la",
+          "start": 258.12,
+          "end": 258.5
+        },
+        {
+          "word": " democracia",
+          "start": 258.5,
+          "end": 259.02
+        },
+        {
+          "word": " condicionada",
+          "start": 259.02,
+          "end": 260.14
+        },
+        {
+          "word": " capítulo",
+          "start": 260.14,
+          "end": 260.68
+        },
+        {
+          "word": " cinco",
+          "start": 260.68,
+          "end": 261.2
+        },
+        {
+          "word": " las",
+          "start": 261.2,
+          "end": 261.72
+        },
+        {
+          "word": " rebeldias",
+          "start": 261.72,
+          "end": 262.22
+        },
+        {
+          "word": " juveniles",
+          "start": 262.22,
+          "end": 262.74
+        },
+        {
+          "word": " y",
+          "start": 262.74,
+          "end": 263.06
+        },
+        {
+          "word": " los",
+          "start": 263.06,
+          "end": 263.18
+        },
+        {
+          "word": " viejos",
+          "start": 263.18,
+          "end": 263.64
+        },
+        {
+          "word": " liderazgos",
+          "start": 263.64,
+          "end": 264.7
+        },
+        {
+          "word": " capítulo",
+          "start": 264.7,
+          "end": 265.22
+        },
+        {
+          "word": " 6",
+          "start": 265.22,
+          "end": 265.64
+        },
+        {
+          "word": " la",
+          "start": 265.64,
+          "end": 266.06
+        },
+        {
+          "word": " última",
+          "start": 266.06,
+          "end": 266.38
+        },
+        {
+          "word": " dictadura",
+          "start": 266.38,
+          "end": 267.06
+        }
+      ]
+    },
+    {
+      "seg_start": 267.06,
+      "seg_end": 276.42,
+      "text": " capítulo 7 la recuperación democrática prólogo a la primera edición la memoria es una tributo de los pueblos y estarea del historia de",
+      "words": [
+        {
+          "word": " capítulo",
+          "start": 267.06,
+          "end": 267.98
+        },
+        {
+          "word": " 7",
+          "start": 267.98,
+          "end": 268.36
+        },
+        {
+          "word": " la",
+          "start": 268.36,
+          "end": 268.88
+        },
+        {
+          "word": " recuperación",
+          "start": 268.88,
+          "end": 269.56
+        },
+        {
+          "word": " democrática",
+          "start": 269.56,
+          "end": 270.4
+        },
+        {
+          "word": " prólogo",
+          "start": 270.4,
+          "end": 271.06
+        },
+        {
+          "word": " a",
+          "start": 271.06,
+          "end": 271.28
+        },
+        {
+          "word": " la",
+          "start": 271.28,
+          "end": 271.38
+        },
+        {
+          "word": " primera",
+          "start": 271.38,
+          "end": 271.64
+        },
+        {
+          "word": " edición",
+          "start": 271.64,
+          "end": 272.54
+        },
+        {
+          "word": " la",
+          "start": 272.54,
+          "end": 272.9
+        },
+        {
+          "word": " memoria",
+          "start": 272.9,
+          "end": 273.34000000000003
+        },
+        {
+          "word": " es",
+          "start": 273.34000000000003,
+          "end": 273.8
+        },
+        {
+          "word": " una",
+          "start": 273.8,
+          "end": 273.98
+        },
+        {
+          "word": " tributo",
+          "start": 273.98,
+          "end": 274.4
+        },
+        {
+          "word": " de",
+          "start": 274.4,
+          "end": 274.56
+        },
+        {
+          "word": " los",
+          "start": 274.56,
+          "end": 274.65999999999997
+        },
+        {
+          "word": " pueblos",
+          "start": 274.65999999999997,
+          "end": 275.12
+        },
+        {
+          "word": " y",
+          "start": 275.12,
+          "end": 275.34000000000003
+        },
+        {
+          "word": " estarea",
+          "start": 275.34000000000003,
+          "end": 275.7
+        },
+        {
+          "word": " del",
+          "start": 275.7,
+          "end": 275.86
+        },
+        {
+          "word": " historia",
+          "start": 275.86,
+          "end": 276.14
+        },
+        {
+          "word": " de",
+          "start": 276.14,
+          "end": 276.42
+        }
+      ]
+    },
+    {
+      "seg_start": 276.42,
+      "seg_end": 287.18,
+      "text": " es catareza memoria nuestro pasado habita en nuestro presente descubrir sus voyas es una experiencia apasionante documentos testimonios relatos y",
+      "words": [
+        {
+          "word": " es",
+          "start": 276.42,
+          "end": 276.68
+        },
+        {
+          "word": " catareza",
+          "start": 276.68,
+          "end": 277.24
+        },
+        {
+          "word": " memoria",
+          "start": 277.24,
+          "end": 277.7
+        },
+        {
+          "word": " nuestro",
+          "start": 277.7,
+          "end": 278.54
+        },
+        {
+          "word": " pasado",
+          "start": 278.54,
+          "end": 279.02
+        },
+        {
+          "word": " habita",
+          "start": 279.02,
+          "end": 279.7
+        },
+        {
+          "word": " en",
+          "start": 279.7,
+          "end": 279.94
+        },
+        {
+          "word": " nuestro",
+          "start": 279.94,
+          "end": 280.14
+        },
+        {
+          "word": " presente",
+          "start": 280.14,
+          "end": 280.68
+        },
+        {
+          "word": " descubrir",
+          "start": 280.68,
+          "end": 281.62
+        },
+        {
+          "word": " sus",
+          "start": 281.62,
+          "end": 281.84000000000003
+        },
+        {
+          "word": " voyas",
+          "start": 281.84000000000003,
+          "end": 282.36
+        },
+        {
+          "word": " es",
+          "start": 282.36,
+          "end": 282.7
+        },
+        {
+          "word": " una",
+          "start": 282.7,
+          "end": 282.86
+        },
+        {
+          "word": " experiencia",
+          "start": 282.86,
+          "end": 283.44
+        },
+        {
+          "word": " apasionante",
+          "start": 283.44,
+          "end": 284.9
+        },
+        {
+          "word": " documentos",
+          "start": 284.9,
+          "end": 285.78
+        },
+        {
+          "word": " testimonios",
+          "start": 285.78,
+          "end": 286.48
+        },
+        {
+          "word": " relatos",
+          "start": 286.48,
+          "end": 287.04
+        },
+        {
+          "word": " y",
+          "start": 287.04,
+          "end": 287.18
+        }
+      ]
+    },
+    {
+      "seg_start": 287.18,
+      "seg_end": 294.08,
+      "text": " magenes son las herramientas de las que nos valimos cuando hace un año atrás nos propusimos a undar en historia del partido de este",
+      "words": [
+        {
+          "word": " magenes",
+          "start": 287.18,
+          "end": 287.65999999999997
+        },
+        {
+          "word": " son",
+          "start": 287.65999999999997,
+          "end": 288.1
+        },
+        {
+          "word": " las",
+          "start": 288.1,
+          "end": 288.34000000000003
+        },
+        {
+          "word": " herramientas",
+          "start": 288.34000000000003,
+          "end": 289.0
+        },
+        {
+          "word": " de",
+          "start": 289.0,
+          "end": 289.18
+        },
+        {
+          "word": " las",
+          "start": 289.18,
+          "end": 289.28
+        },
+        {
+          "word": " que",
+          "start": 289.28,
+          "end": 289.4
+        },
+        {
+          "word": " nos",
+          "start": 289.4,
+          "end": 289.54
+        },
+        {
+          "word": " valimos",
+          "start": 289.54,
+          "end": 289.92
+        },
+        {
+          "word": " cuando",
+          "start": 289.92,
+          "end": 290.26
+        },
+        {
+          "word": " hace",
+          "start": 290.26,
+          "end": 290.46
+        },
+        {
+          "word": " un",
+          "start": 290.46,
+          "end": 290.58
+        },
+        {
+          "word": " año",
+          "start": 290.58,
+          "end": 290.74
+        },
+        {
+          "word": " atrás",
+          "start": 290.74,
+          "end": 291.34000000000003
+        },
+        {
+          "word": " nos",
+          "start": 291.34000000000003,
+          "end": 291.8
+        },
+        {
+          "word": " propusimos",
+          "start": 291.8,
+          "end": 292.3
+        },
+        {
+          "word": " a",
+          "start": 292.3,
+          "end": 292.42
+        },
+        {
+          "word": " undar",
+          "start": 292.42,
+          "end": 292.72
+        },
+        {
+          "word": " en",
+          "start": 292.72,
+          "end": 292.96
+        },
+        {
+          "word": " historia",
+          "start": 292.96,
+          "end": 293.22
+        },
+        {
+          "word": " del",
+          "start": 293.22,
+          "end": 293.44
+        },
+        {
+          "word": " partido",
+          "start": 293.44,
+          "end": 293.76
+        },
+        {
+          "word": " de",
+          "start": 293.76,
+          "end": 294.02
+        },
+        {
+          "word": " este",
+          "start": 294.02,
+          "end": 294.08
+        }
+      ]
+    },
+    {
+      "seg_start": 294.08,
+      "seg_end": 302.32,
+      "text": " van echebería en ocasión de acercarse al centenario de su fundación la idea surgió luego de la publicación de nuestro diario de la",
+      "words": [
+        {
+          "word": " van",
+          "start": 294.08,
+          "end": 294.26
+        },
+        {
+          "word": " echebería",
+          "start": 294.26,
+          "end": 294.9
+        },
+        {
+          "word": " en",
+          "start": 294.9,
+          "end": 295.22
+        },
+        {
+          "word": " ocasión",
+          "start": 295.22,
+          "end": 295.62
+        },
+        {
+          "word": " de",
+          "start": 295.62,
+          "end": 295.78
+        },
+        {
+          "word": " acercarse",
+          "start": 295.78,
+          "end": 296.15999999999997
+        },
+        {
+          "word": " al",
+          "start": 296.15999999999997,
+          "end": 296.36
+        },
+        {
+          "word": " centenario",
+          "start": 296.36,
+          "end": 296.9
+        },
+        {
+          "word": " de",
+          "start": 296.9,
+          "end": 297.4
+        },
+        {
+          "word": " su",
+          "start": 297.4,
+          "end": 297.52
+        },
+        {
+          "word": " fundación",
+          "start": 297.52,
+          "end": 298.52
+        },
+        {
+          "word": " la",
+          "start": 298.52,
+          "end": 298.92
+        },
+        {
+          "word": " idea",
+          "start": 298.92,
+          "end": 299.1
+        },
+        {
+          "word": " surgió",
+          "start": 299.1,
+          "end": 299.54
+        },
+        {
+          "word": " luego",
+          "start": 299.54,
+          "end": 299.78
+        },
+        {
+          "word": " de",
+          "start": 299.78,
+          "end": 299.94
+        },
+        {
+          "word": " la",
+          "start": 299.94,
+          "end": 300.02
+        },
+        {
+          "word": " publicación",
+          "start": 300.02,
+          "end": 300.58
+        },
+        {
+          "word": " de",
+          "start": 300.58,
+          "end": 300.82
+        },
+        {
+          "word": " nuestro",
+          "start": 300.82,
+          "end": 301.14
+        },
+        {
+          "word": " diario",
+          "start": 301.14,
+          "end": 301.78
+        },
+        {
+          "word": " de",
+          "start": 301.78,
+          "end": 302.0
+        },
+        {
+          "word": " la",
+          "start": 302.0,
+          "end": 302.32
+        }
+      ]
+    },
+    {
+      "seg_start": 302.32,
+      "seg_end": 321.5,
+      "text": " negociación de este",
+      "words": [
+        {
+          "word": " negociación",
+          "start": 302.32,
+          "end": 302.98
+        },
+        {
+          "word": " de",
+          "start": 302.98,
+          "end": 306.7
+        },
+        {
+          "word": " este",
+          "start": 306.7,
+          "end": 321.5
+        }
+      ]
+    },
+    {
+      "seg_start": 321.5,
+      "seg_end": 330.78,
+      "text": " que nuestros alumnos a quienes estaba dirigido fundamentalmente como un instrumento de consulta para el estudio manejan muy bien la red social facebook",
+      "words": [
+        {
+          "word": " que",
+          "start": 321.5,
+          "end": 321.78
+        },
+        {
+          "word": " nuestros",
+          "start": 321.78,
+          "end": 322.12
+        },
+        {
+          "word": " alumnos",
+          "start": 322.12,
+          "end": 322.88
+        },
+        {
+          "word": " a",
+          "start": 322.88,
+          "end": 323.14
+        },
+        {
+          "word": " quienes",
+          "start": 323.14,
+          "end": 323.41999999999996
+        },
+        {
+          "word": " estaba",
+          "start": 323.41999999999996,
+          "end": 323.78
+        },
+        {
+          "word": " dirigido",
+          "start": 323.78,
+          "end": 324.36
+        },
+        {
+          "word": " fundamentalmente",
+          "start": 324.36,
+          "end": 325.22
+        },
+        {
+          "word": " como",
+          "start": 325.22,
+          "end": 325.44
+        },
+        {
+          "word": " un",
+          "start": 325.44,
+          "end": 325.68
+        },
+        {
+          "word": " instrumento",
+          "start": 325.68,
+          "end": 326.2
+        },
+        {
+          "word": " de",
+          "start": 326.2,
+          "end": 326.41999999999996
+        },
+        {
+          "word": " consulta",
+          "start": 326.41999999999996,
+          "end": 326.86
+        },
+        {
+          "word": " para",
+          "start": 326.86,
+          "end": 327.1
+        },
+        {
+          "word": " el",
+          "start": 327.1,
+          "end": 327.28
+        },
+        {
+          "word": " estudio",
+          "start": 327.28,
+          "end": 327.74
+        },
+        {
+          "word": " manejan",
+          "start": 327.74,
+          "end": 328.48
+        },
+        {
+          "word": " muy",
+          "start": 328.48,
+          "end": 328.74
+        },
+        {
+          "word": " bien",
+          "start": 328.74,
+          "end": 329.2
+        },
+        {
+          "word": " la",
+          "start": 329.2,
+          "end": 329.48
+        },
+        {
+          "word": " red",
+          "start": 329.48,
+          "end": 329.74
+        },
+        {
+          "word": " social",
+          "start": 329.74,
+          "end": 330.18
+        },
+        {
+          "word": " facebook",
+          "start": 330.18,
+          "end": 330.78
+        }
+      ]
+    },
+    {
+      "seg_start": 330.78,
+      "seg_end": 342.02,
+      "text": " el proyecto tomó a las se amplió hacia la comunidad y en la actualidad tiene varios cientos de seguidores que ha sido a mente visitan el sitio y realizan sus aportes",
+      "words": [
+        {
+          "word": " el",
+          "start": 330.78,
+          "end": 331.41999999999996
+        },
+        {
+          "word": " proyecto",
+          "start": 331.41999999999996,
+          "end": 332.06
+        },
+        {
+          "word": " tomó",
+          "start": 332.06,
+          "end": 332.5
+        },
+        {
+          "word": " a",
+          "start": 332.5,
+          "end": 332.65999999999997
+        },
+        {
+          "word": " las",
+          "start": 332.65999999999997,
+          "end": 332.96000000000004
+        },
+        {
+          "word": " se",
+          "start": 332.96000000000004,
+          "end": 333.22
+        },
+        {
+          "word": " amplió",
+          "start": 333.22,
+          "end": 333.68
+        },
+        {
+          "word": " hacia",
+          "start": 333.68,
+          "end": 334.0
+        },
+        {
+          "word": " la",
+          "start": 334.0,
+          "end": 334.18
+        },
+        {
+          "word": " comunidad",
+          "start": 334.18,
+          "end": 334.58000000000004
+        },
+        {
+          "word": " y",
+          "start": 334.58000000000004,
+          "end": 335.12
+        },
+        {
+          "word": " en",
+          "start": 335.12,
+          "end": 335.2
+        },
+        {
+          "word": " la",
+          "start": 335.2,
+          "end": 335.28
+        },
+        {
+          "word": " actualidad",
+          "start": 335.28,
+          "end": 336.06
+        },
+        {
+          "word": " tiene",
+          "start": 336.06,
+          "end": 336.34000000000003
+        },
+        {
+          "word": " varios",
+          "start": 336.34000000000003,
+          "end": 336.82
+        },
+        {
+          "word": " cientos",
+          "start": 336.82,
+          "end": 337.12
+        },
+        {
+          "word": " de",
+          "start": 337.12,
+          "end": 337.34000000000003
+        },
+        {
+          "word": " seguidores",
+          "start": 337.34000000000003,
+          "end": 337.68
+        },
+        {
+          "word": " que",
+          "start": 337.68,
+          "end": 338.2
+        },
+        {
+          "word": " ha",
+          "start": 338.2,
+          "end": 338.26
+        },
+        {
+          "word": " sido",
+          "start": 338.26,
+          "end": 338.4
+        },
+        {
+          "word": " a",
+          "start": 338.4,
+          "end": 338.62
+        },
+        {
+          "word": " mente",
+          "start": 338.62,
+          "end": 338.91999999999996
+        },
+        {
+          "word": " visitan",
+          "start": 338.91999999999996,
+          "end": 339.36
+        },
+        {
+          "word": " el",
+          "start": 339.36,
+          "end": 339.52
+        },
+        {
+          "word": " sitio",
+          "start": 339.52,
+          "end": 339.78
+        },
+        {
+          "word": " y",
+          "start": 339.78,
+          "end": 340.14
+        },
+        {
+          "word": " realizan",
+          "start": 340.14,
+          "end": 340.84000000000003
+        },
+        {
+          "word": " sus",
+          "start": 340.84000000000003,
+          "end": 341.14
+        },
+        {
+          "word": " aportes",
+          "start": 341.14,
+          "end": 342.02
+        }
+      ]
+    },
+    {
+      "seg_start": 342.02,
+      "seg_end": 359.98,
+      "text": " en febrero de 2012 faltando pocos días para iniciarse al ciclo de activo en una charla informa al comendamos lo interesante que sería escribir una historia del partido más allá de los personajes conocidos de los vecinos ilustres de los datos superfluos y solo memorísticos de la",
+      "words": [
+        {
+          "word": " en",
+          "start": 342.02,
+          "end": 342.28
+        },
+        {
+          "word": " febrero",
+          "start": 342.28,
+          "end": 342.7
+        },
+        {
+          "word": " de",
+          "start": 342.7,
+          "end": 342.91999999999996
+        },
+        {
+          "word": " 2012",
+          "start": 342.91999999999996,
+          "end": 343.44
+        },
+        {
+          "word": " faltando",
+          "start": 343.44,
+          "end": 344.18
+        },
+        {
+          "word": " pocos",
+          "start": 344.18,
+          "end": 344.44
+        },
+        {
+          "word": " días",
+          "start": 344.44,
+          "end": 344.68
+        },
+        {
+          "word": " para",
+          "start": 344.68,
+          "end": 344.98
+        },
+        {
+          "word": " iniciarse",
+          "start": 344.98,
+          "end": 345.48
+        },
+        {
+          "word": " al",
+          "start": 345.48,
+          "end": 345.68
+        },
+        {
+          "word": " ciclo",
+          "start": 345.68,
+          "end": 345.9
+        },
+        {
+          "word": " de",
+          "start": 345.9,
+          "end": 346.06
+        },
+        {
+          "word": " activo",
+          "start": 346.06,
+          "end": 346.6
+        },
+        {
+          "word": " en",
+          "start": 346.6,
+          "end": 346.88
+        },
+        {
+          "word": " una",
+          "start": 346.88,
+          "end": 347.06
+        },
+        {
+          "word": " charla",
+          "start": 347.06,
+          "end": 347.41999999999996
+        },
+        {
+          "word": " informa",
+          "start": 347.41999999999996,
+          "end": 347.88
+        },
+        {
+          "word": " al",
+          "start": 347.88,
+          "end": 348.03999999999996
+        },
+        {
+          "word": " comendamos",
+          "start": 348.03999999999996,
+          "end": 348.53999999999996
+        },
+        {
+          "word": " lo",
+          "start": 348.53999999999996,
+          "end": 348.78
+        },
+        {
+          "word": " interesante",
+          "start": 348.78,
+          "end": 349.14
+        },
+        {
+          "word": " que",
+          "start": 349.14,
+          "end": 349.48
+        },
+        {
+          "word": " sería",
+          "start": 349.48,
+          "end": 349.72
+        },
+        {
+          "word": " escribir",
+          "start": 349.72,
+          "end": 350.41999999999996
+        },
+        {
+          "word": " una",
+          "start": 350.41999999999996,
+          "end": 350.72
+        },
+        {
+          "word": " historia",
+          "start": 350.72,
+          "end": 351.03999999999996
+        },
+        {
+          "word": " del",
+          "start": 351.03999999999996,
+          "end": 351.3
+        },
+        {
+          "word": " partido",
+          "start": 351.3,
+          "end": 351.74
+        },
+        {
+          "word": " más",
+          "start": 351.74,
+          "end": 352.28
+        },
+        {
+          "word": " allá",
+          "start": 352.28,
+          "end": 352.52
+        },
+        {
+          "word": " de",
+          "start": 352.52,
+          "end": 352.68
+        },
+        {
+          "word": " los",
+          "start": 352.68,
+          "end": 352.91999999999996
+        },
+        {
+          "word": " personajes",
+          "start": 352.91999999999996,
+          "end": 353.38
+        },
+        {
+          "word": " conocidos",
+          "start": 353.38,
+          "end": 354.26
+        },
+        {
+          "word": " de",
+          "start": 354.26,
+          "end": 354.6
+        },
+        {
+          "word": " los",
+          "start": 354.6,
+          "end": 354.9
+        },
+        {
+          "word": " vecinos",
+          "start": 354.9,
+          "end": 355.24
+        },
+        {
+          "word": " ilustres",
+          "start": 355.24,
+          "end": 356.08000000000004
+        },
+        {
+          "word": " de",
+          "start": 356.08000000000004,
+          "end": 356.26
+        },
+        {
+          "word": " los",
+          "start": 356.26,
+          "end": 356.44
+        },
+        {
+          "word": " datos",
+          "start": 356.44,
+          "end": 356.88
+        },
+        {
+          "word": " superfluos",
+          "start": 356.88,
+          "end": 357.8
+        },
+        {
+          "word": " y",
+          "start": 357.8,
+          "end": 358.0
+        },
+        {
+          "word": " solo",
+          "start": 358.0,
+          "end": 358.34000000000003
+        },
+        {
+          "word": " memorísticos",
+          "start": 358.34000000000003,
+          "end": 359.41999999999996
+        },
+        {
+          "word": " de",
+          "start": 359.41999999999996,
+          "end": 359.94
+        },
+        {
+          "word": " la",
+          "start": 359.94,
+          "end": 359.98
+        }
+      ]
+    }
+  ]
+}

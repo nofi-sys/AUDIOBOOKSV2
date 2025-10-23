@@ -1,5 +1,4 @@
 import json
-from pathlib import Path
 import sys
 import types
 
@@ -29,11 +28,16 @@ def test_cli_word_align(tmp_path, monkeypatch):
         *,
         detailed=False,
     ):
-        words_json.write_text('[{"word": "hola"}]', encoding="utf8")
+        if detailed:
+            data = {"segments": [{"words": [{"word": "hola", "start": 0.0}]}]}
+            words_json.write_text(json.dumps(data), encoding="utf8")
+        else:
+            words_json.write_text('[{"word": "hola"}]', encoding="utf8")
         return words_json
 
     monkeypatch.setattr(tr, "transcribe_wordlevel", fake_transcribe_wordlevel)
-    monkeypatch.setattr(tr, "build_rows_wordlevel", lambda ref, words: [[0, "", 0, 0, "hola", "hola"]])
+    import alignment
+    monkeypatch.setattr(alignment, "build_rows_from_words", lambda ref, words, tcs: [[0, "", 0, 0, "hola", "hola"]])
     monkeypatch.setattr(tr, "read_script", lambda p: "hola")
 
     tr.main([str(audio), "--script", str(script), "--word-align"])
@@ -41,4 +45,3 @@ def test_cli_word_align(tmp_path, monkeypatch):
     out = tmp_path / "aud.word.qc.json"
     data = json.loads(out.read_text())
     assert data[0][4] == "hola"
-

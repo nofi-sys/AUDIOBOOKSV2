@@ -1,0 +1,11 @@
+{
+  "audio": "ejemplos/PROLOGO.rough",
+  "duration": 532.55825,
+  "model": "tiny",
+  "chunk_seconds": 180,
+  "completed": [
+    "0",
+    "1",
+    "2"
+  ]
+}
