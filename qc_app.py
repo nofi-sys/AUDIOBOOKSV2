@@ -109,7 +109,7 @@ class App(tk.Tk):
         self.v_stats_mal = tk.StringVar(self, value="Filas 'mal': 0")
         self.v_stats_pct = tk.StringVar(self, value="(0.0%)")
         self.v_filter_text = tk.StringVar(self)
-        self.v_filter_mal = tk.BooleanVar(self, value=False) # Keep for now, replace UI later
+        self.v_filter_mal = tk.BooleanVar(self, value=False)  # Keep for now, replace UI later
         self.filter_verdicts: dict[str, tk.BooleanVar] = {}
         self.all_rows: list[list] = []  # Almacén persistente de filas
 
@@ -187,11 +187,13 @@ class App(tk.Tk):
 
         self._lbl_entry(files_frame, "Guion:", self.v_ref, 0, ("PDF/TXT", "*.pdf;*.txt"))
         self._lbl_entry(files_frame, "TXT ASR:", self.v_asr, 1, ("TXT/CSV", "*.txt;*.csv"))
-        self._lbl_entry(files_frame, "Audio:", self.v_audio, 2, ("Media", "*.mp3;*.wav;*.m4a;*.flac;*.ogg;*.aac;*.mp4"))
-        ttk.Label(files_frame, text="JSON:").grid(row=3, column=0, sticky="e", pady=(4,0))
-        ttk.Entry(files_frame, textvariable=self.v_json, width=50).grid(row=3, column=1, pady=(4,0))
-        ttk.Button(files_frame, text="Abrir JSON…", command=self.load_json).grid(row=3, column=2, pady=(4,0))
-        ttk.Button(files_frame, text="Procesar", width=12, command=self.launch).grid(row=0, column=3, rowspan=2, padx=6, ipady=5)
+        self._lbl_entry(files_frame, "Audio:", self.v_audio, 2,
+                        ("Media", "*.mp3;*.wav;*.m4a;*.flac;*.ogg;*.aac;*.mp4"))
+        ttk.Label(files_frame, text="JSON:").grid(row=3, column=0, sticky="e", pady=(4, 0))
+        ttk.Entry(files_frame, textvariable=self.v_json, width=50).grid(row=3, column=1, pady=(4, 0))
+        ttk.Button(files_frame, text="Abrir JSON…", command=self.load_json).grid(row=3, column=2, pady=(4, 0))
+        ttk.Button(files_frame, text="Procesar", width=12, command=self.launch).grid(
+            row=0, column=3, rowspan=2, padx=6, ipady=5)
 
         # --- Frame for AI tools ---
         ai_tools_frame = ttk.LabelFrame(controls_frame, text="Herramientas AI")
@@ -206,27 +208,48 @@ class App(tk.Tk):
         btn_pause_re.grid(row=0, column=4, padx=2, pady=2)
 
         # Row 1
-        ttk.Button(ai_tools_frame, text="AI Review", command=self.ai_review).grid(row=1, column=0, columnspan=2, sticky="ew", padx=2, pady=2)
+        ttk.Button(ai_tools_frame, text="AI Review", command=self.ai_review).grid(
+            row=1, column=0, columnspan=2, sticky="ew", padx=2, pady=2)
         ai_models = ["gpt-5", "gpt-5-mini", "gpt-5-nano"]
-        self.ai_model_combo = ttk.Combobox(ai_tools_frame, textvariable=self.v_ai_model, values=ai_models, width=12)
+        self.ai_model_combo = ttk.Combobox(
+            ai_tools_frame, textvariable=self.v_ai_model, values=ai_models, width=12)
         self.ai_model_combo.grid(row=1, column=2, columnspan=2, sticky="ew", padx=2, pady=2)
         self.ai_model_combo.set(ai_models[0])
-        ttk.Checkbutton(ai_tools_frame, text="una fila", variable=self.ai_one).grid(row=1, column=4, padx=2, pady=2)
+        ttk.Checkbutton(ai_tools_frame, text="una fila", variable=self.ai_one).grid(
+            row=1, column=4, padx=2, pady=2)
 
         # Row 2
-        ttk.Button(ai_tools_frame, text="Corregir transcript con AI", command=self.ai_correct_row).grid(row=2, column=0, columnspan=3, sticky="ew", padx=2, pady=2)
-        ttk.Button(ai_tools_frame, text="Detener análisis", command=self.stop_ai_review).grid(row=2, column=3, columnspan=2, sticky="ew", padx=2, pady=2)
+        ttk.Button(
+            ai_tools_frame, text="Corregir transcript con AI",
+            command=self.ai_correct_row).grid(row=2, column=0, columnspan=3, sticky="ew", padx=2, pady=2)
+        ttk.Button(
+            ai_tools_frame, text="Detener análisis",
+            command=self.stop_ai_review).grid(row=2, column=3, columnspan=2, sticky="ew", padx=2, pady=2)
 
         # Row 3
-        ttk.Button(ai_tools_frame, text="Revisión AI Avanzada", command=self.advanced_ai_review).grid(row=3, column=0, columnspan=5, sticky="ew", padx=2, pady=2)
+        ttk.Button(
+            ai_tools_frame, text="Revisión AI Avanzada",
+            command=self.advanced_ai_review).grid(row=3, column=0, columnspan=5, sticky="ew", padx=2, pady=2)
 
         # --- Frame for Other tools ---
         other_tools_frame = ttk.LabelFrame(controls_frame, text="Otras Herramientas y Reportes")
         other_tools_frame.pack(side="left", fill="y", padx=5, pady=5, anchor="n")
 
-        ttk.Button(other_tools_frame, text="Corregir Desplazamientos", command=self.second_pass_sync).grid(row=0, column=0, sticky="ew", padx=2, pady=2)
-        ttk.Button(other_tools_frame, text="Crear EDL", command=self.create_edl).grid(row=1, column=0, sticky="ew", padx=2, pady=2)
-        ttk.Button(other_tools_frame, text="Informe Corrección", command=self.generate_correction_report).grid(row=2, column=0, sticky="ew", padx=2, pady=2)
+        ttk.Button(
+            other_tools_frame,
+            text="Corregir Desplazamientos",
+            command=self.second_pass_sync
+        ).grid(row=0, column=0, sticky="ew", padx=2, pady=2)
+        ttk.Button(
+            other_tools_frame,
+            text="Crear EDL",
+            command=self.create_edl
+        ).grid(row=1, column=0, sticky="ew", padx=2, pady=2)
+        ttk.Button(
+            other_tools_frame,
+            text="Informe Corrección",
+            command=self.generate_correction_report
+        ).grid(row=2, column=0, sticky="ew", padx=2, pady=2)
 
         # Frame para estadísticas y filtros
         stats_filter_frame = ttk.LabelFrame(self, text="Estadísticas y Filtros", padding=5)
@@ -315,10 +338,10 @@ class App(tk.Tk):
         self._snapshot()
 
     def _lbl_entry(self, parent, text, var, row, ft):
-        ttk.Label(parent, text=text).grid(row=row, column=0, sticky="e", padx=(0,4))
+        ttk.Label(parent, text=text).grid(row=row, column=0, sticky="e", padx=(0, 4))
         ttk.Entry(parent, textvariable=var, width=50).grid(row=row, column=1)
         ttk.Button(parent, text="…", width=3, command=lambda: self._browse(var, ft)).grid(
-            row=row, column=2, padx=(4,0))
+            row=row, column=2, padx=(4, 0))
 
     # ---------------------------------------------------------------- table ----------
     def _build_table(self) -> None:
@@ -406,10 +429,10 @@ class App(tk.Tk):
         search_term = self.v_filter_text.get().lower().strip()
         if search_term:
             rows_to_display = [
-                r for r in rows_to_display
-                if len(r) >= 2 and (
-                    search_term in str(r[-2]).lower() or
-                    search_term in str(r[-1]).lower()
+                r
+                for r in rows_to_display
+                if len(r) >= 8 and (
+                    search_term in str(r[7]).lower() or search_term in str(r[8]).lower()
                 )
             ]
 
@@ -430,6 +453,8 @@ class App(tk.Tk):
 
         self._update_scale_range()
         self._update_stats()
+
+
 
     def _clear_filters(self) -> None:
         """Resetea todos los filtros de texto y veredictos."""
@@ -575,7 +600,7 @@ class App(tk.Tk):
             # Para filas de JSON, que pueden tener 7, 8 o 9 columnas,
             # las normalizamos a 9 insertando Score si falta.
             if len(vals) in (7, 8):
-                vals.insert(4, "") # Score
+                vals.insert(4, "")  # Score
 
             # Rellena por si acaso y trunca a 9
             while len(vals) < 9:
@@ -982,22 +1007,21 @@ class App(tk.Tk):
 
     # ---------------------------------------------------------------------------------
     # JSON ---------------------------------------------------------------------------
+
+
     def load_json(self):
         if not self.v_json.get():
-            p = filedialog.askopenfilename(filetypes=[("QC JSON", "*.qc.json;*.json")])
+            p = filedialog.askopenfilename(
+                filetypes=[("QC JSON", "*.qc.json;*.json")])
             if not p:
                 return
             self.v_json.set(p)
 
         try:
-            rows = json.loads(Path(self.v_json.get()).read_text(encoding="utf8"))
+            self.all_rows = json.loads(
+                Path(self.v_json.get()).read_text(encoding="utf8"))
             self.clear_table()
-
-            for r in rows:
-                vals = self._row_from_alignment(r)
-                # Treeview no admite números; asegúrate de que llegan como str
-                vals[6], vals[7] = str(vals[6]), str(vals[7])
-                self.tree.insert("", tk.END, values=vals)
+            self._apply_filter()  # Rellena la tabla con los filtros actuales
             self._snapshot()
             self._update_scale_range()
             self._load_marker()
@@ -1005,15 +1029,13 @@ class App(tk.Tk):
             self._log(f"Check Cargado {self.v_json.get()}")
         except Exception as e:
             show_error("Error", e)
+
     # Reproducción -------------------------------------------------------------------
 
     def _handle_double(self, event: tk.Event) -> None:
+        """On double-click, always open the review pop-up."""
         item = self.tree.identify_row(event.y)
-        col = self.tree.identify_column(event.x)
         if not item:
-            return
-        if col == "#3":
-            self._toggle_ok(item)
             return
         self._play_clip(item)
 
@@ -1501,12 +1523,21 @@ class App(tk.Tk):
     def _cell_click(self, event: tk.Event) -> None:
         item = self.tree.identify_row(event.y)
         col = self.tree.identify_column(event.x)
+
+        # Si se hace clic en la columna "OK", alternar estado
+        if item and col == "#3":
+            self._toggle_ok(item)
+            return
+
+        # Comportamiento original para seleccionar celdas de texto
         for iid in self.tree.get_children():
             tags = list(self.tree.item(iid, "tags"))
             if self.tree_tag in tags:
                 tags.remove(self.tree_tag)
                 self.tree.item(iid, tags=tuple(tags))
-        if col not in ("#7", "#8") or not item:
+
+        # Corregido: Las columnas de texto son #8 (Original) y #9 (ASR)
+        if col not in ("#8", "#9") or not item:
             self.selected_cell = None
             return
         tags = list(self.tree.item(item, "tags"))
