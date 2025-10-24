@@ -378,6 +378,10 @@ def get_advanced_review_verdict(context: dict, model: str | None = None) -> tupl
 
     response_text = resp.choices[0].message.content.strip()
 
+    if not response_text:
+        logger.warning("Advanced AI review returned an empty response.")
+        return None, None
+
     # Parse the response
     try:
         verdict_part, comment_part = response_text.split("|", 1)
@@ -393,7 +397,7 @@ def get_advanced_review_verdict(context: dict, model: str | None = None) -> tupl
     except ValueError:
         # The response was not in the expected format
         logger.warning(f"Unexpected advanced AI response format: '{response_text}'")
-        return "DUDOSO", response_text
+        return None, None
 
 
 def ai_verdict(

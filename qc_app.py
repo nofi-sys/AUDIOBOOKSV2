@@ -2055,6 +2055,10 @@ class App(tk.Tk):
                     self._log(f"Revisión avanzada Fila {row_id}: {verdict}. Comentario: {comment}")
                     self.save_json()
 
+                elif isinstance(msg, tuple) and msg[0] == "ADVANCED_AI_REVIEW_FAILED":
+                    row_id = msg[1]
+                    self._log(f"Revisión avanzada para fila {row_id} falló. La fila no fue modificada.")
+
                 elif isinstance(msg, tuple) and msg[0] == "AI_DONE_ID":
                     row_id = msg[1]
                     for iid in self.tree.get_children():
@@ -2306,6 +2310,10 @@ class App(tk.Tk):
             if not row_data:
                 return
 
+            if row_data[2] == 'OK':
+                messagebox.showinfo("Fila ya aprobada", "Esta fila ya ha sido marcada como OK y no será re-analizada.")
+                return
+
             ai_status = row_data[3].lower()
             flag_status = row_data[1]
             if ai_status != 'mal' and flag_status != '⚠️':
@@ -2319,7 +2327,7 @@ class App(tk.Tk):
         # Batch mode
         rows_to_review = [
             r for r in self.all_rows
-            if r[3].lower() == 'mal' or r[1] == '⚠️'
+            if (r[3].lower() == 'mal' or r[1] == '⚠️') and r[2] != 'OK'
         ]
 
         if not rows_to_review:
@@ -2378,7 +2386,10 @@ class App(tk.Tk):
             try:
                 from ai_review import get_advanced_review_verdict
                 verdict, comment = get_advanced_review_verdict(context)
-                self.q.put(("ADVANCED_AI_REVIEW_DONE_ID", (row_id, verdict, comment)))
+                if verdict is None:
+                    self.q.put(("ADVANCED_AI_REVIEW_FAILED", row_id))
+                else:
+                    self.q.put(("ADVANCED_AI_REVIEW_DONE_ID", (row_id, verdict, comment)))
             except Exception:
                 buf = io.StringIO()
                 traceback.print_exc(file=buf)
@@ -2392,7 +2403,10 @@ class App(tk.Tk):
         try:
             from ai_review import get_advanced_review_verdict
             verdict, comment = get_advanced_review_verdict(context)
-            self.q.put(("ADVANCED_AI_REVIEW_DONE_ID", (row_id, verdict, comment)))
+            if verdict is None:
+                self.q.put(("ADVANCED_AI_REVIEW_FAILED", row_id))
+            else:
+                self.q.put(("ADVANCED_AI_REVIEW_DONE_ID", (row_id, verdict, comment)))
         except Exception:
             buf = io.StringIO()
             traceback.print_exc(file=buf)
