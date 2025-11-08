@@ -340,7 +340,42 @@ Respond with a single line in the format: `VERDICT: <category> | COMMENT: <your 
 Now, analyze the following context:
 """
 
-def get_advanced_review_verdict(context: dict, model: str | None = None) -> tuple[str, str]:
+REPETITION_PROMPT = """
+You are a specialized QA analyst for audiobooks, focused *only* on detecting unintentional repetitions.
+
+**CONTEXT:**
+You will receive three blocks of text: [ANTERIOR], [ACTUAL], and [POSTERIOR]. Each contains the original script (ORIGINAL) and the automatic transcription (ASR).
+
+**YOUR TASK:**
+1.  Your **only** goal is to determine if the speaker unintentionally repeated words or phrases in the [ACTUAL] ASR that are not repeated in the ORIGINAL script.
+2.  A repetition is significant if it involves two or more consecutive words.
+3.  Use the context of the surrounding blocks to confirm that it's a genuine repetition and not a stylistic choice (like anaphora) or a misalignment issue.
+4.  Based on your analysis, provide one of two verdicts for the [ACTUAL] row:
+    *   `REPETICION`: You found a clear, unintentional repetition of two or more words.
+    *   `OK`: There are no significant repetitions.
+
+**RESPONSE FORMAT:**
+Respond with a single line in the format: `VERDICT: <category> | COMMENT: <brief explanation of the repeated phrase>`
+
+**Example 1:**
+- ORIGINAL: "dijo que iría a la tienda."
+- ASR: "dijo que iría a la a la tienda."
+Response: `VERDICT: REPETICION | COMMENT: Se repite "a la".`
+
+**Example 2 (Stylistic, not an error):**
+- ORIGINAL: "Paz en la tierra, paz en los cielos, paz en el corazón."
+- ASR: "Paz en la tierra, paz en los cielos, paz en el corazón."
+Response: `VERDICT: OK | COMMENT: La repetición de "Paz" es parte del texto original.`
+
+**Example 3 (No repetition):**
+- ORIGINAL: "El rápido zorro marrón."
+- ASR: "El rápido zorro marrón."
+Response: `VERDICT: OK | COMMENT: No se encontraron repeticiones.`
+---
+Now, analyze the following context:
+"""
+
+def get_advanced_review_verdict(context: dict, model: str | None = None, repetition_check: bool = False) -> tuple[str, str]:
     """
     Performs an advanced, contextual AI review.
     Returns a tuple of (verdict, comment).
@@ -363,13 +398,17 @@ def get_advanced_review_verdict(context: dict, model: str | None = None) -> tupl
         user_prompt += f"- ORIGINAL: {context['next']['original']}\n"
         user_prompt += f"- ASR: {context['next']['asr']}\n"
 
-    full_prompt = ADVANCED_REVIEW_PROMPT + user_prompt
+    prompt_template = REPETITION_PROMPT if repetition_check else ADVANCED_REVIEW_PROMPT
+    full_prompt = prompt_template + user_prompt
+
+    system_content = "You are a specialized QA analyst for audiobooks, focused *only* on detecting unintentional repetitions." if repetition_check else "You are a senior QA analyst for audiobooks."
+
 
     current_model = model or MODEL_DEFAULT
     resp = _chat_with_backoff(
         model=current_model,
         messages=[
-            {"role": "system", "content": "You are a senior QA analyst for audiobooks."},
+            {"role": "system", "content": system_content},
             {"role": "user", "content": full_prompt},
         ],
         max_completion_tokens=100,

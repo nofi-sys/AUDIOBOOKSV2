@@ -102,6 +102,7 @@ class App(tk.Tk):
         self.v_audio = tk.StringVar(self)
         self.v_json = tk.StringVar(self)
         self.ai_one = tk.BooleanVar(self, value=False)
+        self.v_ai_repetition_check = tk.BooleanVar(self, value=False)
         self.v_ai_model = tk.StringVar(self, value="gpt-5")
 
         # --- Estadísticas y Filtros ---
@@ -230,6 +231,11 @@ class App(tk.Tk):
         ttk.Button(
             ai_tools_frame, text="Revisión AI Avanzada",
             command=self.advanced_ai_review).grid(row=3, column=0, columnspan=5, sticky="ew", padx=2, pady=2)
+
+        # Row 4
+        ttk.Checkbutton(
+            ai_tools_frame, text="Detectar Repeticiones",
+            variable=self.v_ai_repetition_check).grid(row=4, column=0, columnspan=5, sticky="w", padx=2, pady=2)
 
         # --- Frame for Other tools ---
         other_tools_frame = ttk.LabelFrame(controls_frame, text="Otras Herramientas y Reportes")
@@ -2335,9 +2341,10 @@ class App(tk.Tk):
             return
 
         self._log(f"⏳ Iniciando Revisión AI Avanzada para {len(rows_to_review)} filas…")
+        repetition_check = self.v_ai_repetition_check.get()
         threading.Thread(
             target=self._batch_advanced_ai_review_worker,
-            args=(rows_to_review,),
+            args=(rows_to_review, repetition_check),
             daemon=True
         ).start()
 
@@ -2368,13 +2375,14 @@ class App(tk.Tk):
 
         self._log(f"⏳ Revisión AI Avanzada para fila {row_id}…")
         self.q.put(("AI_START_ID", row_id))
+        repetition_check = self.v_ai_repetition_check.get()
         threading.Thread(
             target=self._advanced_ai_review_worker,
-            args=(context,),
+            args=(context, repetition_check),
             daemon=True
         ).start()
 
-    def _batch_advanced_ai_review_worker(self, rows_to_review: list) -> None:
+    def _batch_advanced_ai_review_worker(self, rows_to_review: list, repetition_check: bool) -> None:
         """Worker for batch advanced AI review."""
         for row_data in rows_to_review:
             row_id = str(row_data[0])
@@ -2385,7 +2393,7 @@ class App(tk.Tk):
             self.q.put(("AI_START_ID", row_id))
             try:
                 from ai_review import get_advanced_review_verdict
-                verdict, comment = get_advanced_review_verdict(context)
+                verdict, comment = get_advanced_review_verdict(context, repetition_check=repetition_check)
                 if verdict is None:
                     self.q.put(("ADVANCED_AI_REVIEW_FAILED", row_id))
                 else:
@@ -2397,12 +2405,12 @@ class App(tk.Tk):
             finally:
                 self.q.put(("AI_DONE_ID", row_id))
 
-    def _advanced_ai_review_worker(self, context: dict) -> None:
+    def _advanced_ai_review_worker(self, context: dict, repetition_check: bool) -> None:
         """Worker for single advanced AI review."""
         row_id = str(context["current"]["id"])
         try:
             from ai_review import get_advanced_review_verdict
-            verdict, comment = get_advanced_review_verdict(context)
+            verdict, comment = get_advanced_review_verdict(context, repetition_check=repetition_check)
             if verdict is None:
                 self.q.put(("ADVANCED_AI_REVIEW_FAILED", row_id))
             else:
