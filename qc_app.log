@@ -1,0 +1,12 @@
+pygame 2.6.1 (SDL 2.28.4, Python 3.12.12)
+Hello from the pygame community. https://www.pygame.org/contribute.html
+Traceback (most recent call last):
+  File "/app/qc_app.py", line 2428, in <module>
+    App().mainloop()
+    ^^^^^
+  File "/app/qc_app.py", line 95, in __init__
+    super().__init__()
+  File "/home/jules/.pyenv/versions/3.12.12/lib/python3.12/tkinter/__init__.py", line 2346, in __init__
+    self.tk = _tkinter.create(screenName, baseName, className, interactive, wantobjects, useTk, sync, use)
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_tkinter.TclError: no display name and no $DISPLAY environment variable

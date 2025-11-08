@@ -38,3 +38,12 @@ Este documento describe las mejoras planificadas para la aplicación QC-Audiolib
 ### 7. Mejoras en la Integración con Audacity
 - **Descripción**: Ampliar la funcionalidad de marcadores para permitir la importación y exportación de etiquetas de Audacity.
 - **Beneficio**: Crearía un flujo de trabajo más fluido para los editores que utilizan Audacity para realizar las correcciones de audio finales.
+
+## Checklist de Implementación
+- [x] 1. Detección de Repeticiones con IA
+- [ ] 2. Visualización de Forma de Onda
+- [ ] 3. Exportación a CSV/Excel
+- [ ] 4. Atajos de Teclado (Hotkeys)
+- [ ] 5. Soporte Multilingüe
+- [ ] 6. Tema Oscuro
+- [ ] 7. Mejoras en la Integración con Audacity
