@@ -1,100 +1,61 @@
-# Audiobook QC
+# QC-Audiolibro: Herramienta de Control de Calidad
 
-This project provides a Tkinter application (`qc_app.py`) to align audiobook scripts with ASR transcripts.
+QC-Audiolibro es una aplicación de escritorio diseñada para facilitar el proceso de control de calidad (QC) en la producción de audiolibros. Compara el guion original con la transcripción automática (ASR) del audio grabado, permitiendo a los editores identificar y corregir errores de manera eficiente.
 
-## Requirements
+## Funcionalidades Principales
 
-- Python 3.12
-- `unidecode`
-- `pdfplumber`
-- `rapidfuzz`
-- `flake8` and `black` for linting (optional)
+- **Alineación de Texto y Audio**: Sincroniza el guion original con la transcripción ASR, mostrando las discrepancias línea por línea.
+- **Reproducción Sincronizada**: Permite reproducir segmentos de audio correspondientes a cada línea de texto directamente desde la aplicación.
+- **Revisión Asistida por IA**: Utiliza modelos de OpenAI (GPT-4o) para realizar una revisión automática, marcando posibles errores (`mal`) o confirmando lecturas correctas (`ok`).
+- **Edición y Corrección Intuitiva**: Facilita la corrección de errores de transcripción, la fusión de líneas y el ajuste de la sincronización.
+- **Re-transcripción de Segmentos**: Permite re-transcribir fragmentos específicos del audio que presenten errores graves utilizando un modelo de ASR más potente.
+- **Revisión Avanzada con IA**: Ofrece un análisis contextual de los errores, clasificándolos en categorías como repeticiones, omisiones, errores de lectura o desalineación.
+- **Exportación de Datos**: Guarda el trabajo en un archivo JSON que preserva todas las ediciones y metadatos para futuras revisiones.
+- **Creación de EDL**: Genera un archivo de lista de decisiones de edición (EDL) para automatizar cortes y correcciones en software de edición de audio.
 
-Install dependencies with:
+## Flujo de Trabajo Recomendado
 
-```bash
-pip install -r requirements.txt
-```
+1.  **Cargar Archivos**:
+    *   **Guion**: Carga el guion del audiolibro en formato PDF o TXT.
+    *   **TXT ASR**: Proporciona la transcripción generada por el sistema de reconocimiento de voz.
+    *   **Audio**: Selecciona el archivo de audio correspondiente (MP3, WAV, M4A, etc.).
 
-## Usage
+2.  **Procesar**:
+    *   Haz clic en el botón **"Procesar"**. La aplicación alineará el guion y el ASR, generando una tabla comparativa.
+    *   El resultado se guarda automáticamente en un archivo `.qc.json`. Este archivo es tu sesión de trabajo.
 
-Run the GUI with:
+3.  **Revisión con IA**:
+    *   **Configuración**: Antes del primer uso, asegúrate de tener una clave de API de OpenAI configurada como variable de entorno (`OPENAI_API_KEY`). Puedes crear un archivo `.env` en la carpeta del proyecto para guardarla de forma segura:
+        ```
+        OPENAI_API_KEY=sk-tuclaveaqui
+        ```
+    *   **AI Review**: Haz clic en **"AI Review"** para que la IA analice todas las líneas que aún no han sido revisadas. Marcará las líneas como `ok` o `mal` en la columna "AI".
+    *   **Revisión AI Avanzada**: Para las líneas marcadas como `mal` o `⚠️`, puedes usar la **"Revisión AI Avanzada"**. Esta función proporciona un análisis más detallado del error, considerando el contexto de las líneas adyacentes.
 
-```bash
-python qc_app.py
-```
+4.  **Revisión Manual**:
+    *   Navega por las filas, especialmente las marcadas como `mal`.
+    *   Haz doble clic en una fila para abrir una ventana de reproducción y escuchar el audio correspondiente.
+    *   Edita directamente las celdas de "Original" o "ASR" para corregir errores.
+    *   Utiliza el menú contextual (clic derecho) para fusionar filas o mover palabras entre ellas.
+    *   Marca las filas como "OK" en su columna correspondiente a medida que las revisas.
 
-You can also import the GUI directly:
+5.  **Guardar y Continuar**:
+    *   Todos los cambios se guardan automáticamente en el archivo JSON. Puedes cerrar la aplicación y volver a cargar el archivo JSON para continuar tu trabajo en cualquier momento.
 
-```python
-from qc_app import App
-App().mainloop()
-```
+## Instalación
 
-The application lets you select a script (PDF or TXT) and an ASR transcript,
-performs alignment and saves a `.qc.json` file.
+Para ejecutar la aplicación, necesitas Python 3.10 o superior.
 
+1.  Clona este repositorio o descarga los archivos.
+2.  Instala las dependencias necesarias:
+    ```bash
+    pip install -r requirements.txt
+    ```
+3.  Ejecuta la aplicación:
+    ```bash
+    python qc_app.py
+    ```
 
-### Command line usage
+## Mejoras y Futuro Desarrollo
 
-You can also transcribe from the command line:
-
-```bash
-python -m transcriber myaudio.mp3 --script book.txt
-```
-
-To generate a word-level QC file in one step use `--word-align`:
-
-```bash
-python -m transcriber myaudio.mp3 --script book.txt --word-align
-```
-
-This creates `myaudio.words.qc.json` without overwriting the regular QC file.
-
-If you already have a QC JSON and a CSV with word times you can resync the
-timecodes directly:
-
-```bash
-python -m transcriber myaudio.qc.json --resync-csv myaudio.words.csv
-```
-
-The updated rows are written to `myaudio.resync.json` next to the original file.
-
-
-## Manual review
-
-Double-click the **OK** column in the results table to mark or unmark a row as
-reviewed. The table is saved automatically to the loaded JSON file so these
-marks persist. Loading a previously saved file that includes an **OK** column
-will restore the review status for each row.
-
-Right-click a cell under **Original** or **ASR** to open a menu. Besides moving
-the entire cell up or down, the menu includes options to send only the first or
-last word to the adjacent row.
-
-## Implementation notes
-
-Alignment relies on dynamic time warping with anchor trigrams to keep the
-matching monotonic.  Each output row shows the WER of a chunk computed using
-word-level Levenshtein distance.
-
-### AI Review
-
-With a JSON file loaded you can click **AI Review (o3)** to send unchecked lines
-to OpenAI and automatically fill the *AI* column with `ok`, `mal` or `dudoso`.
-Lines marked `ok` are also auto-approved. Use **Detener análisis** to interrupt
-the batch review if needed.
-
-### OpenAI setup
-
-This project uses the OpenAI Python client (v1+) for AI review.
-Set your API key in the OPENAI_API_KEY environment variable.
-You can create a .env file with the key and optional debugging flag:
-
-```
-OPENAI_API_KEY=sk-yourkey
-AI_REVIEW_DEBUG=1
-```
-
-The .env file is ignored by git so your credentials remain private.
-
+Esta aplicación está en desarrollo activo. Consulta el archivo `IMPROVEMENTS.md` para ver una lista de las próximas funcionalidades y mejoras planificadas.
