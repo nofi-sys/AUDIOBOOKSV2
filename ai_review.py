@@ -401,7 +401,11 @@ def get_advanced_review_verdict(context: dict, model: str | None = None, repetit
     prompt_template = REPETITION_PROMPT if repetition_check else ADVANCED_REVIEW_PROMPT
     full_prompt = prompt_template + user_prompt
 
-    system_content = "You are a specialized QA analyst for audiobooks, focused *only* on detecting unintentional repetitions." if repetition_check else "You are a senior QA analyst for audiobooks."
+    system_content = (
+        "You are a specialized QA analyst for audiobooks, focused *only* on detecting unintentional repetitions."
+        if repetition_check
+        else "You are a senior QA analyst for audiobooks. Your task is to re-evaluate a transcription row that was previously flagged as 'mal'."
+    )
 
 
     current_model = model or MODEL_DEFAULT
@@ -428,7 +432,12 @@ def get_advanced_review_verdict(context: dict, model: str | None = None, repetit
         comment = comment_part.replace("COMMENT:", "").strip()
 
         valid_verdicts = ["REPETICION", "OMISION", "ADICION", "ERROR_LECTURA", "INSIGNIFICANTE", "DESALINEADO", "OK"]
-        if verdict not in valid_verdicts:
+        if repetition_check:
+            if verdict != "REPETICION":
+                # If the specialized check is active, any non-repetition verdict is considered OK.
+                # The original response is kept in the comment for traceability.
+                return "OK", f"AI response: '{response_text}'"
+        elif verdict not in valid_verdicts:
             # If the model didn't follow instructions, use a default and return its full response as comment.
             return "DUDOSO", response_text
 
