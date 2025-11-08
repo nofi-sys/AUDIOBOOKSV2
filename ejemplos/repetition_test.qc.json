@@ -1,0 +1,32 @@
+[
+  [
+    0,
+    "✅",
+    "",
+    "",
+    0,
+    "0.0",
+    "Esta es la primera linea.",
+    "Esta es la primera linea."
+  ],
+  [
+    1,
+    "❌",
+    "",
+    "mal",
+    0,
+    "5.0",
+    "Esta es la segunda linea.",
+    "Esta es la la segunda linea."
+  ],
+  [
+    2,
+    "✅",
+    "",
+    "",
+    0,
+    "10.0",
+    "Esta es la tercera linea.",
+    "Esta es la tercera linea."
+  ]
+]
