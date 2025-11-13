@@ -32,7 +32,7 @@ except Exception:
 from utils.gui_errors import show_error
 
 from alignment import build_rows, build_rows_from_words, WARN_WER
-from text_utils import read_script, normalize
+from text_utils import find_repeated_sequences, read_script, normalize
 from rapidfuzz.distance import Levenshtein
 from qc_utils import canonical_row, log_correction_metadata
 from audacity_session import AudacityLabelSession
@@ -1426,6 +1426,15 @@ class App(tk.Tk):
         """Recalculate flag and WER after modifying text."""
         original = self.tree.set(iid, "Original")
         asr = self.tree.set(iid, "ASR")
+
+        # 1. Repetition Check (Local)
+        repetitions = find_repeated_sequences(asr)
+        if repetitions:
+            self.tree.set(iid, "AI", "REPETICION")
+            # Optional: Log the found repetition for clarity
+            self._log(f"Repetición detectada en fila {self.tree.set(iid, 'ID')}: '{repetitions[0]}'")
+
+        # 2. WER and Flag Calculation
         ref_t = normalize(original, strip_punct=False).split()
         hyp_t = normalize(asr, strip_punct=False).split()
         if hyp_t:
