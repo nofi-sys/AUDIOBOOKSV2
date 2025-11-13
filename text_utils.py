@@ -296,3 +296,47 @@ def extract_word_list(text: str, max_words: int = 50) -> List[str]:
         if len(result) >= max_words:
             break
     return result[:max_words]
+
+
+def find_repeated_sequences(text: str) -> List[str]:
+    """
+    Finds consecutive repeated sequences of 1, 2, or 3 words in a text.
+
+    Returns a list of the full repeated phrases found (e.g., "a cat a cat").
+    """
+    words = normalize(text, strip_punct=False).split()
+    if len(words) < 2:
+        return []
+
+    found = []
+    i = 0
+    while i < len(words):
+        # Prioritize longer sequences first
+        # Check for trigrams (e.g., "go to the go to the")
+        if i + 5 < len(words):
+            seq1 = words[i : i + 3]
+            seq2 = words[i + 3 : i + 6]
+            if seq1 == seq2:
+                found.append(" ".join(seq1 + seq2))
+                i += 6  # Advance index past the full repetition
+                continue
+
+        # Check for bigrams (e.g., "go to go to")
+        if i + 3 < len(words):
+            seq1 = words[i : i + 2]
+            seq2 = words[i + 2 : i + 4]
+            if seq1 == seq2:
+                found.append(" ".join(seq1 + seq2))
+                i += 4
+                continue
+
+        # Check for single words (e.g., "go go")
+        if i + 1 < len(words):
+            if words[i] == words[i + 1]:
+                found.append(f"{words[i]} {words[i+1]}")
+                i += 2
+                continue
+
+        i += 1
+
+    return found
