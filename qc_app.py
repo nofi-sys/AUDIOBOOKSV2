@@ -104,6 +104,7 @@ class App(tk.Tk):
         self.ai_one = tk.BooleanVar(self, value=False)
         self.v_ai_repetition_check = tk.BooleanVar(self, value=False)
         self.v_ai_model = tk.StringVar(self, value="gpt-5")
+        self.v_transcribe_model = tk.StringVar(self, value="large-v3")
 
         # --- Estadísticas y Filtros ---
         self.v_stats_total = tk.StringVar(self, value="Total: 0")
@@ -202,7 +203,14 @@ class App(tk.Tk):
 
         # Row 0
         btn_transcribe = ttk.Button(ai_tools_frame, text="Transcribir", command=self.transcribe)
-        btn_transcribe.grid(row=0, column=0, columnspan=2, sticky="ew", padx=2, pady=2)
+        btn_transcribe.grid(row=0, column=0, sticky="ew", padx=2, pady=2)
+
+        transcribe_models = ["medium", "large-v2", "large-v3"]
+        self.transcribe_model_combo = ttk.Combobox(
+            ai_tools_frame, textvariable=self.v_transcribe_model, values=transcribe_models, width=12)
+        self.transcribe_model_combo.grid(row=0, column=1, sticky="ew", padx=2, pady=2)
+        self.transcribe_model_combo.set(transcribe_models[-1])
+
         btn_retranscribe = ttk.Button(ai_tools_frame, text="Re-transcribir mal", command=self.reprocess_bad)
         btn_retranscribe.grid(row=0, column=2, columnspan=2, sticky="ew", padx=2, pady=2)
         btn_pause_re = ttk.Button(ai_tools_frame, text="Pausar", command=self.pause_reprocess)
@@ -554,14 +562,16 @@ class App(tk.Tk):
             return
         self._log("⏳ Transcribiendo…")
         self._show_progress("Transcribiendo…", determinate=True)
-        threading.Thread(target=self._transcribe_worker, daemon=True).start()
+        model = self.v_transcribe_model.get()
+        threading.Thread(target=self._transcribe_worker, args=(model,), daemon=True).start()
 
-    def _transcribe_worker(self) -> None:
+    def _transcribe_worker(self, model_name: str) -> None:
         try:
             from transcriber import transcribe_word_csv
 
             out = transcribe_word_csv(
                 self.v_audio.get(),
+                model_size=model_name,
                 script_path=self.v_ref.get(),
                 progress_queue=self.q,
             )
