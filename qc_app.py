@@ -576,55 +576,30 @@ class App(tk.Tk):
     # ──────────────────────────────────────────────────────────────────────────────
     def _row_from_alignment(self, r: list) -> list:
         """
-        build_rows genera:
-          6 col.: [ID, Check,        WER, tc, Original, ASR]
-          7 col.: [ID, Check,  OK,   WER, tc, Original, ASR]
-          8 col.: [ID, Check,  OK, AI, WER, tc, Original, ASR]  (ya correcto)
-        Retorna siempre 8-columnas en el orden que usa la GUI.
+        Normaliza una fila de datos a las 9 columnas estándar de la GUI,
+        asegurando que no haya pérdida de datos y formateando el timecode.
         """
-
-        from qc_utils import canonical_row
-
+        # canonical_row asegura que la fila tenga al menos 8 columnas,
+        # en el orden correcto [ID, Check, OK, AI, WER, tc, Original, ASR]
         row = canonical_row(r)
-        if len(row) > 5:
-            row[5] = _format_tc(row[5])
+
+        # La GUI usa 9 columnas, insertamos 'Score' si falta.
+        if len(row) == 8:
+            row.insert(4, "")  # Insertar Score en la posición 4
+
+        # Asegurar que siempre haya 9 columnas, rellenando si es necesario
+        while len(row) < 9:
+            row.append("")
+
+        # Truncar si hay más de 9, aunque no debería ocurrir con canonical_row
+        row = row[:9]
+
+        # Formatear el timecode (columna 6) y asegurar que el texto sea string
+        row[6] = _format_tc(row[6])
+        row[7] = str(row[7])
+        row[8] = str(row[8])
+
         return row
-        # Devuelve SIEMPRE 9 columnas, rellenando las que falten.
-        # Formatea tc como HH:MM:SS.d
-        try:
-            vals = list(r)
-
-            # Caso base: Fila de 6 columnas del alineador
-            # [ID, flag, WER, tc, Original, ASR]
-            if len(vals) == 6:
-                # -> [ID, Check, OK, AI, Score, WER, tc, Original, ASR]
-                vals.insert(2, "")  # OK
-                vals.insert(3, "")  # AI
-                vals.insert(4, "")  # Score
-                return vals
-
-            # Para filas de JSON, que pueden tener 7, 8 o 9 columnas,
-            # las normalizamos a 9 insertando Score si falta.
-            if len(vals) in (7, 8):
-                vals.insert(4, "")  # Score
-
-            # Rellena por si acaso y trunca a 9
-            while len(vals) < 9:
-                vals.append("")
-            vals = vals[:9]
-
-            # Formatea tc (índice 6) y texto (índices 7, 8)
-            vals[6] = _format_tc(vals[6])
-            vals[7] = str(vals[7])
-            vals[8] = str(vals[8])
-
-            return vals
-        except Exception:
-            # Fallback de emergencia
-            padded_r = list(r)
-            while len(padded_r) < 9:
-                padded_r.append("")
-            return padded_r[:9]
 
     # ───────────────────────────────── ventana de progreso ─────────────────────────
     def _show_progress(self, text: str = "Procesando…", *, determinate: bool = False) -> None:

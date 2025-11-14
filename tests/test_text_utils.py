@@ -31,22 +31,22 @@ def test_token_equal_abbreviation():
     assert text_utils.token_equal("j.", "j")
 
 
-def test_find_repeated_sequences_bigram():
-    text = "this is a test with a bigram a bigram repeated"
-    assert text_utils.find_repeated_sequences(text) == ["a bigram a bigram"]
+def test_find_repeated_sequences_exact():
+    text = "this is a test with a phrase that is a phrase that is repeated"
+    assert text_utils.find_repeated_sequences(text) == ["a phrase that is ... a phrase that is"]
 
-def test_find_repeated_sequences_trigram():
-    text = "another test with a test trigram a test trigram repeated"
-    assert text_utils.find_repeated_sequences(text) == ["a test trigram a test trigram"]
+def test_find_repeated_sequences_inexact():
+    text = "this is a test with a phraze that is a phrase that is repeated"
+    assert text_utils.find_repeated_sequences(text) == ["a phraze that is ... a phrase that is"]
+
+def test_find_repeated_sequences_long():
+    text = "a very long phrase that is repeated a very long phrase that is repeated"
+    assert text_utils.find_repeated_sequences(text) == ["a very long phrase that is repeated ... a very long phrase that is repeated"]
 
 def test_find_repeated_sequences_none():
-    text = "this text has no repetitions"
+    text = "this text has no repetitions at all"
     assert text_utils.find_repeated_sequences(text) == []
 
 def test_find_repeated_sequences_case_insensitive():
-    text = "this is a Test Bigram a test bigram with mixed case"
-    assert text_utils.find_repeated_sequences(text) == ["a test bigram a test bigram"]
-
-def test_find_repeated_sequences_consecutive_only():
-    text = "one two three one two four"
-    assert text_utils.find_repeated_sequences(text) == []
+    text = "this is a Test Phrase a test phrase with mixed case"
+    assert text_utils.find_repeated_sequences(text) == ["a Test Phrase ... a test phrase"]
