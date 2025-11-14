@@ -88,8 +88,8 @@ El error más crítico a detectar es cuando el locutor se equivoca y repite un f
 
 ## 11. Plazos y prioridades inmediatas
 
-- [ ] **Prioridad 1:** Robustecer la **transcripción** (modelo + glosario).
-- [ ] **Prioridad 2:** Corregir el problema de **truncado de celdas**.
+- [x] **Prioridad 1:** Robustecer la **transcripción** (modelo + glosario).
+- [x] **Prioridad 2:** Corregir el problema de **truncado de celdas**.
 - [ ] **Prioridad 3:** Reestructurar la **comparación con IA** (contexto fijo, evaluación fila a fila, pruebas de falsos positivos).
 - [ ] **Prioridad 4:** Mejorar la **sincronía audio–texto** (metadata refinada por palabra).
 - [ ] **Prioridad 5:** Cambiar la **segmentación** a párrafos u oraciones.
