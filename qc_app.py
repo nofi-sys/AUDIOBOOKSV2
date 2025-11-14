@@ -38,6 +38,36 @@ from qc_utils import canonical_row, log_correction_metadata
 from audacity_session import AudacityLabelSession
 
 from audio_video_editor import build_intervals
+
+class Tooltip:
+    def __init__(self, widget, text):
+        self.widget = widget
+        self.text = text
+        self.tooltip_window = None
+        self.widget.bind("<Enter>", self.show_tooltip)
+        self.widget.bind("<Leave>", self.hide_tooltip)
+
+    def show_tooltip(self, event):
+        if self.tooltip_window or not self.text:
+            return
+        x, y, _, _ = self.widget.bbox("insert")
+        x += self.widget.winfo_rootx() + 25
+        y += self.widget.winfo_rooty() + 25
+
+        self.tooltip_window = tw = tk.Toplevel(self.widget)
+        tw.wm_overrideredirect(True)
+        tw.wm_geometry(f"+{x}+{y}")
+
+        label = tk.Label(tw, text=self.text, justify=tk.LEFT,
+                         background="#ffffe0", relief=tk.SOLID, borderwidth=1,
+                         wraplength=500)
+        label.pack(ipadx=1)
+
+    def hide_tooltip(self, event):
+        if self.tooltip_window:
+            self.tooltip_window.destroy()
+        self.tooltip_window = None
+
 # --------------------------------------------------------------------------------------
 # utilidades de audio ------------------------------------------------------------------
 # --------------------------------------------------------------------------------------
@@ -400,6 +430,37 @@ class App(tk.Tk):
         # bindings
         self.tree.bind("<Double-1>", self._handle_double)
 
+        self.tree.bind("<Motion>", self._on_tree_motion)
+        self.tooltip = None
+
+    def _on_tree_motion(self, event):
+        item_id = self.tree.identify_row(event.y)
+        column_id = self.tree.identify_column(event.x)
+
+        if item_id and column_id:
+            column_index = int(column_id.replace('#', '')) - 1
+            if column_index in [7, 8]:  # Corresponde a 'Original' y 'ASR'
+                text = self.tree.item(item_id, 'values')[column_index]
+
+                # Create a temporary font to measure text width
+                font = tk.font.Font(font=self.tree.cget("font"))
+                text_width = font.measure(text)
+
+                if text_width > self.tree.column(column_id, "width"):
+                    if not self.tooltip or self.tooltip.text != text:
+                        self.tooltip = Tooltip(self.tree, text)
+                else:
+                    if self.tooltip:
+                        self.tooltip.hide_tooltip(event)
+                        self.tooltip = None
+            else:
+                if self.tooltip:
+                    self.tooltip.hide_tooltip(event)
+                    self.tooltip = None
+        else:
+            if self.tooltip:
+                self.tooltip.hide_tooltip(event)
+                self.tooltip = None
     # ------------------------------------------------------------- player bar -------
     def _build_player_bar(self, parent: tk.Widget | None = None) -> None:
         if parent is None:
