@@ -120,21 +120,20 @@ def _flag_for_wer(wer_pct: float, ref_len: int) -> str:
     return "❌"
 
 
-# Oraciones: partimos por signos de cierre
-_SENT_SPLIT_RE = re.compile(r"(?<=[\.\?\!])\s+")
-
-
-def _sentence_spans(ref_tokens: List[str]) -> List[Tuple[int, int]]:
-    text = " ".join(ref_tokens)
-    sents = _SENT_SPLIT_RE.split(text) if text else []
-    spans, pos = [], 0
-    for s in sents:
-        w = s.split()
-        if w:
-            spans.append((pos, pos + len(w)))
-            pos += len(w)
-    if not spans and ref_tokens:
-        spans = [(0, len(ref_tokens))]
+# Párrafos: segmentamos por saltos de línea dobles
+def _paragraph_spans(ref_text: str) -> List[Tuple[int, int]]:
+    """Devuelve spans de tokens para cada párrafo."""
+    paragraphs = re.split(r'\n\s*\n', ref_text)
+    spans = []
+    current_pos = 0
+    for p in paragraphs:
+        p_tokens = _tokenize(p)
+        if p_tokens:
+            start_pos = len(_tokenize(ref_text[:ref_text.find(p)]))
+            end_pos = start_pos + len(p_tokens)
+            spans.append((start_pos, end_pos))
+    if not spans and _tokenize(ref_text):
+        spans = [(0, len(_tokenize(ref_text)))]
     return spans
 
 
@@ -206,14 +205,14 @@ def _match_sent_window(seg: List[str], asr: List[str], lo: int, hi: int) -> List
     return sorted(set(idxs))
 
 
-def _align_sentwise(ref_tokens: List[str], asr_tokens: List[str], tcs: List[float]) -> List[Tuple[int, int]]:
+def _align_paragraphwise(ref_text: str, ref_tokens: List[str], asr_tokens: List[str], tcs: List[float]) -> List[Tuple[int, int]]:
     """
     Devuelve pares (i_ref, j_asr) únicamente en posiciones “diagonales”
-    (similares) por ventana local. Se usa para guiar el recorte por oración.
+    (similares) por ventana local. Se usa para guiar el recorte por párrafo.
     """
     pairs: List[Tuple[int, int]] = []
     last = 0
-    spans = _sentence_spans(ref_tokens)
+    spans = _paragraph_spans(ref_text)
 
     for (s, e) in spans:
         seg = ref_tokens[s:e]
@@ -332,17 +331,17 @@ def build_rows_from_words(ref: str, asr_words: List[str], tcs: List[float]) -> L
     ref_tokens = _tokenize(ref)
     asr_tokens = [_normalize_token(w) for w in asr_words]
 
-    # 1) Alineación laxa por oración para tener anclajes iniciales
-    pairs = _align_sentwise(ref_tokens, asr_tokens, tcs)
+    # 1) Alineación laxa por párrafo para tener anclajes iniciales
+    pairs = _align_paragraphwise(ref, ref_tokens, asr_tokens, tcs)
 
-    # 2) Segmentar REF por oraciones, y para cada una, elegir el tramo de ASR
+    # 2) Segmentar REF por párrafos, y para cada uno, elegir el tramo de ASR
     #    más razonable (según pausas, duración esperada, etc.)
     rows_meta: List[dict] = []
     last_h = 0
-    spans = _sentence_spans(ref_tokens)
+    spans = _paragraph_spans(ref)
 
     for (s, e) in spans:
-        # buscar índices de H que caen en esta oración de R
+        # buscar índices de H que caen en este párrafo de R
         h_cand = sorted([p[1] for p in pairs if s <= p[0] < e])
         # cortar corridas por pausas y distancia
         runs = _split_runs_by_pause(h_cand, tcs)

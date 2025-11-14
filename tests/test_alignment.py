@@ -13,8 +13,8 @@ def test_build_rows_basic():
     assert rows[0][1] == "✅"
 
 
-def test_build_rows_sentence_split():
-    ref = "Hola mundo. Adios."
+def test_build_rows_paragraph_split():
+    ref = "Hola mundo.\n\nAdios."
     hyp = "Hola mundo. Adios."
     rows = build_rows(ref, hyp)
     assert len(rows) == 2

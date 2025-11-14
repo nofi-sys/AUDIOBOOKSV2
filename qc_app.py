@@ -22,7 +22,7 @@ from pathlib import Path
 
 import pygame
 import tkinter as tk
-from tkinter import filedialog, messagebox, scrolledtext, ttk
+from tkinter import filedialog, messagebox, scrolledtext, ttk, font
 
 try:
     import vlc  # opcional, para control de velocidad suave
@@ -443,8 +443,8 @@ class App(tk.Tk):
                 text = self.tree.item(item_id, 'values')[column_index]
 
                 # Create a temporary font to measure text width
-                font = tk.font.Font(font=self.tree.cget("font"))
-                text_width = font.measure(text)
+                font_obj = font.Font(font=self.tree.cget("font"))
+                text_width = font_obj.measure(text)
 
                 if text_width > self.tree.column(column_id, "width"):
                     if not self.tooltip or self.tooltip.text != text:
