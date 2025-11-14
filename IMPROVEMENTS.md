@@ -1,40 +1,115 @@
-# Lista de Mejoras para QC-Audiolibro
+# Plan de Mejoras para la Aplicación de Revisión de Audiolibros
 
-Este documento describe las mejoras planificadas para la aplicación QC-Audiolibro, priorizadas según las necesidades del flujo de trabajo de producción.
+Este documento resume las especificaciones, problemas y prioridades para mejorar la aplicación de control de calidad de audiolibros, basado en la reflexión detallada del proyecto.
 
-## Prioridad Alta
+---
 
-### 1. Detección de Repeticiones con IA
-- **Descripción**: Implementar una funcionalidad de revisión por IA enfocada específicamente en detectar repeticiones de frases o palabras innecesarias, que son un tipo de error común en la grabación de audiolibros.
-- **Detalles Técnicos**:
-    - Añadir un *checkbox* en la interfaz gráfica con la etiqueta "Detectar Repeticiones".
-    - Cuando esta opción esté activa, la "Revisión AI Avanzada" utilizará un *prompt* especializado y un algoritmo más robusto para identificar frases repetidas que no formen parte del estilo literario del texto.
-    - El veredicto de la IA debería ser específico, como `REPETICION`, para que el revisor pueda identificar rápidamente este tipo de error.
+## 1. Objetivo general de la aplicación
 
-## Prioridad Media
+La aplicación busca **reducir al mínimo el trabajo manual de edición** en grabaciones largas, detectando y corrigiendo eficientemente los errores groseros de lectura (repeticiones, falsos comienzos, etc.) para dejar el material en un estado publicable.
 
-### 2. Visualización de Forma de Onda
-- **Descripción**: Integrar un pequeño panel que muestre la forma de onda del audio para el segmento de la fila seleccionada.
-- **Beneficio**: Permitiría a los revisores identificar visualmente problemas de edición de audio, como cortes abruptos, clics, o silencios inadecuados, sin depender únicamente de la escucha.
+- [ ] **Meta:** Reducir la revisión manual a menos del 20-30% del material.
 
-### 3. Exportación a CSV/Excel
-- **Descripción**: Añadir una opción en el menú para exportar la tabla de QC a un archivo en formato CSV o Excel.
-- **Beneficio**: Facilitaría la creación de informes de calidad, el seguimiento de métricas de error y la compartición de datos con otros miembros del equipo que no necesiten usar la aplicación directamente.
+---
 
-### 4. Atajos de Teclado (Hotkeys)
-- **Descripción**: Implementar atajos de teclado para las acciones más comunes, como reproducir/pausar, marcar una fila como "OK" o "mal", y navegar a la siguiente o anterior fila problemática.
-- **Beneficio**: Aumentaría significativamente la velocidad y eficiencia de la revisión manual.
+## 2. Flujo actual y problema central
 
-## Prioridad Baja
+El flujo actual (cargar audio/texto -> transcribir -> comparar) genera demasiados falsos errores, obligando a una revisión manual excesiva.
 
-### 5. Soporte Multilingüe
-- **Descripción**: Añadir soporte para cambiar el idioma de la interfaz de usuario (inicialmente, a inglés).
-- **Beneficio**: Haría la herramienta accesible para equipos de producción internacionales.
+- [ ] **Meta:** Reducir drásticamente los falsos negativos (errores marcados como "mal" que están bien).
 
-### 6. Tema Oscuro
-- **Descripción**: Implementar un tema oscuro para la interfaz de la aplicación.
-- **Beneficio**: Reduciría la fatiga visual de los revisores durante sesiones de trabajo prolongadas.
+---
 
-### 7. Mejoras en la Integración con Audacity
-- **Descripción**: Ampliar la funcionalidad de marcadores para permitir la importación y exportación de etiquetas de Audacity.
-- **Beneficio**: Crearía un flujo de trabajo más fluido para los editores que utilizan Audacity para realizar las correcciones de audio finales.
+## 3. Prioridad funcional: Detección de repeticiones y micro-tomas
+
+El error más crítico a detectar es cuando el locutor se equivoca y repite un fragmento.
+
+- [ ] **Tarea:** Implementar un sistema robusto para detectar repeticiones de segmentos de texto.
+- [ ] **Tarea:** Marcar los bloques repetidos, asumiendo por defecto que la **última toma es la válida**.
+
+---
+
+## 4. Problemas en la comparación texto–transcripción
+
+### 4.1. Errores de Transcripción (ASR)
+- [ ] **Tarea:** Implementar el uso de un modelo de transcripción más pesado y preciso.
+- [ ] **Tarea:** Alimentar el modelo ASR con un **glosario de palabras clave** extraído del texto original para mejorar la precisión.
+
+### 4.2. Glosario de palabras clave
+- [ ] **Tarea:** Reutilizar o implementar un método para procesar el texto original (ej. con NLP) y extraer entidades nombradas y términos clave.
+- [ ] **Tarea:** Integrar la generación del glosario en el flujo de la aplicación.
+
+---
+
+## 5. Problemas técnicos adicionales
+
+- [ ] **Bug:** Corregir el **truncado de texto** en las celdas de la tabla de comparación.
+- [ ] **Crítico:** Asegurar que la tasa de **falsos positivos** (marcar algo mal como "OK") sea **cero**.
+
+---
+
+## 6. Mejora del proceso de comparación con IA
+
+- [ ] **Tarea:** Implementar un sistema de **contexto persistente (cache)** para las llamadas a la IA, incluyendo el texto y la transcripción completos del capítulo.
+- [ ] **Tarea:** Realizar pruebas sistemáticas para endurecer el sistema contra falsos positivos.
+- [ ] **Tarea:** Afinar el sistema para reducir los falsos negativos.
+
+---
+
+## 7. Sincronía audio–texto y precisión temporal
+
+### 7.1. Refinamiento de puntos de anclaje
+- [ ] **Tarea:** Implementar una pasada de análisis de audio para encontrar el **inicio exacto de cada palabra ("pie de colina")**.
+- [ ] **Tarea:** Implementar la detección del **final de la palabra** y el valle de silencio antes de la siguiente.
+- [ ] **Tarea:** Generar metadata de tiempo enriquecida (inicio exacto, final funcional, final de reverberación).
+
+---
+
+## 8. Segmentación del texto
+
+- [ ] **Tarea:** Modificar la lógica de segmentación para que se base en la estructura del **texto original**.
+- [ ] **Opción A:** Segmentar por **párrafos**, con subdivisión en oraciones si son demasiado largos.
+- [ ] **Opción B:** Segmentar directamente por **oraciones** usando signos de puntuación.
+
+---
+
+## 9. Segunda pasada: Modelo que evalúa audio directamente
+
+- [ ] **(Futuro):** Implementar una segunda capa de validación para los bloques dudosos, usando un modelo que compare directamente el **audio** con el texto original.
+
+---
+
+## 10. Especificaciones para el uso de modelos de IA
+
+- [ ] **Tarea:** Crear un documento de especificaciones técnicas que defina **qué modelos de IA usar, con qué parámetros y límites de tokens**.
+- [ ] **Meta:** Asegurarse de que los agentes de desarrollo respeten estas especificaciones para controlar costos y evitar errores.
+
+---
+
+## 11. Plazos y prioridades inmediatas
+
+- [ ] **Prioridad 1:** Robustecer la **transcripción** (modelo + glosario).
+- [ ] **Prioridad 2:** Corregir el problema de **truncado de celdas**.
+- [ ] **Prioridad 3:** Reestructurar la **comparación con IA** (contexto fijo, evaluación fila a fila, pruebas de falsos positivos).
+- [ ] **Prioridad 4:** Mejorar la **sincronía audio–texto** (metadata refinada por palabra).
+- [ ] **Prioridad 5:** Cambiar la **segmentación** a párrafos u oraciones.
+
+---
+
+## 12. Integración futura en la web y modelo de negocio
+
+- [ ] **(Futuro):** Integrar la app en la web de **Mississippi Editions**.
+- [ ] **(Futuro):** Definir un modelo de negocio (gratis para herramientas sin IA, créditos/suscripción para herramientas con IA).
+
+---
+
+## 13. Dimensión educativa y ecosistema
+
+- [ ] **(Futuro):** Crear contenido educativo sobre grabación de audiolibros.
+- [ ] **(Futuro):** Establecer un ecosistema de servicios (conexiones con estudios, imprentas, etc.).
+
+---
+
+## 14. Etapa posterior: Maquetado estructurado
+
+- [ ] **(Futuro):** Implementar un sistema de maquetado estructurado para que el resultado final esté listo para subir a plataformas como **Audible**.
