@@ -1,0 +1,1 @@
+# Reporte de maquetado (MVP)\n\n- Entradas: ejemplo.txt\n- Bloques detectados: 7 encabezados (h1: 2, h2: 3, h3: 2), 5 párrafos\n- Plantillas aplicadas: capitulo_parte_romanos: 7\n- Heurísticas aplicadas: Ninguna\n\n- Notas: Motor MVP basado en reglas y heurísticas.\n

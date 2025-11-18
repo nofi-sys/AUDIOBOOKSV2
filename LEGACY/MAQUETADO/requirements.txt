@@ -1,0 +1,6 @@
+python-docx
+openai
+pytest
+python-dotenv
+PyYAML
+spacy

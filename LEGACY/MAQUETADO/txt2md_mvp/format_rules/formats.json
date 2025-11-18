@@ -1,0 +1,117 @@
+[
+  {
+    "id": "gutenberg",
+    "name": "Project Gutenberg (ASCII plano)",
+    "description": "Guiones bajos y mayúsculas para simular cursivas y énfasis.",
+    "markers": [
+      {
+        "pattern": "_[^_]+_",
+        "label": "Cursiva con guiones bajos"
+      },
+      {
+        "pattern": "\\*[^*]+\\*",
+        "label": "Negrita opcional con asteriscos"
+      },
+      {
+        "pattern": "~~[^~]+~~",
+        "label": "Cursiva enfática con dobles tildes"
+      },
+      {
+        "pattern": "[A-Z]{3,}",
+        "label": "Mayúsculas sostenidas para énfasis"
+      }
+    ]
+  },
+  {
+    "id": "plain",
+    "name": "Texto plano (convenciones generales)",
+    "description": "Marcado ad-hoc con asteriscos, guiones bajos y mayúsculas.",
+    "markers": [
+      {
+        "pattern": "\\*[^*]+\\*",
+        "label": "Énfasis con asteriscos"
+      },
+      {
+        "pattern": "_[^_]+_",
+        "label": "Énfasis o subrayado"
+      },
+      {
+        "pattern": "/[A-Za-z0-9 ]+/",
+        "label": "Cursiva usando barras"
+      },
+      {
+        "pattern": "[A-Z]{3,}",
+        "label": "Mayúsculas para énfasis fuerte"
+      }
+    ]
+  },
+  {
+    "id": "bbcode",
+    "name": "BBCode (foros)",
+    "description": "Etiquetas [b], [i], [u] típicas de foros clásicos.",
+    "markers": [
+      {
+        "pattern": "\\[b].+?\\[/b]",
+        "label": "Negrita"
+      },
+      {
+        "pattern": "\\[i].+?\\[/i]",
+        "label": "Cursiva"
+      },
+      {
+        "pattern": "\\[u].+?\\[/u]",
+        "label": "Subrayado"
+      },
+      {
+        "pattern": "\\[code].+?\\[/code]",
+        "label": "Código"
+      }
+    ]
+  },
+  {
+    "id": "textile",
+    "name": "Textile",
+    "description": "Sintaxis *bold*, _italic_, -strike-.",
+    "markers": [
+      {
+        "pattern": "\\*[A-Za-z0-9].+?\\*",
+        "label": "Negrita"
+      },
+      {
+        "pattern": "_[A-Za-z0-9].+?_",
+        "label": "Cursiva"
+      },
+      {
+        "pattern": "-[A-Za-z0-9].+?-",
+        "label": "Tachado"
+      },
+      {
+        "pattern": "\\+[A-Za-z0-9].+?\\+",
+        "label": "Subrayado"
+      }
+    ]
+  },
+  {
+    "id": "orgmode",
+    "name": "Emacs Org-mode",
+    "description": "Marcado /cursiva/, *negrita*, +tachado+.",
+    "markers": [
+      {
+        "pattern": "\\*[A-Za-z0-9].+?\\*",
+        "label": "Negrita"
+      },
+      {
+        "pattern": "/[A-Za-z0-9].+?/",
+        "label": "Cursiva"
+      },
+      {
+        "pattern": "\\+[A-Za-z0-9].+?\\+",
+        "label": "Tachado"
+      },
+      {
+        "pattern": "_[A-Za-z0-9].+?_",
+        "label": "Subrayado"
+      }
+    ]
+  }
+]

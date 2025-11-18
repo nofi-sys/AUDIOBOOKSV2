@@ -1,0 +1,13 @@
+
+id: capitulo_parte_romanos
+priority: 60
+language: es
+patterns:
+  h1:
+    - '^(?:parte|libro)\s+(?P<num>[MDCLXVI]+|\d+)\b[:.\-–—]?\s*(?P<title>.*?)$'
+  h2:
+    - '^(?:cap[ií]tulo|chapter)\s+(?P<num>(\d+|[MDCLXVI]+))\b[:.\-–—]?\s*(?P<title>.*?)$'
+  h3:
+    - '^(?:secci[oó]n)\s+(?P<num>(\d+(\.\d+)*))\b[:.\-–—]?\s*(?P<title>.*?)$'
+signals:
+  allow_all_caps_titles: true

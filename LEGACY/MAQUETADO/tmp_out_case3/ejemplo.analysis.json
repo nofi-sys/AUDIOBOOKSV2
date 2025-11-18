@@ -1,0 +1,121 @@
+[
+  {
+    "line": 1,
+    "decision": "h1",
+    "info": {
+      "pattern": "^(?:parte|libro)\\s+(?P<num>[MDCLXVI]+|\\d+)\\b[:.\\-–—]?\\s*(?P<title>.*)$",
+      "groups": {
+        "num": "I",
+        "title": ""
+      },
+      "template": "capitulo_parte_romanos"
+    }
+  },
+  {
+    "line": 3,
+    "decision": "h2",
+    "info": {
+      "pattern": "^(?:cap[ií]tulo)\\s+(?P<num>(\\d+|[MDCLXVI]+))\\b[:.\\-–—]?\\s*(?P<title>.*)$",
+      "groups": {
+        "num": "1",
+        "title": "Introducción"
+      },
+      "template": "capitulo_parte_romanos"
+    }
+  },
+  {
+    "line": null,
+    "decision": "p",
+    "info": {
+      "len": 90
+    }
+  },
+  {
+    "line": 7,
+    "decision": "h2",
+    "info": {
+      "pattern": "^(?:cap[ií]tulo)\\s+(?P<num>(\\d+|[MDCLXVI]+))\\b[:.\\-–—]?\\s*(?P<title>.*)$",
+      "groups": {
+        "num": "2",
+        "title": "Desarrollo"
+      },
+      "template": "capitulo_parte_romanos"
+    }
+  },
+  {
+    "line": null,
+    "decision": "p",
+    "info": {
+      "len": 28
+    }
+  },
+  {
+    "line": 9,
+    "decision": "h3",
+    "info": {
+      "pattern": "^(?:secci[oó]n)\\s+(?P<num>(\\d+(\\.\\d+)*))\\b[:.\\-–—]?\\s*(?P<title>.*)$",
+      "groups": {
+        "num": "2.1",
+        "title": "Alcances"
+      },
+      "template": "capitulo_parte_romanos"
+    }
+  },
+  {
+    "line": null,
+    "decision": "p",
+    "info": {
+      "len": 24
+    }
+  },
+  {
+    "line": 12,
+    "decision": "h3",
+    "info": {
+      "pattern": "^(?:secci[oó]n)\\s+(?P<num>(\\d+(\\.\\d+)*))\\b[:.\\-–—]?\\s*(?P<title>.*)$",
+      "groups": {
+        "num": "2.2",
+        "title": "Limitaciones"
+      },
+      "template": "capitulo_parte_romanos"
+    }
+  },
+  {
+    "line": null,
+    "decision": "p",
+    "info": {
+      "len": 15
+    }
+  },
+  {
+    "line": 15,
+    "decision": "h1",
+    "info": {
+      "pattern": "^(?:parte|libro)\\s+(?P<num>[MDCLXVI]+|\\d+)\\b[:.\\-–—]?\\s*(?P<title>.*)$",
+      "groups": {
+        "num": "II",
+        "title": ""
+      },
+      "template": "capitulo_parte_romanos"
+    }
+  },
+  {
+    "line": 16,
+    "decision": "h2",
+    "info": {
+      "pattern": "^(?:cap[ií]tulo)\\s+(?P<num>(\\d+|[MDCLXVI]+))\\b[:.\\-–—]?\\s*(?P<title>.*)$",
+      "groups": {
+        "num": "3",
+        "title": "Cierre"
+      },
+      "template": "capitulo_parte_romanos"
+    }
+  },
+  {
+    "line": null,
+    "decision": "p",
+    "info": {
+      "len": 29
+    }
+  }
+]

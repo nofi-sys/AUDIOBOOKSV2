@@ -1,0 +1,13 @@
+[
+  {
+    "line": 1,
+    "decision": "h1",
+    "info": {
+      "heuristic": "titlecase_short",
+      "template": "seccion_decimal_es",
+      "signals": {
+        "titlecase_hint": true
+      }
+    }
+  }
+]

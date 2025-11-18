@@ -99,6 +99,75 @@ def _parse_tc(text: str) -> str:
     return text
 
 
+def _auto_paragraphs(text: str, max_tokens_per_para: int = 40) -> str:
+    """
+    Si el guion es muy largo y no tiene párrafos claros (sin '\n\n'),
+    lo corta en bloques aproximados de `max_tokens_per_para` palabras
+    usando la puntuación como guía.
+    """
+    if "\n\n" in text:
+        return text
+    # Texto corto: no tocamos nada.
+    if len(text) < 5000:
+        return text
+
+    import re
+    # Cortar por final de oración aproximado.
+    parts = re.split(r'(?<=[.!?])\s+', text)
+    if len(parts) < 5:
+        return text
+
+    paragraphs: list[str] = []
+    current: list[str] = []
+    tokens_in_current = 0
+
+    for frag in parts:
+        if not frag:
+            continue
+        current.append(frag)
+        tokens_in_current += len(frag.split())
+        if tokens_in_current >= max_tokens_per_para:
+            paragraphs.append(" ".join(current).strip())
+            current = []
+            tokens_in_current = 0
+
+    if current:
+        paragraphs.append(" ".join(current).strip())
+
+    return "\n\n".join(p for p in paragraphs if p)
+
+
+def _auto_paragraphs(text: str, max_tokens_per_para: int = 40) -> str:
+    """
+    Normaliza saltos de línea para que alignment.py pueda detectar
+    párrafos usando ``\\n\\n``.
+
+    Regla: consideramos «punto y aparte» cuando hay un signo
+    de cierre de oración (., ?, !) seguido solo de espacios y
+    luego un salto de línea. Esos casos se convierten en
+    doble salto de línea; los demás ``\\n`` se tratan como espacio.
+
+    El parámetro ``max_tokens_per_para`` se mantiene por
+    compatibilidad, pero no se usa.
+    """
+    import re
+
+    # Si el texto ya viene con párrafos marcados, no tocamos nada.
+    if "\n\n" in text or "\r\n\r\n" in text:
+        return text
+    if "\n" not in text and "\r\n" not in text:
+        return text
+
+    t = text.replace("\r\n", "\n")
+    # Líneas en blanco existentes → párrafo explícito.
+    t = re.sub(r"\n\s*\n+", "\n\n", t)
+    # Punto y aparte (., ?, !) + espacios + salto → párrafo nuevo.
+    t = re.sub(r"([.!?])\s*\n+", r"\1\n\n", t)
+    # Cualquier otro salto de línea → espacio interno.
+    t = re.sub(r"\n+", " ", t)
+    return t
+
+
 def play_interval(path: str, start: float, end: float | None) -> str | None:
     """Play ``path`` from ``start`` seconds until ``end`` using pygame.
 
@@ -442,8 +511,8 @@ class App(tk.Tk):
             if column_index in [7, 8]:  # Corresponde a 'Original' y 'ASR'
                 text = self.tree.item(item_id, 'values')[column_index]
 
-                # Create a temporary font to measure text width
-                font_obj = font.Font(font=self.tree.cget("font"))
+                # Use a reasonable default font to measure text width
+                font_obj = tkfont.nametofont("TkDefaultFont")
                 text_width = font_obj.measure(text)
 
                 if text_width > self.tree.column(column_id, "width"):
@@ -1885,7 +1954,8 @@ class App(tk.Tk):
 
             self.q.put("→ Leyendo guion…")
             debug(f"DEBUG: Leyendo guion {self.v_ref.get()}")
-            ref = read_script(self.v_ref.get())
+            ref_raw = read_script(self.v_ref.get())
+            ref = _auto_paragraphs(ref_raw)
 
             debug(f"DEBUG: Guion cargado ({len(ref)} chars)")
             self.q.put(f"→ DEBUG: Primeros 200 chars: {ref[:200]}")

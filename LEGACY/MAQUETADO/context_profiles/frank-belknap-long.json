@@ -1,0 +1,35 @@
+{
+  "name": "Frank Belknap Long",
+  "meta": {
+    "title": "Space Station 1",
+    "author": "Frank Belknap Long"
+  },
+  "author_bio": "Frank Belknap Long (27 de abril de 1901 – 3 de enero de 1994) fue un prolífico narrador y poeta estadounidense. Escribió fantasía, terror, ciencia ficción, novela gótica, libros de cómic y no-ficción. Aunque su carrera de escritor se extiende a lo largo de siete décadas, es conocido principalmente por sus relatos de horror y ciencia ficción, incluyendo su contribución a los Mitos de Cthulhu. Durante su vida, Long recibió importantes premios como el World Fantasy Award for Life Achievement (1978), el Bram Stoker Award (1987) y el First Fandom Hall of Fame Award (1977).",
+  "append_author_bio": true,
+  "summary": "",
+  "back_cover": "",
+  "export_back_cover": false,
+  "wikipedia_sources": {
+    "author": {
+      "title": "Frank Belknap Long",
+      "lang": "es",
+      "extract": "Frank Belknap Long (27 de abril de 1901 – 3 de enero de 1994) fue un prolífico narrador y poeta estadounidense. Escribió fantasía, terror, ciencia ficción, novela gótica, libros de cómic y no-ficción. Aunque su carrera de escritor se extiende a lo largo de siete décadas, es conocido principalmente por sus relatos de horror y ciencia ficción, incluyendo su contribución a los Mitos de Cthulhu. Durante su vida, Long recibió importantes premios como el World Fantasy Award for Life Achievement (1978), el Bram Stoker Award (1987) y el First Fandom Hall of Fame Award (1977).",
+      "description": "",
+      "url": "https://es.wikipedia.org/wiki/Frank_Belknap_Long",
+      "source_url": "https://es.wikipedia.org/w/api.php?action=query&format=json&titles=Frank+Belknap+Long&prop=extracts&exintro=True&explaintext=True",
+      "source_title": "Frank Belknap Long",
+      "search_term": "Frank Belknap Long"
+    },
+    "book": {
+      "title": "Space Station 76",
+      "lang": "es",
+      "extract": "Space Station 76 es una película estadounidense de 2014, dirigida por Jack Plotnick.​​​​",
+      "description": "",
+      "url": "https://es.wikipedia.org/wiki/Space_Station_76",
+      "source_url": "https://es.wikipedia.org/w/api.php?action=query&format=json&titles=Space+Station+76&prop=extracts&exintro=True&explaintext=True",
+      "source_title": "Space Station 76",
+      "search_term": "Space Station 1"
+    }
+  },
+  "saved_at": "2025-10-24T22:05:53"
+}

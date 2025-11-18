@@ -137,6 +137,42 @@ def _paragraph_spans(ref_text: str) -> List[Tuple[int, int]]:
     return spans
 
 
+def _paragraph_spans(ref_text: str) -> List[Tuple[int, int]]:
+    """Devuelve spans de tokens para cada pǭrrafo usando «punto y aparte».
+
+    Regla principal: un signo de cierre de oración (., ?, !) seguido solo
+    de espacios y salto(s) de línea indica un cambio de párrafo. Los demás
+    saltos de línea se tratan como quiebres de renglón dentro del mismo
+    párrafo. Las líneas realmente en blanco también cortan párrafo.
+    """
+    text = ref_text.replace("\r\n", "\n")
+    # Líneas en blanco explícitas -> separador duro
+    text = re.sub(r"\n\s*\n+", "¶", text)
+    # Punto y aparte -> separador, preservando el signo
+    text = re.sub(r"([.!?])\s*\n+", r"\1¶", text)
+    # Resto de saltos de línea -> espacio interno
+    text = re.sub(r"\n+", " ", text)
+
+    paragraphs = [p.strip() for p in text.split("¶") if p.strip()]
+
+    spans: List[Tuple[int, int]] = []
+    offset = 0
+    for p in paragraphs:
+        p_tokens = _tokenize(p)
+        if not p_tokens:
+            continue
+        start = offset
+        end = start + len(p_tokens)
+        spans.append((start, end))
+        offset = end
+
+    if not spans:
+        tokens = _tokenize(ref_text)
+        if tokens:
+            spans = [(0, len(tokens))]
+    return spans
+
+
 def _is_anchor(tok: str) -> bool:
     return tok in MONTHS or re.fullmatch(r"\d{1,2}|\d{4}", tok) is not None
 
@@ -323,6 +359,50 @@ def _rebalance_rows(rows_meta, ref_tokens, asr_tokens, tcs) -> None:
                 break
 
 
+def _greedy_anchors(ref_tokens: List[str], asr_tokens: List[str], lookahead: int = 25) -> List[Tuple[int, int]]:
+    """
+    Construye anclas aproximadas (i_ref, j_asr) recorriendo ambas
+    secuencias con una ventana corta hacia adelante.
+    """
+    anchors: List[Tuple[int, int]] = []
+    i, j = 0, 0
+    la, lb = len(ref_tokens), len(asr_tokens)
+    if la == 0 or lb == 0:
+        return anchors
+    look = max(1, min(lookahead, max(la, lb)))
+    while i < la and j < lb:
+        if ref_tokens[i] == asr_tokens[j]:
+            anchors.append((i, j))
+            i += 1
+            j += 1
+            continue
+
+        tok_ref = ref_tokens[i]
+        tok_asr = asr_tokens[j]
+        pos_asr: int | None = None
+        pos_ref: int | None = None
+
+        for jj in range(j + 1, min(lb, j + 1 + look)):
+            if asr_tokens[jj] == tok_ref:
+                pos_asr = jj
+                break
+
+        for ii in range(i + 1, min(la, i + 1 + look)):
+            if ref_tokens[ii] == tok_asr:
+                pos_ref = ii
+                break
+
+        if pos_asr is None and pos_ref is None:
+            i += 1
+            j += 1
+        elif pos_asr is not None and (pos_ref is None or (pos_asr - j) <= (pos_ref - i)):
+            j = pos_asr
+        else:
+            i = pos_ref
+
+    return anchors
+
+
 def build_rows_from_words(ref: str, asr_words: List[str], tcs: List[float]) -> List[List]:
     """
     Alinea texto de referencia (ref) con palabras de ASR y sus tiempos (tcs),
@@ -331,45 +411,78 @@ def build_rows_from_words(ref: str, asr_words: List[str], tcs: List[float]) -> L
     ref_tokens = _tokenize(ref)
     asr_tokens = [_normalize_token(w) for w in asr_words]
 
-    # 1) Alineación laxa por párrafo para tener anclajes iniciales
-    pairs = _align_paragraphwise(ref, ref_tokens, asr_tokens, tcs)
-
-    # 2) Segmentar REF por párrafos, y para cada uno, elegir el tramo de ASR
-    #    más razonable (según pausas, duración esperada, etc.)
-    rows_meta: List[dict] = []
-    last_h = 0
+    # 1) Segmentar REF por párrafos
     spans = _paragraph_spans(ref)
 
-    for (s, e) in spans:
-        # buscar índices de H que caen en este párrafo de R
-        h_cand = sorted([p[1] for p in pairs if s <= p[0] < e])
-        # cortar corridas por pausas y distancia
-        runs = _split_runs_by_pause(h_cand, tcs)
-        # elegir el mejor tramo de H
-        hs, he = _choose_best_run(runs, e - s, tcs)
+    # 2) Construir anclas globales ref↔ASR y derivar bounds por párrafo
+    rows_meta: List[dict] = []
+    bounds: List[Tuple[int, int]] = []
+    n_ref = len(ref_tokens)
+    n_asr = len(asr_tokens)
 
-        # forzar avance si no hay match
-        if hs < last_h:
-            hs = last_h
-        if he <= hs:
-            he = min(len(asr_tokens), hs + int((e - s) * MAX_RATIO) + MAX_EXTRA)
+    anchors = _greedy_anchors(ref_tokens, asr_tokens)
 
+    if anchors:
+        prev_r, prev_h = 0, 0
+        k = 0
+        for (s, e) in spans:
+            while k < len(anchors) and anchors[k][0] < s:
+                prev_r, prev_h = anchors[k]
+                k += 1
+
+            next_r, next_h = n_ref, n_asr
+            kk = k
+            while kk < len(anchors) and anchors[kk][0] < e:
+                kk += 1
+            if kk < len(anchors):
+                next_r, next_h = anchors[kk]
+
+            if next_r == prev_r:
+                hs = prev_h
+                he = hs + (e - s)
+            else:
+                frac_s = (s - prev_r) / (next_r - prev_r)
+                frac_e = (e - prev_r) / (next_r - prev_r)
+                hs = int(round(prev_h + frac_s * (next_h - prev_h)))
+                he = int(round(prev_h + frac_e * (next_h - prev_h)))
+
+            if bounds and hs < bounds[-1][1]:
+                hs = bounds[-1][1]
+            if he <= hs:
+                he = hs + max(1, e - s)
+            bounds.append((hs, he))
+    else:
+        # Fallback: repartir ASR proporcionalmente a los spans
+        for (s, e) in spans:
+            if n_ref > 0:
+                hs = int(round(s * n_asr / n_ref))
+                he = int(round(e * n_asr / n_ref))
+            else:
+                hs, he = 0, 0
+            bounds.append((hs, he))
+
+    # Ajustar bounds para cubrir todo ASR y mantener monotonía
+    fixed: List[Tuple[int, int]] = []
+    start = 0
+    for hs, he in bounds:
+        hs = max(start, max(0, hs))
+        he = max(hs + 1, min(n_asr, he))
+        fixed.append((hs, he))
+        start = he
+    if fixed:
+        last_hs, _ = fixed[-1]
+        fixed[-1] = (last_hs, n_asr)
+
+    for idx, (s, e) in enumerate(spans):
+        hs, he = fixed[idx]
         rows_meta.append({
-            'solo': False, 'id': len(rows_meta),
-            's': s, 'e': e, 'hs': hs, 'he': he
+            'solo': False,
+            'id': idx,
+            's': s,
+            'e': e,
+            'hs': hs,
+            'he': he,
         })
-        last_h = he
-
-    # Post-process to ensure full ASR coverage
-    for i in range(len(rows_meta) - 1):
-        mid_point = (rows_meta[i]['he'] + rows_meta[i+1]['hs']) // 2
-        rows_meta[i]['he'] = mid_point
-        rows_meta[i+1]['hs'] = mid_point
-
-    if rows_meta:
-        rows_meta[0]['hs'] = 0
-        rows_meta[-1]['he'] = len(asr_tokens)
-
 
     # 3) Materializar textos + WER/flag
     for r in rows_meta:

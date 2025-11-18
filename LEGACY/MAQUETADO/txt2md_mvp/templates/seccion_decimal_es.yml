@@ -1,0 +1,11 @@
+
+id: seccion_decimal_es
+priority: 50
+language: es
+patterns:
+  h1:
+    - '^t[ií]tulo\s+(?P<num>\d+)\s*[:\-]?\s*(?P<title>.+)$'
+  h2:
+    - '^(?P<num>\d+(\.\d+)+)\s+(?P<title>.+)$'
+signals:
+  titlecase_hint: true

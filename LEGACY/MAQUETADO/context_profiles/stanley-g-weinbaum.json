@@ -1,0 +1,35 @@
+{
+  "name": "Stanley G. Weinbaum",
+  "meta": {
+    "title": "A Martian Odyssey",
+    "author": "Stanley G. Weinbaum"
+  },
+  "author_bio": "Stanley Grauman Weinbaum (4 de abril de 1902-14 de diciembre de 1935) fue un escritor de ciencia ficción norteamericano. Su carrera en el género fue corta pero influyente. Su primera novela, Una odisea marciana fue publicada con gran éxito en julio de 1934, pero murió de un cáncer de pulmón dieciocho meses después.",
+  "append_author_bio": true,
+  "summary": "\"A Martian Odyssey\" is a science fiction short story by American writer Stanley G. Weinbaum originally published in the July 1934 issue of Wonder Stories.  It was Weinbaum's second published story (in 1933 he had sold a romantic novel, The Lady Dances, to King Features Syndicate under the pseudonym Marge Stanley), and remains his best known.  It was followed four months later by a sequel, \"Valley of Dreams\".  These are the only stories by Weinbaum set on Mars.\n\n\"A Martian Odyssey\" is a science fiction short story by American writer Stanley G. Weinbaum originally published in the July 1934 issue of Wonder Stories.  It was Weinbaum's second published story (in 1933 he had sold a romantic novel, The Lady Dances, to King Features Syndicate under the pseudonym Marge Stanley), and remains his best known.  It was followed four months later by a sequel, \"Valley of Dreams\".  These are the only stories by Weinbaum set on Mars.",
+  "back_cover": "",
+  "export_back_cover": false,
+  "wikipedia_sources": {
+    "book": {
+      "title": "A Martian Odyssey",
+      "lang": "en",
+      "extract": "\"A Martian Odyssey\" is a science fiction short story by American writer Stanley G. Weinbaum originally published in the July 1934 issue of Wonder Stories.  It was Weinbaum's second published story (in 1933 he had sold a romantic novel, The Lady Dances, to King Features Syndicate under the pseudonym Marge Stanley), and remains his best known.  It was followed four months later by a sequel, \"Valley of Dreams\".  These are the only stories by Weinbaum set on Mars.",
+      "description": "",
+      "url": "https://en.wikipedia.org/wiki/A_Martian_Odyssey",
+      "source_url": "https://en.wikipedia.org/w/api.php?action=query&format=json&titles=A+Martian+Odyssey&prop=extracts&exintro=True&explaintext=True",
+      "source_title": "A Martian Odyssey",
+      "search_term": "A Martian Odyssey"
+    },
+    "author": {
+      "title": "Stanley G. Weinbaum",
+      "lang": "es",
+      "extract": "Stanley Grauman Weinbaum (4 de abril de 1902-14 de diciembre de 1935) fue un escritor de ciencia ficción norteamericano. Su carrera en el género fue corta pero influyente. Su primera novela, Una odisea marciana fue publicada con gran éxito en julio de 1934, pero murió de un cáncer de pulmón dieciocho meses después.",
+      "description": "",
+      "url": "https://es.wikipedia.org/wiki/Stanley_G._Weinbaum",
+      "source_url": "https://es.wikipedia.org/w/api.php?action=query&format=json&titles=Stanley+G.+Weinbaum&prop=extracts&exintro=True&explaintext=True",
+      "source_title": "Stanley G. Weinbaum",
+      "search_term": "Stanley G. Weinbaum"
+    }
+  },
+  "saved_at": "2025-10-28T15:29:13"
+}

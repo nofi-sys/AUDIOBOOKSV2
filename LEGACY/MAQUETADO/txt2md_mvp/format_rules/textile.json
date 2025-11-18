@@ -1,0 +1,26 @@
+﻿{
+    "patterns":  [
+                     {
+                         "pattern":  "\\*(?P\u003ccontent\u003e[^*]+)\\*",
+                         "name":  "textile_bold",
+                         "replacement":  "**{content}**"
+                     },
+                     {
+                         "pattern":  "_(?P\u003ccontent\u003e[^_]+)_",
+                         "name":  "textile_italic",
+                         "replacement":  "*{content}*"
+                     },
+                     {
+                         "pattern":  "-(?P\u003ccontent\u003e[^-]+)-",
+                         "name":  "textile_strike",
+                         "replacement":  "~~{content}~~"
+                     },
+                     {
+                         "pattern":  "\\+(?P\u003ccontent\u003e[^+]+)\\+",
+                         "name":  "textile_insert",
+                         "replacement":  "\u003cu\u003e{content}\u003c/u\u003e"
+                     }
+                 ],
+    "description":  "Sintaxis Textile transformada a Markdown.",
+    "id":  "textile"
+}

@@ -1,0 +1,36 @@
+﻿{
+    "patterns":  [
+                     {
+                         "pattern":  "\\*(?P\u003ccontent\u003e[^*]+)\\*",
+                         "name":  "org_bold",
+                         "replacement":  "**{content}**"
+                     },
+                     {
+                         "pattern":  "/(?P\u003ccontent\u003e[^/]+)/",
+                         "name":  "org_italic",
+                         "replacement":  "*{content}*"
+                     },
+                     {
+                         "pattern":  "_(?P\u003ccontent\u003e[^_]+)_",
+                         "name":  "org_underline",
+                         "replacement":  "\u003cu\u003e{content}\u003c/u\u003e"
+                     },
+                     {
+                         "pattern":  "\\+(?P\u003ccontent\u003e[^+]+)\\+",
+                         "name":  "org_strike",
+                         "replacement":  "~~{content}~~"
+                     },
+                     {
+                         "pattern":  "~(?P\u003ccontent\u003e[^~]+)~",
+                         "name":  "org_code",
+                         "replacement":  "`{content}`"
+                     },
+                     {
+                         "pattern":  "=(?P\u003ccontent\u003e[^=]+)=",
+                         "name":  "org_verbatim",
+                         "replacement":  "`{content}`"
+                     }
+                 ],
+    "description":  "Marcado básico de Emacs Org-mode a Markdown.",
+    "id":  "orgmode"
+}

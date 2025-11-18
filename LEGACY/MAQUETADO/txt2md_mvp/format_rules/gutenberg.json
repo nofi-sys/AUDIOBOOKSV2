@@ -1,0 +1,26 @@
+{
+  "id": "gutenberg",
+  "description": "Heurísticas básicas para descodificar marcas comunes en textos de Project Gutenberg.",
+  "patterns": [
+    {
+      "name": "italic_single_underscore",
+      "pattern": "_(?P<content>[^_]+)_",
+      "replacement": "*{content}*"
+    },
+    {
+      "name": "bold_double_underscore",
+      "pattern": "__(?P<content>[^_]+)__",
+      "replacement": "**{content}**"
+    },
+    {
+      "name": "small_caps_equals",
+      "pattern": "=(?P<content>[^=]+)=",
+      "replacement": "{content}"
+    },
+    {
+      "name": "long_dash_dialogue",
+      "pattern": "--",
+      "replacement": "—"
+    }
+  ]
+}

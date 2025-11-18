@@ -1,0 +1,3 @@
+confidence_boost: 35
+line_pattern: ^\[\.\+\]\+\s+\s+\.\+Summons\s+in\s+the\s+Night.*$
+name: Custom TOC Pattern (2025-10-09)

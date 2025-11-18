@@ -1,0 +1,267 @@
+{
+  "module": "PunctuationAndGraphicSignsNormalizer",
+  "version": "1.0",
+  "goal": "Revisar y normalizar exclusivamente signos de puntuación y signos gráficos (no contenido) para lograr coherencia y cohesión a nivel de libro, capítulo y fragmento. Diferenciar por idioma (es/en) y por género (narrativa, ensayo, técnico/académico). Preparar datos para maquetado, traducción y edición profesional.",
+  "inputs_required": {
+    "language": "one_of: ES, EN_US, EN_UK",
+    "genre": "one_of: narrativa, ensayo, tecnico_academico",
+    "quote_preference": "ES: angular|dobles|simples; EN_US: double_primary; EN_UK: single_primary",
+    "dialogue_policy": "ES: raya_dialogo; EN: quotes_dialogue",
+    "dash_policy": "ES: raya_parentetica_espaciada; EN_US: em_dash_unspaced; EN_UK: en_dash_spaced_for_parenthesis_allowed",
+    "range_dash_policy": "en_dash_for_ranges (1999–2005) sin espacios",
+    "ellipsis_policy": "unicode_ellipsis (U+2026) o tres puntos tipográficos",
+    "nbspace_policy": "usar NBSP donde evite cortes tipográficos (p. ej., tras '— ' de diálogo ES, entre cifra y símbolo %)",
+    "decimal_grouping_policy": "mantener del idioma origen salvo instrucciones de localización"
+  },
+  "output_schema": {
+    "type": "object",
+    "properties": {
+      "normalized_text": "string",
+      "changes": [
+        {
+          "rule_id": "string",
+          "lang": "ES|EN_US|EN_UK",
+          "genre": "narrativa|ensayo|tecnico_academico",
+          "description": "string breve",
+          "before": "substring",
+          "after": "substring",
+          "start_idx": "int (UTF-16 code units)",
+          "end_idx": "int",
+          "notes": "string opcional con justificación",
+          "severity": "info|suggestion|fix"
+        }
+      ],
+      "stats": {
+        "counts": {
+          "quotes_changed": "int",
+          "dashes_changed": "int",
+          "ellipsis_changed": "int",
+          "dialogue_blocks_fixed": "int",
+          "spacing_fixes": "int",
+          "inverted_marks_added_or_removed": "int",
+          "ranges_normalized": "int"
+        }
+      }
+    },
+    "required": ["normalized_text", "changes"]
+  },
+  "global_steps": [
+    "Detectar idioma y variante (ES / EN_US / EN_UK).",
+    "Detectar género (narrativa / ensayo / tecnico_academico) por metadatos o heurística (diálogo frecuente ⇒ narrativa).",
+    "Normalizar Unicode: comillas tipográficas (“ ” ‘ ’ « »), raya (— U+2014), semirraya/en dash (– U+2013), guion (- U+002D), puntos suspensivos (… U+2026).",
+    "Aplicar política de comillas, rayas/dashes, diálogos y elipsis según idioma+género.",
+    "Arreglar espaciado (antes/después de signos) y colisiones con puntuación.",
+    "Consolidar coherencia a nivel libro (mismo sistema de comillas, misma política de diálogos, mismo uso de dash).",
+    "Validar bloques especiales: citas largas, epígrafes, listas, tablas, código, notas.",
+    "Emitir cambios atómicos + texto final normalizado."
+  ],
+  "rules": {
+    "ES": {
+      "narrativa": {
+        "dialogo_con_raya": [
+          "Cada intervención en línea nueva comienza con '— ' (raya + espacio NBSP preferente).",
+          "No se usan comillas para el diálogo estándar.",
+          "Intervenciones del narrador dentro del parlamento se marcan con —inciso— con espacio normal alrededor de cada raya.",
+          "Si el inciso interrumpe la oración y continúa el parlamento: «—Texto del personaje —dijo— y continuó.»",
+          "Si el parlamento termina tras el inciso, no se añade raya de cierre: «—Vámonos —dijo.»",
+          "Signos ? ! , . pertenecen al diálogo y van antes del cierre del inciso cuando corresponda.",
+          "Guiones '-' nunca sustituyen la raya —."
+        ],
+        "comillas": [
+          "Jerarquía preferida: « » > “ ” > ‘ ’.",
+          "Usar « » para citas dentro de narrativa; anidar “ ” y luego ‘ ’ según profundidad.",
+          "Puntuación final fuera de las comillas si no pertenece a la cita: Dijo «vámonos ya».",
+          "Mantener coherencia: no alternar « » y “ ” en el mismo nivel."
+        ],
+        "raya_parentetica": [
+          "Usar —inciso— para aposiciones o incisos parentéticos.",
+          "Espacio normal antes y después de cada raya en incisos (… palabra — inciso — palabra …)."
+        ],
+        "rangos_y_relaciones": [
+          "Usar en dash (–) sin espacios para rangos numéricos y de fechas: 1999–2005.",
+          "Usar '–' para oposiciones tipo Madrid–Barcelona (sin espacios) si así lo define el proyecto."
+        ],
+        "elipsis": [
+          "Usar el carácter … (U+2026) o tres puntos consecutivos, sin punto adicional.",
+          "Si la elipsis cierra frase, no añadir otro punto: «No sé…».",
+          "Elipsis seguida de signos de cierre se escribe «…» antes del cierre."
+        ],
+        "interrogacion_exclamacion": [
+          "Mantener ¿ ? y ¡ ! de apertura y cierre.",
+          "Si se encadenan signos, el orden respeta la construcción: «¡¿Qué haces?!»."
+        ],
+        "espaciado": [
+          "Nunca espacio antes de , . ; : ? !",
+          "Un espacio después de , . ; :",
+          "NBSP donde evite saltos feos: tras '— ' de diálogo, entre número y % (90 %), entre número y símbolo de grados (25 °C)."
+        ]
+      },
+      "ensayo": {
+        "citas_bloque": [
+          "Citas largas (≥40–50 palabras) en párrafo aparte, sin comillas; mantener puntuación propia del original.",
+          "Referencia y sangría según maquetado; no duplicar comillas."
+        ],
+        "comillas": [
+          "Jerarquía « » > “ ” > ‘ ’; coherencia en todo el documento.",
+          "La puntuación ajena al texto citado queda fuera de las comillas."
+        ],
+        "rayas_y_guiones": [
+          "Apostillas con —raya—; rangos con – (en dash) sin espacios."
+        ],
+        "elipsis_y_corchetes": [
+          "Elipsis entre corchetes […] para omisiones editoriales dentro de citas.",
+          "Aclaraciones editoriales entre corchetes [ ]."
+        ]
+      },
+      "tecnico_academico": {
+        "consistencia": [
+          "Un solo sistema de comillas para ejemplos vs. términos (p. ej., “código”).",
+          "Ecuaciones/variables sin comillas; comillas solo para literalidad.",
+          "Listas y tablas: signos estándar sin estilos literarios (evitar rayas parentéticas)."
+        ],
+        "rangos": [
+          "Usar en dash (–) para rangos numéricos y químicos; sin espacios."
+        ],
+        "notas_y_citas": [
+          "Citas largas en bloque; elipsis y corchetes según norma del proyecto.",
+          "Puntuación fuera de comillas si no pertenece al material citado."
+        ]
+      }
+    },
+    "EN_US": {
+      "narrativa": {
+        "dialogue_with_quotes": [
+          "Diálogo entre “double quotation marks”.",
+          "Puntuación mayor (comma, period) va dentro de las comillas.",
+          "Narration tags con coma antes del cierre: “Let’s go,” she said.",
+          "Citas dentro de diálogos con ‘single quotes’."
+        ],
+        "dashes_parenthetical": [
+          "Usar em dash (—) sin espacios para incisos: word—aside—word.",
+          "No usar em dash para rangos; usar en dash (–) sin espacios."
+        ],
+        "quotation_hierarchy": [
+          "Primario: “ ” ; secundario: ‘ ’.",
+          "Mantener consistencia en toda la obra."
+        ],
+        "ellipsis": [
+          "Usar … (U+2026) o tres puntos. En narrativa US, espacio antes y/o después según casa editorial; mantener coherencia.",
+          "No agregar punto adicional si la elipsis cierra la oración."
+        ],
+        "spacing": [
+          "Sin espacio antes de , . ; : ? !",
+          "Un espacio después de signos finales.",
+          "No NBSP salvo para evitar huérfanas tipográficas específicas."
+        ]
+      },
+      "ensayo": {
+        "block_quotations": [
+          "Citas largas en bloque sin comillas; puntuación según el original.",
+          "Puntuación en US: period/comma dentro de comillas cuando corresponda."
+        ],
+        "dashes_and_ranges": [
+          "Em dash (—) sin espacios para incisos.",
+          "En dash (–) sin espacios para rangos 1999–2005."
+        ],
+        "brackets_and_ellipsis": [
+          "Editorial insertions in [brackets]; omissions as […]."
+        ]
+      },
+      "tecnico_academico": {
+        "quotes_usage": [
+          "Usar comillas solo para literalidad; términos técnicos en cursiva o redonda según guía del proyecto.",
+          "Puntuación US estándar dentro de comillas si aplica."
+        ],
+        "ranges": [
+          "En dash (–) para rangos, sin espacios."
+        ]
+      }
+    },
+    "EN_UK": {
+      "narrativa": {
+        "dialogue_with_quotes": [
+          "Diálogo entre ‘single quotation marks’.",
+          "Comillas dobles para citas dentro de diálogos: ‘He said “go”.’",
+          "Puntuación final fuera de las comillas si no pertenece al texto citado; aceptar variantes de casa editorial."
+        ],
+        "dashes_parenthetical": [
+          "Se permite en dash (–) con espacios como inciso: word – aside – word.",
+          "Alternativamente, em dash (—) sin espacios si el proyecto así lo define (mantener coherencia)."
+        ],
+        "ranges": [
+          "En dash (–) sin espacios para rangos."
+        ]
+      },
+      "ensayo": {
+        "block_quotations": [
+          "Citas largas en bloque; puntuación fuera de comillas salvo que pertenezca al citado."
+        ]
+      },
+      "tecnico_academico": {
+        "consistency": [
+          "Primario ‘ ’, secundario “ ”.",
+          "Rangos con – sin espacios; evitar em dash para rangos."
+        ]
+      }
+    }
+  },
+  "cross_language_transform": {
+    "ES_dialogue_to_EN_dialogue": [
+      "Detectar líneas que comienzan con '— '.",
+      "Convertir a diálogo con comillas: “Texto…”.",
+      "Incisos «—dijo—» ⇒ coma + tag: “Texto…,” she said.",
+      "Conservar interrogación/exclamación final; mover period/comma dentro de comillas en EN_US; ajustar según EN_UK.",
+      "Eliminar ¿ y ¡ de apertura; conservar ? ! finales."
+    ],
+    "EN_dialogue_to_ES_dialogue": [
+      "Detectar parlamentos entre comillas.",
+      "Sustituir por línea nueva que comience con '— ' + parlamento sin comillas.",
+      "Narration tags con rayas: —Texto —dijo— y continuó.",
+      "Ajustar puntuación: en ES, signos pertenecen al diálogo; colocar fuera los ajenos al citado."
+    ],
+    "quotes_mapping": [
+      "ES « » ↔ EN_US “ ” ↔ EN_UK ‘ ’ en nivel primario.",
+      "Anidación: ES « “ ‘ ’ ” » ↔ EN_US “ ‘ ’ ” ↔ EN_UK ‘ “ ” ’.",
+      "Puntuación: ES fuera si no pertenece; EN_US comma/period dentro; EN_UK preferentemente fuera."
+    ],
+    "dash_spacing_policies": [
+      "Incisos: ES — con espacios; EN_US — sin espacios; EN_UK – con espacios permitido.",
+      "Rangos: siempre – sin espacios en ambos idiomas."
+    ],
+    "ellipsis_rules": [
+      "No duplicar punto final junto a …",
+      "Respetar espacio tipográfico local (EN a veces espacio antes de …; ES generalmente sin espacio)."
+    ],
+    "inverted_marks": [
+      "ES ⇒ EN: eliminar ¿ ¡ de apertura; mantener ? ! finales.",
+      "EN ⇒ ES: añadir ¿ ¡ de apertura donde corresponda; respetar mayúsculas/minúsculas originales."
+    ]
+  },
+  "edge_cases": [
+    "Diálogo cortado por intervención narrativa con cambio de frase.",
+    "Parlamentos que continúan en párrafo siguiente (ES: raya al inicio del nuevo párrafo si sigue hablando el mismo).",
+    "Citas dentro de diálogos y diálogos dentro de citas.",
+    "Elipsis seguida de comillas/cierre de paréntesis.",
+    "Guion '-' confundido con en dash (–) o em dash (—).",
+    "Listas con puntuación híbrida; uniformar a política del libro.",
+    "Epígrafes, lemas, mensajes en carteles y UI: aplicar política de comillas y puntuación consistente.",
+    "Notas al pie y bibliografía: respetar estilo del proyecto; no aplicar reglas de narrativa a referencias."
+  ],
+  "validation_checks": [
+    "Un solo sistema de comillas a lo largo del libro y por nivel de anidación.",
+    "Un solo sistema de diálogos (raya ES o comillas EN) sin mezclas.",
+    "Dashes: incisos vs rangos diferenciados correctamente.",
+    "Sin espacios indebidos antes de signos; usar NBSP donde evite cortes feos.",
+    "Elipsis coherentes y sin duplicación de punto.",
+    "¿ ¡ presentes en ES cuando corresponda; ausentes en EN.",
+    "Bloques de cita largos sin comillas y con puntuación coherente.",
+    "Informe de incoherencias residuales (porcentaje y ejemplos)."
+  ],
+  "prompt_for_operators": "Actuás como corrector senior de puntuación y signos gráficos. Tu tarea NO toca contenido ni estilo de autor: solo signos y su espaciado. 1) Detectá idioma (ES/EN_US/EN_UK) y género (narrativa/ensayo/tecnico_academico). 2) Normalizá Unicode (comillas tipográficas, raya —, en dash –, elipsis …). 3) Aplicá las reglas del bloque 'rules' según idioma+género. 4) Uniformá comillas, diálogos, dashes, elipsis, signos de interrogación/exclamación, rangos y espaciado. 5) Respetá las 'cross_language_transform' si se solicita conversión ES↔EN. 6) Conservá mayúsculas, cursivas y contenido. 7) Devolvé 'normalized_text' + 'changes' según 'output_schema'. 8) No inventes texto ni muevas oraciones de lugar. 9) Si una regla entra en conflicto, priorizá consistencia global del libro y anotá la excepción en 'notes'.",
+  "qa_notes": [
+    "Probar con capítulos que mezclen diálogo, cita larga y listas.",
+    "Verificar que no queden guiones ASCII '-' como sustituto de — o –.",
+    "Asegurar no duplicar comillas al convertir diálogos ES↔EN.",
+    "Medir coherencia por capítulo y por libro; reportar divergencias."
+  ]
+}

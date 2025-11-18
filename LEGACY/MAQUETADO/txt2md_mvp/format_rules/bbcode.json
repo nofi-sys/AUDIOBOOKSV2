@@ -1,0 +1,51 @@
+﻿{
+    "patterns":  [
+                     {
+                         "flags":  [
+                                       "DOTALL",
+                                       "IGNORECASE"
+                                   ],
+                         "pattern":  "\\[b](?P\u003ccontent\u003e.+?)\\[/b]",
+                         "name":  "bbcode_bold",
+                         "replacement":  "**{content}**"
+                     },
+                     {
+                         "flags":  [
+                                       "DOTALL",
+                                       "IGNORECASE"
+                                   ],
+                         "pattern":  "\\[i](?P\u003ccontent\u003e.+?)\\[/i]",
+                         "name":  "bbcode_italic",
+                         "replacement":  "*{content}*"
+                     },
+                     {
+                         "flags":  [
+                                       "DOTALL",
+                                       "IGNORECASE"
+                                   ],
+                         "pattern":  "\\[u](?P\u003ccontent\u003e.+?)\\[/u]",
+                         "name":  "bbcode_underline",
+                         "replacement":  "\u003cu\u003e{content}\u003c/u\u003e"
+                     },
+                     {
+                         "flags":  [
+                                       "DOTALL",
+                                       "IGNORECASE"
+                                   ],
+                         "pattern":  "\\[s](?P\u003ccontent\u003e.+?)\\[/s]",
+                         "name":  "bbcode_strike",
+                         "replacement":  "~~{content}~~"
+                     },
+                     {
+                         "flags":  [
+                                       "DOTALL",
+                                       "IGNORECASE"
+                                   ],
+                         "pattern":  "\\[(?:code|tt)](?P\u003ccontent\u003e.+?)\\[/[a-z]+]",
+                         "name":  "bbcode_code",
+                         "replacement":  "`{content}`"
+                     }
+                 ],
+    "description":  "Conversión de etiquetas BBCode frecuentes a Markdown.",
+    "id":  "bbcode"
+}

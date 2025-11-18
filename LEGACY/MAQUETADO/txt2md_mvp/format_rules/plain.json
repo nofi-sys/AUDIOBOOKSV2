@@ -1,0 +1,31 @@
+﻿{
+    "id":  "plain",
+    "description":  "Convenciones básicas de texto plano convertidas a Markdown.",
+    "patterns":  [
+                     {
+                         "name":  "underscore_emphasis",
+                         "pattern":  "_(?P\u003ccontent\u003e[^_]+)_",
+                         "replacement":  "*{content}*"
+                     },
+                     {
+                         "name":  "single_asterisk_emphasis",
+                         "pattern":  "\\*(?P\u003ccontent\u003e[^*]+)\\*",
+                         "replacement":  "*{content}*"
+                     },
+                     {
+                         "name":  "slash_italic",
+                         "pattern":  "/(?P\u003ccontent\u003e[^/]+)/",
+                         "replacement":  "*{content}*"
+                     },
+                     {
+                         "name":  "double_underscore_bold",
+                         "pattern":  "__(?P\u003ccontent\u003e[^_]+)__",
+                         "replacement":  "**{content}**"
+                     },
+                     {
+                         "name":  "long_dash_dialogue",
+                         "pattern":  "--",
+                         "replacement":  "—"
+                     }
+                 ]
+}

@@ -1,0 +1,17 @@
+PARTE I
+
+Capítulo 1: Introducción
+Este es un párrafo de ejemplo para el capítulo 1.
+Sigue el contenido en el mismo capítulo.
+
+Capítulo 2: Desarrollo
+Aquí comienza el capítulo 2.
+Sección 2.1 Alcances
+Texto de la sección 2.1.
+
+Sección 2.2 Limitaciones
+Más texto aquí.
+
+PARTE II
+Capítulo 3: Cierre
+Conclusiones y observaciones.
