@@ -32,7 +32,14 @@ except Exception:
 from utils.gui_errors import show_error
 
 from alignment import build_rows, build_rows_from_words, WARN_WER
-from text_utils import find_repeated_sequences, read_script, normalize
+from text_utils import (
+    find_repeated_sequences,
+    read_script,
+    normalize,
+    prepare_paragraphs,
+    paragraphs_to_markdown,
+)
+from preprocess_clip import propose_clip, save_clip
 from rapidfuzz.distance import Levenshtein
 from qc_utils import canonical_row, log_correction_metadata
 from audacity_session import AudacityLabelSession
@@ -99,74 +106,13 @@ def _parse_tc(text: str) -> str:
     return text
 
 
-def _auto_paragraphs(text: str, max_tokens_per_para: int = 40) -> str:
+def _prepare_ref_text(text: str) -> tuple[str, list[str]]:
     """
-    Si el guion es muy largo y no tiene párrafos claros (sin '\n\n'),
-    lo corta en bloques aproximados de `max_tokens_per_para` palabras
-    usando la puntuación como guía.
+    Reconstruye p?rrafos usando heur?sticas de `text_utils.prepare_paragraphs`
+    y devuelve (texto_normalizado, lista_de_p?rrafos).
     """
-    if "\n\n" in text:
-        return text
-    # Texto corto: no tocamos nada.
-    if len(text) < 5000:
-        return text
-
-    import re
-    # Cortar por final de oración aproximado.
-    parts = re.split(r'(?<=[.!?])\s+', text)
-    if len(parts) < 5:
-        return text
-
-    paragraphs: list[str] = []
-    current: list[str] = []
-    tokens_in_current = 0
-
-    for frag in parts:
-        if not frag:
-            continue
-        current.append(frag)
-        tokens_in_current += len(frag.split())
-        if tokens_in_current >= max_tokens_per_para:
-            paragraphs.append(" ".join(current).strip())
-            current = []
-            tokens_in_current = 0
-
-    if current:
-        paragraphs.append(" ".join(current).strip())
-
-    return "\n\n".join(p for p in paragraphs if p)
-
-
-def _auto_paragraphs(text: str, max_tokens_per_para: int = 40) -> str:
-    """
-    Normaliza saltos de línea para que alignment.py pueda detectar
-    párrafos usando ``\\n\\n``.
-
-    Regla: consideramos «punto y aparte» cuando hay un signo
-    de cierre de oración (., ?, !) seguido solo de espacios y
-    luego un salto de línea. Esos casos se convierten en
-    doble salto de línea; los demás ``\\n`` se tratan como espacio.
-
-    El parámetro ``max_tokens_per_para`` se mantiene por
-    compatibilidad, pero no se usa.
-    """
-    import re
-
-    # Si el texto ya viene con párrafos marcados, no tocamos nada.
-    if "\n\n" in text or "\r\n\r\n" in text:
-        return text
-    if "\n" not in text and "\r\n" not in text:
-        return text
-
-    t = text.replace("\r\n", "\n")
-    # Líneas en blanco existentes → párrafo explícito.
-    t = re.sub(r"\n\s*\n+", "\n\n", t)
-    # Punto y aparte (., ?, !) + espacios + salto → párrafo nuevo.
-    t = re.sub(r"([.!?])\s*\n+", r"\1\n\n", t)
-    # Cualquier otro salto de línea → espacio interno.
-    t = re.sub(r"\n+", " ", t)
-    return t
-
+    paragraphs = prepare_paragraphs(text)
+    return "\n\n".join(paragraphs), paragraphs
 
 def play_interval(path: str, start: float, end: float | None) -> str | None:
     """Play ``path`` from ``start`` seconds until ``end`` using pygame.
@@ -204,6 +150,8 @@ class App(tk.Tk):
         self.v_ai_repetition_check = tk.BooleanVar(self, value=False)
         self.v_ai_model = tk.StringVar(self, value="gpt-5")
         self.v_transcribe_model = tk.StringVar(self, value="large-v3")
+        self.v_align_db = tk.BooleanVar(self, value=True)
+        self.v_write_md = tk.BooleanVar(self, value=True)
 
         # --- Estadísticas y Filtros ---
         self.v_stats_total = tk.StringVar(self, value="Total: 0")
@@ -295,6 +243,18 @@ class App(tk.Tk):
         ttk.Button(files_frame, text="Abrir JSON…", command=self.load_json).grid(row=3, column=2, pady=(4, 0))
         ttk.Button(files_frame, text="Procesar", width=12, command=self.launch).grid(
             row=0, column=3, rowspan=2, padx=6, ipady=5)
+        ttk.Button(files_frame, text="Recortar guion…", command=self._open_clip_window).grid(
+            row=1, column=3, rowspan=1, padx=6, pady=(4, 0), ipady=2)
+        ttk.Checkbutton(
+            files_frame,
+            text="Guardar alineación .align.db",
+            variable=self.v_align_db,
+        ).grid(row=4, column=0, columnspan=3, sticky="w", pady=(6, 0))
+        ttk.Checkbutton(
+            files_frame,
+            text="Exportar guion normalizado .md",
+            variable=self.v_write_md,
+        ).grid(row=5, column=0, columnspan=3, sticky="w")
 
         # --- Frame for AI tools ---
         ai_tools_frame = ttk.LabelFrame(controls_frame, text="Herramientas AI")
@@ -437,6 +397,7 @@ class App(tk.Tk):
         # Cuadro de log -------------------------------------------------------
         self.log_box = scrolledtext.ScrolledText(self.bottom_frame, height=5, state="disabled")
         self.log_box.pack(fill="x", padx=3, pady=2)
+
 
         # Eventos de tabla ----------------------------------------------------
         self.tree.bind("<Button-1>", self._cell_click)
@@ -637,6 +598,79 @@ class App(tk.Tk):
         btn_frame.pack(pady=10)
         ttk.Button(btn_frame, text="Aplicar", command=lambda: [self._apply_filter(), dialog.destroy()]).pack(side="left", padx=5)
         ttk.Button(btn_frame, text="Cerrar", command=dialog.destroy).pack(side="left", padx=5)
+
+    def _open_clip_window(self) -> None:
+        """Popup para recortar el guion original a la parte que cubre el ASR."""
+        if not self.v_ref.get() or not self.v_asr.get():
+            messagebox.showinfo("Recorte", "Carga primero Guion y ASR.")
+            return
+        try:
+            ref_text = read_script(self.v_ref.get())
+            asr_path = Path(self.v_asr.get())
+            if asr_path.suffix.lower() == ".csv":
+                from utils.resync_python_v2 import load_words_csv
+                asr_words, asr_tcs = load_words_csv(asr_path)
+            else:
+                asr_raw = asr_path.read_text(encoding="utf-8", errors="ignore")
+                asr_words = normalize(asr_raw, strip_punct=True).split()
+                asr_tcs = None
+        except Exception as exc:
+            show_error(f"No se pudo cargar guion/ASR: {exc}")
+            return
+
+        proposal = propose_clip(ref_text, asr_words, asr_tcs)
+        paragraphs = proposal["paragraphs"]
+        start_par = proposal["start_par"]
+        end_par = proposal["end_par"]
+
+        win = tk.Toplevel(self)
+        win.title("Recortar guion (propuesta)")
+        win.geometry("900x600")
+
+        info = (
+            f"Parrafos totales: {len(paragraphs)}\\n"
+            f"Sugerido: {start_par} .. {end_par} "
+            f"(anclas trigram: {len(proposal.get('anchors', []))}; "
+            f"sim in/out: {proposal.get('sim_start', 0.0):.2f}/{proposal.get('sim_end', 0.0):.2f})"
+        )
+        if proposal.get("dubious"):
+            info += "\\nADVERTENCIA: recorte dudoso, revisa manualmente antes de guardar."
+        ttk.Label(win, text=info).pack(anchor="w", padx=8, pady=4)
+
+        preview = tk.Text(win, wrap="word")
+        preview.pack(fill="both", expand=True, padx=8, pady=4)
+        preview.insert("1.0", "\n\n".join(paragraphs[start_par:end_par]))
+        preview.configure(state="disabled")
+
+        suffix_frame = ttk.Frame(win)
+        suffix_frame.pack(fill="x", padx=8, pady=4)
+        ttk.Label(suffix_frame, text="Sufijo archivo:").pack(side="left")
+        v_suffix = tk.StringVar(win, value="parte1")
+        ttk.Entry(suffix_frame, textvariable=v_suffix, width=20).pack(side="left", padx=4)
+
+        def accept():
+            try:
+                if proposal.get("dubious"):
+                    proceed = messagebox.askyesno(
+                        "Recorte dudoso",
+                        "La similitud con el ASR es baja. Guardar este recorte igualmente?",
+                    )
+                    if not proceed:
+                        return
+                suffix = v_suffix.get().strip() or "recorte"
+                ref_path = Path(self.v_ref.get())
+                dest = ref_path.with_name(f"{ref_path.stem}_{suffix}{ref_path.suffix}")
+                save_clip(paragraphs, start_par, end_par, dest)
+                self.v_ref.set(str(dest))
+                messagebox.showinfo("Recorte", f"Guion recortado guardado en:\n{dest}")
+                win.destroy()
+            except Exception as exc:
+                show_error(f"No se pudo guardar recorte: {exc}")
+
+        btn_frame = ttk.Frame(win)
+        btn_frame.pack(fill="x", padx=8, pady=4)
+        ttk.Button(btn_frame, text="Aceptar recorte", command=accept).pack(side="left", padx=4)
+        ttk.Button(btn_frame, text="Cancelar", command=win.destroy).pack(side="left", padx=4)
 
     # ---------------------------------------------------------------------------------
     # navegación de archivos ----------------------------------------------------------
@@ -1955,7 +1989,17 @@ class App(tk.Tk):
             self.q.put("→ Leyendo guion…")
             debug(f"DEBUG: Leyendo guion {self.v_ref.get()}")
             ref_raw = read_script(self.v_ref.get())
-            ref = _auto_paragraphs(ref_raw)
+            ref, ref_paragraphs = _prepare_ref_text(ref_raw)
+            md_out: str | None = None
+            if self.v_write_md.get():
+                md_path = Path(self.v_ref.get()).with_suffix(".normalized.md")
+                try:
+                    md_path.write_text(paragraphs_to_markdown(ref_paragraphs), encoding="utf-8")
+                    md_out = str(md_path)
+                    debug(f"DEBUG: Markdown normalizado guardado en {md_path}")
+                except Exception as exc:
+                    debug(f"DEBUG: No se pudo guardar markdown: {exc}")
+                    md_out = None
 
             debug(f"DEBUG: Guion cargado ({len(ref)} chars)")
             self.q.put(f"→ DEBUG: Primeros 200 chars: {ref[:200]}")
@@ -1985,12 +2029,30 @@ class App(tk.Tk):
             self.q.put("→ Alineando…")
             debug("DEBUG: Iniciando alineacion")
 
+            debug_db_path: str | None = None
+            debug_csv_path: str | None = None
+            try:
+                debug_csv_path = str(Path(self.v_asr.get()).with_suffix(".align.csv"))
+            except Exception:
+                debug_csv_path = None
+            if self.v_align_db.get():
+                try:
+                    debug_db_path = str(Path(self.v_asr.get()).with_suffix(".align.db"))
+                except Exception:
+                    debug_db_path = None
+
             if use_csv:
                 # ASR llegó como CSV de palabras: usar alineado palabra-a-palabra
-                rows = build_rows_from_words(ref, csv_words, csv_tcs)
+                rows = build_rows_from_words(ref, csv_words, csv_tcs,
+                                             markdown_output=md_out,
+                                             debug_db_path=debug_db_path,
+                                             debug_csv_path=debug_csv_path)
             else:
                 # ASR llegó como texto: alinear por tokens…
-                rows = build_rows(ref, hyp)
+                rows = build_rows(ref, hyp,
+                                  markdown_output=md_out,
+                                  debug_db_path=debug_db_path,
+                                  debug_csv_path=debug_csv_path)
                 # …pero si hay CSV al lado (o lo seleccionás), preferir palabra-a-palabra
                 csv_path: Path | None = None
                 audio_val = self.v_audio.get()
@@ -2007,7 +2069,10 @@ class App(tk.Tk):
                     try:
                         from utils.resync_python_v2 import load_words_csv
                         csv_words, csv_tcs = load_words_csv(csv_path)
-                        rows = build_rows_from_words(ref, csv_words, csv_tcs)
+                        rows = build_rows_from_words(ref, csv_words, csv_tcs,
+                                                     markdown_output=md_out,
+                                                     debug_db_path=debug_db_path,
+                                                     debug_csv_path=debug_csv_path)
                         debug(f"DEBUG: CSV usado {csv_path}")
                     except Exception as exc:
                         self.q.put(f"CSV fallback error: {exc}")

@@ -6,7 +6,7 @@ QC-Audiolibro es una aplicación de escritorio diseñada para facilitar el proce
 
 - **Alineación de Texto y Audio**: Sincroniza el guion original con la transcripción ASR, mostrando las discrepancias línea por línea.
 - **Reproducción Sincronizada**: Permite reproducir segmentos de audio correspondientes a cada línea de texto directamente desde la aplicación.
-- **Revisión Asistida por IA**: Utiliza modelos de OpenAI (GPT-4o) para realizar una revisión automática, marcando posibles errores (`mal`) o confirmando lecturas correctas (`ok`).
+- **Revisión Asistida por IA**: Utiliza modelos de OpenAI (gpt-5.1) para realizar una revisión automática, marcando posibles errores (`mal`) o confirmando lecturas correctas (`ok`).
 - **Edición y Corrección Intuitiva**: Facilita la corrección de errores de transcripción, la fusión de líneas y el ajuste de la sincronización.
 - **Re-transcripción de Segmentos**: Permite re-transcribir fragmentos específicos del audio que presenten errores graves utilizando un modelo de ASR más potente.
 - **Revisión Avanzada con IA**: Ofrece un análisis contextual de los errores, clasificándolos en categorías como repeticiones, omisiones, errores de lectura o desalineación.
@@ -55,6 +55,13 @@ Para ejecutar la aplicación, necesitas Python 3.10 o superior.
     ```bash
     python qc_app.py
     ```
+
+## Depuracion de alineacion
+
+- El texto original se normaliza con heuristicas de parrafo (`text_utils.prepare_paragraphs`), separando titulos cortos y colapsando saltos blandos antes de alinear.
+- Para obtener una version markdown del guion normalizado, pasa `markdown_output="guion.md"` a `build_rows_from_words` o `build_rows`.
+- Para inspeccionar el mapeo de anclas y segmentos, usa `debug_db_path="alineacion.db"` y luego `python -m alignment_debugger alineacion.db --sample 5` para ver el resumen en consola.
+- Desde `qc_app`, hay un toggle “Guardar alineación .align.db” (activo por defecto) que genera `<asr>.align.db`; si querés el markdown normalizado activá `QC_WRITE_MD=1` antes de ejecutar para emitir `<guion>.normalized.md`.
 
 ## Mejoras y Futuro Desarrollo
 

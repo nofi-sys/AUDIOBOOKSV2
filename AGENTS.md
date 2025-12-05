@@ -12,7 +12,7 @@ This file coordinates sequential work on the Check_Audiobook project. Each agent
 
 | ID | Agent | Description | Status |
 |----|-------|-------------|--------|
-| 1 | Agent-Normalize | Expand normalization in `text_utils.py` (`normalize`, `token_equal`) with more abbreviations and punctuation equivalences. Update tests accordingly. | pending |
+| 1 | Agent-Normalize | Expand normalization in `text_utils.py` (`normalize`, `token_equal`) with more abbreviations and punctuation equivalences. Update tests accordingly. | done |
 | 2 | Agent-Transcriber | Convert the provided Whisper script into module `transcriber.py` with a CLI function to transcribe audio. | done |
 | 3 | Agent-WordList | Implement word list extraction from PDFs and feed it to Whisper in `transcriber.py`. | done |
 | 4 | Agent-Alignment | Adjust DTW parameters in `alignment.py` to leverage the word list and improve alignment accuracy. | done |

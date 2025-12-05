@@ -1,7 +1,9 @@
 import json
+import sqlite3
 import pytest
 
 from alignment import build_rows, build_rows_from_words
+import alignment_debugger
 from rectifier import rectify_rows
 from text_utils import normalize
 
@@ -63,6 +65,77 @@ def test_build_rows_no_truncation():
     assembled_tokens = normalize(assembled, strip_punct=False).split()
     hyp_tokens = normalize(hyp, strip_punct=False).split()
     assert " ".join(hyp_tokens) in " ".join(assembled_tokens)
+
+
+def test_build_rows_chunks_long_unpunctuated():
+    ref = " ".join([f"palabra{i}" for i in range(130)])
+    words = ref.split()
+    times = [i * 0.3 for i in range(len(words))]
+    rows = build_rows_from_words(ref, words, times)
+    assert len(rows) > 1
+    assert all(r[6] and r[7] for r in rows)
+
+
+def test_build_rows_roman_numeric_anchor():
+    ref = "Capitulo IV comienza"
+    words = ["capitulo", "4", "comienza"]
+    times = [0.0, 0.5, 1.0]
+    rows = build_rows_from_words(ref, words, times)
+    assert rows[0][6].lower().startswith("capitulo")
+    assert "4" in rows[0][7]
+    assert rows[0][4] < 50
+
+
+def test_build_rows_anchor_prefers_first_occurrence():
+    ref = "uno dos tres cuatro"
+    words = ["ruido", "uno", "dos", "tres", "cuatro", "uno", "dos"]
+    times = [i * 0.5 for i in range(len(words))]
+    rows = build_rows_from_words(ref, words, times)
+    assert rows
+    assembled = " ".join(r[7] for r in rows)
+    assert "ruido uno dos tres cuatro" in assembled
+
+
+def test_alignment_debugger_persists_snapshot(tmp_path):
+    ref = "Uno dos tres.\n\nCuatro cinco."
+    words = ["Uno", "dos", "tres", "cuatro", "cinco"]
+    times = [0.0, 0.4, 0.8, 1.2, 1.6]
+    db_path = tmp_path / "align.db"
+    rows = build_rows_from_words(ref, words, times, debug_db_path=db_path)
+    summary = alignment_debugger.summarize_alignment(db_path, sample=2)
+    assert summary.paragraphs == len(rows)
+    assert summary.anchors_by_size
+    assert summary.sample[0].ref_text.lower().startswith("uno")
+
+
+def test_build_rows_invariants_snapshot(tmp_path):
+    ref = "Uno dos tres cuatro. Cinco seis."
+    words = ["uno", "dos", "tres", "cuatro", "cinco", "seis"]
+    times = [i * 0.4 for i in range(len(words))]
+    db_path = tmp_path / "inv.db"
+    rows = build_rows_from_words(ref, words, times, debug_db_path=db_path)
+    assert rows  # output rows exist
+    conn = sqlite3.connect(db_path)
+    cur = conn.cursor()
+    meta = dict(cur.execute("SELECT key, value FROM meta"))
+    n_ref = int(meta["ref_tokens"])
+    n_asr = int(meta["asr_tokens"])
+    paragraphs = cur.execute(
+        "SELECT ref_start, ref_end, asr_start, asr_end, ref_text, asr_text FROM paragraphs ORDER BY id"
+    ).fetchall()
+    last_asr = 0
+    empty_both = 0
+    for ref_start, ref_end, asr_start, asr_end, ref_text, asr_text in paragraphs:
+        assert 0 <= ref_start <= ref_end <= n_ref
+        assert 0 <= asr_start <= asr_end <= n_asr
+        assert asr_start >= last_asr
+        last_asr = asr_end
+        if not ref_text and not asr_text:
+            empty_both += 1
+    alignments_word = cur.execute("SELECT COUNT(*) FROM alignments_word").fetchone()[0]
+    conn.close()
+    assert empty_both == 0
+    assert alignments_word > 0
 
 def _to_seconds(value):
     if isinstance(value, (int, float)):

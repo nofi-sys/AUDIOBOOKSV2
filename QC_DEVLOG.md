@@ -50,7 +50,7 @@ Este archivo registra decisiones, experimentos, errores y lineamientos para evol
 
 — Última actualización: inicialización de la bitácora y cambio de `tc` a timecode en UI.
 
-## 2025-09-04 — Guided ASR v1 (heavy words)
+## 2025-09-04 – Guided ASR v1 (heavy words)
 - Nuevo flujo `--guided` en `transcriber.py`:
   - Pasa pesada `word-level` (modelo `large-v3`) con hotwords del guion.
   - Convierte a CSV (`*.words.csv`) y alinea contra el guion con `build_rows_from_words`.
@@ -58,3 +58,9 @@ Este archivo registra decisiones, experimentos, errores y lineamientos para evol
   - Artefactos: `*.guided.txt`, `*.guided.qc.json`.
 - Criterio aplicado: usar palabras de la transcripción más sofisticada (heavy) para alinear.
 - Objetivo “no perder palabras”: texto plano se arma concatenando todas las palabras de la pasada pesada; los huecos en la alineación generan filas “solo ASR” en QC.
+
+## 2025-11-19 – Anclas y depuración de alineación
+- Text normalization: `prepare_paragraphs` reconstruye párrafos desde TXT con heurística (punto + salto corta párrafo, títulos cortos se separan) y `paragraphs_to_markdown` permite exportar versión `.md`.
+- Alineación: `build_rows_from_words` ahora usa anclas multi-ngram (5→2) con prioridad a la primera ocurrencia y mapea segmentos completos, fijando el inicio en ASR=0 para capturar “ruido” previo.
+- Persistencia: nuevo `alignment_debugger.store_alignment_snapshot` guarda anchors/parrafos/tokens en SQLite; CLI (`python -m alignment_debugger <db>`) imprime resumen rápido. En `qc_app`, hay toggle “Guardar alineación .align.db” (ON por defecto) para emitir `<asr>.align.db`; si se quiere Markdown normalizado, setear `QC_WRITE_MD=1` antes de lanzar la GUI.
+- Tests: se ampliaron pruebas de normalización/paragraphs y se añadió cobertura del volcado SQLite. El suite completo falla solo por dependencias opcionales en `LEGACY/MAQUETADO` (spacy/docx/gutenberg_cleaner) y un fixture ausente `ejemplos/repetition_test.qc.json`.
