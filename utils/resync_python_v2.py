@@ -27,6 +27,8 @@ import tkinter as tk
 from tkinter import filedialog, scrolledtext, ttk, messagebox
 from rapidfuzz.distance import Levenshtein
 
+from qc_utils import canonical_row
+
 try:
     from utils.gui_errors import show_error
 except ModuleNotFoundError:
@@ -129,6 +131,8 @@ def resync_rows(
 ):
     log  = log_cb  or (lambda *_: None)
     prog = progress_cb or (lambda *_: None)
+
+    rows[:] = [canonical_row(r) for r in rows]
 
     # 1) lista plana de palabras (ASR)
     j_tokens, tok2row = [], []

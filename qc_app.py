@@ -17,6 +17,7 @@ import threading
 import traceback
 import shutil
 import subprocess
+import sys
 import tempfile
 from pathlib import Path
 
@@ -323,6 +324,11 @@ class App(tk.Tk):
             text="Informe Corrección",
             command=self.generate_correction_report
         ).grid(row=2, column=0, sticky="ew", padx=2, pady=2)
+        ttk.Button(
+            other_tools_frame,
+            text="Vista continua (Kivy)",
+            command=self.open_continuous_view
+        ).grid(row=3, column=0, sticky="ew", padx=2, pady=2)
 
         # Frame para estadísticas y filtros
         stats_filter_frame = ttk.LabelFrame(self, text="Estadísticas y Filtros", padding=5)
@@ -757,23 +763,28 @@ class App(tk.Tk):
         # en el orden correcto [ID, Check, OK, AI, WER, tc, Original, ASR]
         row = canonical_row(r)
 
-        # La GUI usa 9 columnas, insertamos 'Score' si falta.
-        if len(row) == 8:
-            row.insert(4, "")  # Insertar Score en la posición 4
+        base = row[:8]
+        extras = row[8:]
+        score = extras[0] if extras else ""
+
+        rebuilt = list(base)
+        rebuilt.insert(4, score)  # Score en columna 5 de la GUI
+        if len(extras) > 1:
+            rebuilt.extend(extras[1:])
 
         # Asegurar que siempre haya 9 columnas, rellenando si es necesario
-        while len(row) < 9:
-            row.append("")
+        while len(rebuilt) < 9:
+            rebuilt.append("")
 
         # Truncar si hay más de 9, aunque no debería ocurrir con canonical_row
-        row = row[:9]
+        rebuilt = rebuilt[:9]
 
         # Formatear el timecode (columna 6) y asegurar que el texto sea string
-        row[6] = _format_tc(row[6])
-        row[7] = str(row[7])
-        row[8] = str(row[8])
+        rebuilt[6] = _format_tc(rebuilt[6])
+        rebuilt[7] = str(rebuilt[7])
+        rebuilt[8] = str(rebuilt[8])
 
-        return row
+        return rebuilt
 
     # ───────────────────────────────── ventana de progreso ─────────────────────────
     def _show_progress(self, text: str = "Procesando…", *, determinate: bool = False) -> None:
@@ -1173,8 +1184,16 @@ class App(tk.Tk):
             self.v_json.set(p)
 
         try:
-            self.all_rows = json.loads(
-                Path(self.v_json.get()).read_text(encoding="utf8"))
+            raw_rows = json.loads(Path(self.v_json.get()).read_text(encoding="utf8"))
+            rows = [canonical_row(r) for r in raw_rows]
+            self.all_rows = rows
+            empty_text = rows and all((not str(r[6]).strip()) and (not str(r[7]).strip()) for r in rows)
+            if empty_text:
+                messagebox.showwarning(
+                    "Formato viejo",
+                    "Este JSON no contiene texto Original/ASR (formato legacy). "
+                    "Reprocesa el guion con el nuevo alineador para habilitar la revisión.",
+                )
             self.clear_table()
             self._apply_filter()  # Rellena la tabla con los filtros actuales
             self._snapshot()
@@ -2347,6 +2366,31 @@ class App(tk.Tk):
             messagebox.showinfo("EDL", f"Guardado {out}")
         except Exception as exc:
             show_error("Error", exc)
+
+    def open_continuous_view(self) -> None:
+        """Launch the Kivy continuous view as a separate process."""
+        if not self.v_asr.get():
+            messagebox.showinfo("Vista continua", "Carga primero el TXT/CSV de ASR.")
+            return
+        asr_path = Path(self.v_asr.get())
+        align_csv = asr_path.with_suffix(".align.csv")
+        if not align_csv.exists():
+            messagebox.showinfo("Vista continua", f"No encontré {align_csv}; corre Procesar para generarlo.")
+            return
+        args = [sys.executable, "-m", "kivy_continuous_view", "--asr", str(asr_path), "--align-csv", str(align_csv)]
+        align_db = asr_path.with_suffix(".align.db")
+        if align_db.exists():
+            args += ["--align-db", str(align_db)]
+        if self.v_audio.get():
+            args += ["--audio", self.v_audio.get()]
+        rows_json = self.v_json.get() or str(asr_path.with_suffix(".qc.json"))
+        if rows_json and Path(rows_json).exists():
+            args += ["--rows-json", rows_json]
+        try:
+            subprocess.Popen(args)
+            self._log(f"Lanzando vista continua: {' '.join(args)}")
+        except Exception as exc:
+            show_error(f"No se pudo iniciar la vista continua: {exc}")
 
     def second_pass_sync(self) -> None:
         """

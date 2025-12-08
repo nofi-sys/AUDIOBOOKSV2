@@ -1362,6 +1362,8 @@ def build_rows_from_words(ref: str, asr_words: list[str], tcs: list[float],
             _d(f"[debug-csv] fallo al escribir {debug_csv_path}: {exc}")
 
     out: list[list] = []
+    # Contrato canónico: [ID, Check, OK, AI, WER, tc, Original, ASR]
+    # (la GUI inserta Score al vuelo; no se guarda en JSON)
     for r in paragraph_rows:
         out.append([
             r['id'],

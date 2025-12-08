@@ -9,6 +9,7 @@ import logging
 import time
 import threading
 
+from qc_utils import canonical_row
 from dotenv import load_dotenv
 from openai import (
     OpenAI,
@@ -125,13 +126,9 @@ def _ai_verdict_with_timeout(
 
 def _mark_error(row: List) -> None:
     """Insert or update the AI verdict column with 'error'."""
-    if len(row) == 6:
-        row.insert(2, "")
-        row.insert(3, "error")
-    elif len(row) == 7:
-        row.insert(3, "error")
-    else:
-        row[3] = "error"
+    normalized = canonical_row(row)
+    row[:] = normalized
+    row[3] = "error"
 
 
 # Default instruction prompt

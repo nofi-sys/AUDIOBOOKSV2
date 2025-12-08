@@ -17,6 +17,6 @@ This file coordinates sequential work on the Check_Audiobook project. Each agent
 | 3 | Agent-WordList | Implement word list extraction from PDFs and feed it to Whisper in `transcriber.py`. | done |
 | 4 | Agent-Alignment | Adjust DTW parameters in `alignment.py` to leverage the word list and improve alignment accuracy. | done |
 | 5 | Agent-AIReview | Create module `ai_review.py` to send flagged lines to GPT for validation. | done |
-| 6 | Agent-GUI | Begin migrating the current Tkinter interface to a Kivy GUI, keeping existing features. | pending |
+| 6 | Agent-GUI | Begin migrating the current Tkinter interface to a Kivy GUI, keeping existing features. | done |
 | 7 | Agent-Tests | Add and update tests to cover new modules and features. Ensure `pytest` passes. | done |
 
