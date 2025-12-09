@@ -19,6 +19,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import sqlite3
 from pathlib import Path
 
 import pygame
@@ -47,6 +48,9 @@ from audacity_session import AudacityLabelSession
 
 from audio_video_editor import build_intervals
 
+# Ruta para recordar la última sesión cargada/procesada
+LAST_SESSION_FILE = Path.home() / ".qc_audiolibro_last_session.json"
+
 class Tooltip:
     def __init__(self, widget, text):
         self.widget = widget
@@ -58,7 +62,13 @@ class Tooltip:
     def show_tooltip(self, event):
         if self.tooltip_window or not self.text:
             return
-        x, y, _, _ = self.widget.bbox("insert")
+        try:
+            bbox = self.widget.bbox("insert")
+        except Exception:
+            bbox = None
+        if not bbox:
+            return
+        x, y, _, _ = bbox
         x += self.widget.winfo_rootx() + 25
         y += self.widget.winfo_rooty() + 25
 
@@ -114,6 +124,119 @@ def _prepare_ref_text(text: str) -> tuple[str, list[str]]:
     """
     paragraphs = prepare_paragraphs(text)
     return "\n\n".join(paragraphs), paragraphs
+
+
+def _resolve_glossary_path(ref_path: Path) -> Path | None:
+    """Return glossary path if present via env or alongside the ref file."""
+    env = os.getenv("QC_GLOSSARY_PATH") or os.getenv("QC_GLOSSARY_JSON")
+    candidates = []
+    if env:
+        candidates.append(Path(env))
+    candidates.append(ref_path.with_name(f"{ref_path.stem}_glossary.json"))
+    for cand in candidates:
+        try:
+            if cand and cand.exists():
+                return cand
+        except Exception:
+            continue
+    return None
+
+
+def _ensure_glossary(ref_path: Path, ref_text: str, notify) -> Path | None:
+    """Build a glossary from the script if none is present; returns the path or None."""
+    existing = _resolve_glossary_path(ref_path)
+    if existing:
+        return existing
+    dest = ref_path.with_name(f"{ref_path.stem}_glossary.json")
+    try:
+        from glossary_builder_spacy import build_glossary, save_glossary, load_spacy_model
+    except Exception as exc:  # pragma: no cover
+        notify(f"DEBUG: Glosario no generado (import spaCy): {exc}")
+        return None
+    try:
+        notify("DEBUG: Generando glosario con spaCy (puede tardar)")
+        nlp = load_spacy_model()
+        glossary = build_glossary(ref_text, nlp=nlp)
+        save_glossary(glossary, dest)
+        notify(f"DEBUG: Glosario generado ({len(glossary)} entradas) en {dest}")
+        return dest
+    except Exception as exc:  # pragma: no cover
+        notify(f"DEBUG: Fallo al construir glosario: {exc}")
+        return None
+
+
+def _rows_from_paragraphs(db_path: str | Path) -> list[list]:
+    """Read rows back from alignment DB (paragraphs table) to reflect updated WER/flags."""
+    path = Path(db_path)
+    if not path.exists():
+        return []
+    conn = sqlite3.connect(path)
+    cur = conn.cursor()
+    rows: list[list] = []
+    for rid, flag, wer, tc, ref_txt, asr_txt in cur.execute(
+        "SELECT id, flag, wer, tc_start, ref_text, asr_text FROM paragraphs ORDER BY id"
+    ):
+        try:
+            tc_val = f"{float(tc):.2f}" if tc is not None else ""
+        except Exception:
+            tc_val = str(tc) if tc is not None else ""
+        rows.append([rid, flag, "", "", round(float(wer), 1) if wer is not None else "", tc_val, ref_txt or "", asr_txt or ""])
+    conn.close()
+    return rows
+
+
+def _apply_suspicions_pipeline(debug_db_path: str | None, glossary_path: Path | None, rows: list[list], notify) -> list[list]:
+    """Run glossary scan + post-align pipeline; update WER/flags/tc on existing rows only."""
+    if not debug_db_path or not glossary_path or not glossary_path.exists():
+        return rows
+    try:
+        from asr_glossary_scan import mark_asr_suspicions_from_db
+        from suspicions_postalign import run_postalign_pipeline
+    except Exception as exc:  # pragma: no cover
+        notify(f"DEBUG: sospechas no disponibles (import): {exc}")
+        return rows
+    try:
+        notify(f"DEBUG: Escaneando glosario {glossary_path.name}")
+        mark_asr_suspicions_from_db(debug_db_path, glossary_path)
+        run_postalign_pipeline(debug_db_path)
+        # refrescar solo WER/flag/tc para no tocar textos
+        path = Path(debug_db_path)
+        conn = sqlite3.connect(path)
+        cur = conn.cursor()
+        meta_rows = {
+            rid: (flag, wer, tc_start)
+            for rid, flag, wer, tc_start in cur.execute(
+                "SELECT id, flag, wer, tc_start FROM paragraphs ORDER BY id"
+            )
+        }
+        conn.close()
+        updated: list[list] = []
+        for r in rows:
+            try:
+                rid = int(r[0])
+            except Exception:
+                updated.append(r)
+                continue
+            if rid in meta_rows:
+                flag, wer, tc_val = meta_rows[rid]
+                new_r = list(r)
+                new_r[1] = flag
+                try:
+                    new_r[4] = round(float(wer), 1)
+                except Exception:
+                    new_r[4] = r[4]
+                try:
+                    new_r[5] = f"{float(tc_val):.2f}"
+                except Exception:
+                    pass
+                updated.append(new_r)
+            else:
+                updated.append(r)
+        notify("DEBUG: WER/flags ajustados con sospechas")
+        return updated
+    except Exception as exc:  # pragma: no cover
+        notify(f"DEBUG: pipeline de sospechas fallo: {exc}")
+    return rows
 
 def play_interval(path: str, start: float, end: float | None) -> str | None:
     """Play ``path`` from ``start`` seconds until ``end`` using pygame.
@@ -225,6 +348,9 @@ class App(tk.Tk):
         self._prog_bar: ttk.Progressbar | None = None
         self._prog_label: ttk.Label | None = None
 
+        # Intentar cargar la última sesión automáticamente
+        self.after(300, self._auto_load_last_session)
+
     # ---------------------------------------------------------------- build UI ------
     def _build_ui(self) -> None:
         # Main container for top controls
@@ -244,8 +370,6 @@ class App(tk.Tk):
         ttk.Button(files_frame, text="Abrir JSON…", command=self.load_json).grid(row=3, column=2, pady=(4, 0))
         ttk.Button(files_frame, text="Procesar", width=12, command=self.launch).grid(
             row=0, column=3, rowspan=2, padx=6, ipady=5)
-        ttk.Button(files_frame, text="Recortar guion…", command=self._open_clip_window).grid(
-            row=1, column=3, rowspan=1, padx=6, pady=(4, 0), ipady=2)
         ttk.Checkbutton(
             files_frame,
             text="Guardar alineación .align.db",
@@ -1174,6 +1298,48 @@ class App(tk.Tk):
     # ---------------------------------------------------------------------------------
     # JSON ---------------------------------------------------------------------------
 
+    def _read_last_session(self) -> dict | None:
+        try:
+            data = json.loads(LAST_SESSION_FILE.read_text(encoding="utf8"))
+            return data if isinstance(data, dict) else None
+        except FileNotFoundError:
+            return None
+        except Exception:
+            return None
+
+    def _save_last_session(self, json_path: str | None = None) -> None:
+        json_path = json_path or self.v_json.get()
+        if not json_path:
+            return
+        payload = {
+            "json": json_path,
+            "ref": self.v_ref.get(),
+            "asr": self.v_asr.get(),
+            "audio": self.v_audio.get(),
+        }
+        try:
+            LAST_SESSION_FILE.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf8")
+        except Exception:
+            pass
+
+    def _auto_load_last_session(self) -> None:
+        data = self._read_last_session()
+        if not data:
+            return
+        json_path = data.get("json")
+        if not json_path or not Path(json_path).exists():
+            return
+        if data.get("ref"):
+            self.v_ref.set(data.get("ref"))
+        if data.get("asr"):
+            self.v_asr.set(data.get("asr"))
+        if data.get("audio"):
+            self.v_audio.set(data.get("audio"))
+        self.v_json.set(json_path)
+        try:
+            self.load_json()
+        except Exception:
+            pass
 
     def load_json(self):
         if not self.v_json.get():
@@ -1201,6 +1367,7 @@ class App(tk.Tk):
             self._load_marker()
             self._load_bookmark()
             self._log(f"Check Cargado {self.v_json.get()}")
+            self._save_last_session(self.v_json.get())
         except Exception as e:
             show_error("Error", e)
 
@@ -2024,6 +2191,7 @@ class App(tk.Tk):
             self.q.put(f"→ DEBUG: Primeros 200 chars: {ref[:200]}")
 
             asr_path = Path(self.v_asr.get())
+            glossary_path = _ensure_glossary(Path(self.v_ref.get()), ref_raw, debug)
             debug(f"DEBUG: Leyendo ASR {asr_path}")
             if asr_path.suffix.lower() == ".csv":
                 from utils.resync_python_v2 import load_words_csv
@@ -2059,6 +2227,11 @@ class App(tk.Tk):
                     debug_db_path = str(Path(self.v_asr.get()).with_suffix(".align.db"))
                 except Exception:
                     debug_db_path = None
+            if glossary_path and not debug_db_path:
+                try:
+                    debug_db_path = str(Path(self.v_asr.get()).with_suffix(".align.db"))
+                except Exception:
+                    debug_db_path = None
 
             if use_csv:
                 # ASR llegó como CSV de palabras: usar alineado palabra-a-palabra
@@ -2074,9 +2247,11 @@ class App(tk.Tk):
                                   debug_csv_path=debug_csv_path)
                 # …pero si hay CSV al lado (o lo seleccionás), preferir palabra-a-palabra
                 csv_path: Path | None = None
-                audio_val = self.v_audio.get()
-                if audio_val:
-                    candidate = Path(audio_val).with_suffix(".words.csv")
+                candidate = asr_path.with_suffix(".csv")
+                if candidate.exists():
+                    csv_path = candidate
+                if csv_path is None and self.v_audio.get():
+                    candidate = Path(self.v_audio.get()).with_suffix(".words.csv")
                     if candidate.exists():
                         csv_path = candidate
                 if csv_path is None:
@@ -2096,6 +2271,10 @@ class App(tk.Tk):
                     except Exception as exc:
                         self.q.put(f"CSV fallback error: {exc}")
 
+            rows = [canonical_row(r) for r in rows]
+
+            # Post-procesar sospechas fonéticas/glosario si hay DB y glosario disponible
+            rows = _apply_suspicions_pipeline(debug_db_path, glossary_path, rows, debug)
             rows = [canonical_row(r) for r in rows]
 
             # ═══ DEBUG TEMPORAL ═══
@@ -2120,6 +2299,10 @@ class App(tk.Tk):
             )
 
             debug(f"DEBUG: JSON guardado en {out}")
+            try:
+                self._save_last_session(str(out))
+            except Exception:
+                pass
 
             self.all_rows = rows
             self.q.put(("ROWS_READY", None))

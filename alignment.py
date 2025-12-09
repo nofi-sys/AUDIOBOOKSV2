@@ -1217,18 +1217,33 @@ def _write_alignment_db(db_path: str | Path,
                         asr_tokens_norm: list[str],
                         tcs: list[float],
                         word_ops: list[WordOp],
-                        paragraph_rows: list[dict]) -> None:
+                        paragraph_rows: list[dict],
+                        anchors: list[Anchor] | None = None) -> None:
     import sqlite3
     path = Path(db_path)
     path.parent.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(path)
     cur = conn.cursor()
     cur.executescript("""
+    DROP TABLE IF EXISTS meta;
+    DROP TABLE IF EXISTS anchors;
     DROP TABLE IF EXISTS ref_tokens;
     DROP TABLE IF EXISTS asr_tokens;
     DROP TABLE IF EXISTS word_alignment;
     DROP TABLE IF EXISTS paragraph_rows;
+    DROP TABLE IF EXISTS paragraphs;
+    DROP TABLE IF EXISTS alignments_word;
+    DROP TABLE IF EXISTS asr_suspicions;
     """)
+    cur.execute("""CREATE TABLE meta (
+        key TEXT PRIMARY KEY,
+        value TEXT
+    )""")
+    cur.execute("""CREATE TABLE anchors (
+        ref_idx INTEGER,
+        asr_idx INTEGER,
+        size INTEGER
+    )""")
     cur.execute("""CREATE TABLE ref_tokens (
         idx INTEGER PRIMARY KEY,
         token_norm TEXT NOT NULL,
@@ -1239,12 +1254,23 @@ def _write_alignment_db(db_path: str | Path,
         idx INTEGER PRIMARY KEY,
         token_norm TEXT NOT NULL,
         token_raw TEXT NOT NULL,
-        tc REAL
+        tc REAL,
+        suspected_of TEXT,
+        suspicion_score REAL,
+        corrected_raw TEXT
     )""")
     cur.execute("""CREATE TABLE word_alignment (
         ref_idx INTEGER,
         asr_idx INTEGER,
         op TEXT NOT NULL
+    )""")
+    cur.execute("""CREATE TABLE alignments_word (
+        ref_idx INTEGER,
+        asr_idx INTEGER,
+        tipo TEXT,
+        distancia REAL,
+        row_id INTEGER,
+        PRIMARY KEY (ref_idx, asr_idx)
     )""")
     cur.execute("""CREATE TABLE paragraph_rows (
         row_id INTEGER PRIMARY KEY,
@@ -1256,15 +1282,52 @@ def _write_alignment_db(db_path: str | Path,
         wer REAL NOT NULL,
         flag TEXT NOT NULL
     )""")
+    cur.execute("""CREATE TABLE paragraphs (
+        id INTEGER,
+        ref_start INTEGER,
+        ref_end INTEGER,
+        asr_start INTEGER,
+        asr_end INTEGER,
+        tc_start REAL,
+        tc_end REAL,
+        ref_text TEXT,
+        asr_text TEXT,
+        wer REAL,
+        flag TEXT
+    )""")
+    cur.execute("""CREATE TABLE asr_suspicions (
+        suspicion_id INTEGER PRIMARY KEY,
+        asr_start_idx INTEGER NOT NULL,
+        asr_end_idx INTEGER NOT NULL,
+        candidate_ref TEXT NOT NULL,
+        source TEXT NOT NULL,
+        score REAL NOT NULL,
+        status TEXT NOT NULL
+    )""")
+
+    if anchors:
+        cur.executemany(
+            "INSERT INTO anchors(ref_idx, asr_idx, size) VALUES (?, ?, ?)",
+            [(a.ref_idx, a.asr_idx, a.size) for a in anchors],
+        )
 
     cur.executemany(
         "INSERT INTO ref_tokens(idx, token_norm, token_raw, paragraph_id) VALUES (?, ?, ?, ?)",
         [(i, norm, ref_tokens_raw[i], ref_paragraph_ids[i]) for i, norm in enumerate(ref_tokens_norm)]
     )
     cur.executemany(
-        "INSERT INTO asr_tokens(idx, token_norm, token_raw, tc) VALUES (?, ?, ?, ?)",
+        "INSERT INTO asr_tokens(idx, token_norm, token_raw, tc, suspected_of, suspicion_score, corrected_raw) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?)",
         [
-            (i, asr_tokens_norm[i], asr_tokens_raw[i], float(tcs[i]) if i < len(tcs) else None)
+            (
+                i,
+                asr_tokens_norm[i],
+                asr_tokens_raw[i],
+                float(tcs[i]) if i < len(tcs) else None,
+                None,
+                None,
+                None,
+            )
             for i in range(len(asr_tokens_norm))
         ]
     )
@@ -1272,6 +1335,23 @@ def _write_alignment_db(db_path: str | Path,
         "INSERT INTO word_alignment(ref_idx, asr_idx, op) VALUES (?, ?, ?)",
         [(op.ref_idx, op.asr_idx, op.op) for op in word_ops]
     )
+
+    alignments_word = _collect_word_alignments(paragraph_rows, ref_tokens_norm, asr_tokens_norm)
+    if alignments_word:
+        cur.executemany(
+            "INSERT OR REPLACE INTO alignments_word(ref_idx, asr_idx, tipo, distancia, row_id) VALUES (?, ?, ?, ?, ?)",
+            [
+                (
+                    a.get('ref_idx', -1) if a.get('ref_idx') is not None else -1,
+                    a.get('asr_idx', -1) if a.get('asr_idx') is not None else -1,
+                    a.get('tipo', ''),
+                    float(a.get('distancia', 0.0)),
+                    a.get('row_id'),
+                )
+                for a in alignments_word
+            ],
+        )
+
     cur.executemany(
         "INSERT INTO paragraph_rows(row_id, paragraph_id, ref_start, ref_end, asr_start, asr_end, wer, flag) "
         "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
@@ -1279,6 +1359,38 @@ def _write_alignment_db(db_path: str | Path,
             (row['id'], row['paragraph_id'], row['s'], row['e'], row['hs'], row['he'], row['wer'], row['flag'])
             for row in paragraph_rows
         ]
+    )
+    for row in paragraph_rows:
+        start_tc = float(tcs[row['hs']]) if row['hs'] < len(tcs) else 0.0
+        end_idx = max(row['he'] - 1, row['hs'])
+        end_tc = float(tcs[end_idx]) if end_idx < len(tcs) else start_tc
+        cur.execute(
+            "INSERT INTO paragraphs(id, ref_start, ref_end, asr_start, asr_end, tc_start, tc_end, ref_text, asr_text, wer, flag) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (
+                row.get('id'),
+                row.get('s'),
+                row.get('e'),
+                row.get('hs'),
+                row.get('he'),
+                start_tc,
+                end_tc,
+                row.get('txt_ref', ''),
+                row.get('txt_asr', ''),
+                row.get('wer', 0.0),
+                row.get('flag', ''),
+            )
+        )
+
+    cur.executemany(
+        "INSERT INTO meta(key, value) VALUES (?, ?)",
+        [
+            ("paragraphs", str(len(paragraph_rows))),
+            ("ref_tokens", str(len(ref_tokens_norm))),
+            ("asr_tokens", str(len(asr_tokens_norm))),
+            ("alignments_word", str(len(alignments_word))),
+            ("anchors", str(len(anchors or []))),
+        ],
     )
     conn.commit()
     conn.close()
@@ -1351,7 +1463,7 @@ def build_rows_from_words(ref: str, asr_words: list[str], tcs: list[float],
     if debug_db_path:
         try:
             _write_alignment_db(debug_db_path, ref_tokens_raw, ref_tokens_norm, ref_paragraph_ids,
-                                asr_tokens_raw, asr_tokens_norm, tcs, word_ops, paragraph_rows)
+                                asr_tokens_raw, asr_tokens_norm, tcs, word_ops, paragraph_rows, anchors)
         except Exception as exc:  # pragma: no cover
             _d(f"[debug-db] fallo al escribir {debug_db_path}: {exc}")
 
