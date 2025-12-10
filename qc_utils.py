@@ -49,14 +49,22 @@ def canonical_row(row: Sequence) -> list:
     r = list(row)
     extras: list = []
 
-    # Score-present layout from GUI: id, check, ok, ai, score, wer, tc, original, asr
-    if len(r) >= 9:
+    def _looks_score_layout(vals: list) -> bool:
+        """Heuristic: detect GUI layout with Score at index 4."""
+        if len(vals) < 9:
+            return False
+        # In Score layout, column 6 is tc (no letters) and column 7 is Original (has letters)
+        return not _has_letters(vals[6]) and _has_letters(vals[7])
+
+    if _looks_score_layout(r):
+        # Layout from GUI: id, check, ok, ai, score, wer, tc, original, asr, extras...
         score = r[4]
         id_, check, ok, ai, _score, wer, tc, original, asr = r[:9]
         extras = [score] + r[9:]
         base = [id_, check, ok, ai, wer, tc, original, asr]
-    elif len(r) == 8:
+    elif len(r) >= 8:
         base = list(r[:8])
+        extras = list(r[8:])
         looks_legacy = (
             _is_numberish(base[6])
             and _is_numberish(base[7])

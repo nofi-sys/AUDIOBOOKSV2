@@ -186,7 +186,7 @@ def _rows_from_paragraphs(db_path: str | Path) -> list[list]:
 
 
 def _apply_suspicions_pipeline(debug_db_path: str | None, glossary_path: Path | None, rows: list[list], notify) -> list[list]:
-    """Run glossary scan + post-align pipeline; update WER/flags/tc on existing rows only."""
+    """Run glossary scan + post-align pipeline; update WER/flags/tc and ASR corrections on rows."""
     if not debug_db_path or not glossary_path or not glossary_path.exists():
         return rows
     try:
@@ -199,17 +199,27 @@ def _apply_suspicions_pipeline(debug_db_path: str | None, glossary_path: Path | 
         notify(f"DEBUG: Escaneando glosario {glossary_path.name}")
         mark_asr_suspicions_from_db(debug_db_path, glossary_path)
         run_postalign_pipeline(debug_db_path)
-        # refrescar solo WER/flag/tc para no tocar textos
+        # refrescar WER/flag/tc y correcciones por fila
         path = Path(debug_db_path)
         conn = sqlite3.connect(path)
         cur = conn.cursor()
         meta_rows = {
-            rid: (flag, wer, tc_start)
-            for rid, flag, wer, tc_start in cur.execute(
-                "SELECT id, flag, wer, tc_start FROM paragraphs ORDER BY id"
+            rid: (flag, wer, tc_start, asr_text)
+            for rid, flag, wer, tc_start, asr_text in cur.execute(
+                "SELECT id, flag, wer, tc_start, asr_text FROM paragraphs ORDER BY id"
             )
         }
+        # Correcciones aplicadas (solo 1:1)
+        token_corr = {idx: corr for idx, corr in cur.execute(
+            "SELECT idx, corrected_raw FROM asr_tokens WHERE corrected_raw IS NOT NULL"
+        )}
+        # Map de fila -> rango ASR
+        row_spans = {
+            rid: (hs, he)
+            for rid, hs, he in cur.execute("SELECT id, asr_start, asr_end FROM paragraphs ORDER BY id")
+        }
         conn.close()
+
         updated: list[list] = []
         for r in rows:
             try:
@@ -218,18 +228,44 @@ def _apply_suspicions_pipeline(debug_db_path: str | None, glossary_path: Path | 
                 updated.append(r)
                 continue
             if rid in meta_rows:
-                flag, wer, tc_val = meta_rows[rid]
-                new_r = list(r)
-                new_r[1] = flag
+                flag, wer, tc_val, asr_text_db = meta_rows[rid]
+                base = list(r[:8])
+                base[1] = flag
                 try:
-                    new_r[4] = round(float(wer), 1)
-                except Exception:
-                    new_r[4] = r[4]
-                try:
-                    new_r[5] = f"{float(tc_val):.2f}"
+                    base[4] = round(float(wer), 1)
                 except Exception:
                     pass
-                updated.append(new_r)
+                try:
+                    base[5] = f"{float(tc_val):.2f}"
+                except Exception:
+                    pass
+                extras = list(r[8:]) if len(r) > 8 else []
+                # reconstruir ASR corregido si hay corrected_raw en tokens del span
+                span = row_spans.get(rid)
+                if span:
+                    hs, he = span
+                    tokens = asr_text_db.split()
+                    # fallback: si asr_text_db no matchea tokens, usamos el texto original de la fila
+                    if len(tokens) < (he - hs):
+                        tokens = r[7].split()
+                    corrected = False
+                    for idx in range(hs, he):
+                        rel = idx - hs
+                        corr_val = token_corr.get(idx)
+                        if corr_val and rel < len(tokens):
+                            tokens[rel] = corr_val
+                            corrected = True
+                    if corrected:
+                        asr_new = " ".join(tokens)
+                        extra = {"asr_original": base[7], "corrected": asr_new}
+                        base[7] = asr_new
+                        extras.append(extra)
+                # recomponer en formato compatible con canonical_row (si hay extras, insertar score vacío)
+                if extras:
+                    composed = [base[0], base[1], base[2], base[3], "", base[4], base[5], base[6], base[7]] + extras
+                else:
+                    composed = base
+                updated.append(composed)
             else:
                 updated.append(r)
         notify("DEBUG: WER/flags ajustados con sospechas")
@@ -272,7 +308,7 @@ class App(tk.Tk):
         self.v_json = tk.StringVar(self)
         self.ai_one = tk.BooleanVar(self, value=False)
         self.v_ai_repetition_check = tk.BooleanVar(self, value=False)
-        self.v_ai_model = tk.StringVar(self, value="gpt-5")
+        self.v_ai_model = tk.StringVar(self, value="gpt-5.1")
         self.v_transcribe_model = tk.StringVar(self, value="large-v3")
         self.v_align_db = tk.BooleanVar(self, value=True)
         self.v_write_md = tk.BooleanVar(self, value=True)
@@ -403,7 +439,7 @@ class App(tk.Tk):
         # Row 1
         ttk.Button(ai_tools_frame, text="AI Review", command=self.ai_review).grid(
             row=1, column=0, columnspan=2, sticky="ew", padx=2, pady=2)
-        ai_models = ["gpt-5", "gpt-5-mini", "gpt-5-nano"]
+        ai_models = ["gpt-5.1", "gpt-5-mini", "gpt-5-nano"]
         self.ai_model_combo = ttk.Combobox(
             ai_tools_frame, textvariable=self.v_ai_model, values=ai_models, width=12)
         self.ai_model_combo.grid(row=1, column=2, columnspan=2, sticky="ew", padx=2, pady=2)
@@ -517,6 +553,7 @@ class App(tk.Tk):
             label="Fusionar filas seleccionadas", command=self._merge_selected_rows
         )
         self.menu.add_command(label="Desagrupar fila", command=self._unmerge_row)
+        self.menu.add_command(label="Revertir corrección sospecha", command=self._undo_suspect_correction)
         self.menu.add_separator()
         self.menu.add_command(label="Alternar ASR", command=self._toggle_asr)
 
@@ -586,6 +623,7 @@ class App(tk.Tk):
         self.tree.tag_configure("sel_cell", background="#d0e0ff")
         self.tree.tag_configure("merged", background="#f5f5f5")
         self.tree.tag_configure("processing", background="#fff2ab")
+        self.tree.tag_configure("suspect_applied", background="#e6f7ff")
 
         # bindings
         self.tree.bind("<Double-1>", self._handle_double)
@@ -657,7 +695,10 @@ class App(tk.Tk):
         # 1. Filtrar por 'mal'
         if self.v_filter_mal.get():
             rows_to_display = [
-                r for r in rows_to_display if len(r) > 3 and r[3] == "mal"
+                r for r in rows_to_display
+                if len(r) > 3
+                and str(r[2]).strip().lower() != "ok"
+                and str(r[3]).strip().lower() != "ok"
             ]
 
         # 2. Filtrar por texto
@@ -684,7 +725,13 @@ class App(tk.Tk):
         # Rellenar la tabla con las filas filtradas
         for r in rows_to_display:
             vals = self._row_from_alignment(r)
-            self.tree.insert("", tk.END, values=vals)
+            vals[6], vals[7] = str(vals[6]), str(vals[7])
+            iid = self.tree.insert("", tk.END, values=vals)
+            tags = list(self.tree.item(iid, "tags"))
+            if len(vals) > 8 and any(isinstance(ex, dict) and ex.get("corrected") for ex in vals[8:]):
+                if "suspect_applied" not in tags:
+                    tags.append("suspect_applied")
+            self.tree.item(iid, tags=tuple(tags))
 
         self._update_scale_range()
         self._update_stats()
@@ -825,7 +872,14 @@ class App(tk.Tk):
                 return
             self.v_json.set(p)
         try:
-            rows = [list(self.tree.item(i)["values"]) for i in self.tree.get_children()]
+            rows = []
+            for iid in list(self.tree.get_children()):
+                try:
+                    rows.append(list(self.tree.item(iid)["values"]))
+                except tk.TclError as exc:
+                    # Si el item desaparece durante el guardado, avisar y seguir
+                    self._log(f"[WARN] No se pudo leer fila {iid}: {exc}")
+                    continue
             for r in rows:
                 r[5] = _parse_tc(str(r[5]))
             Path(self.v_json.get()).write_text(
@@ -970,10 +1024,7 @@ class App(tk.Tk):
             messagebox.showwarning("Falta info", "Cargar JSON primero")
             return
         if not os.getenv("OPENAI_API_KEY"):
-            messagebox.showwarning(
-                "Falta OPENAI_API_KEY",
-                "Configura la variable OPENAI_API_KEY antes de continuar",
-            )
+            messagebox.showwarning("Falta OPENAI_API_KEY", "Configura la variable OPENAI_API_KEY antes de continuar")
             return
 
         model = self.v_ai_model.get()
@@ -984,17 +1035,16 @@ class App(tk.Tk):
                 return
             iid = sel[0]
             row_id = self.tree.set(iid, "ID")
-            self._log(f"⏳ Revisión AI fila {row_id}…")
+            self._log(f"[AI] Revision fila {row_id} (modelo {model})")
+            self._show_progress(f"Revisión AI fila {row_id} ({model})...", determinate=False)
             self.q.put(("AI_START_ID", row_id))
 
             original = self.tree.set(iid, "Original")
             asr = self.tree.set(iid, "ASR")
             if not original.strip() or not asr.strip():
-                messagebox.showwarning(
-                    "Falta texto",
-                    "La fila seleccionada no tiene texto en 'Original' o 'ASR'.")
+                messagebox.showwarning("Falta texto", "La fila seleccionada no tiene texto en 'Original' o 'ASR'.")
                 return
-            self._log("⏳ Revisión AI fila…")
+            self._log("[AI] Enviada 1 fila a revision")
 
             threading.Thread(
                 target=self._ai_review_one_worker,
@@ -1002,9 +1052,9 @@ class App(tk.Tk):
                 daemon=True,
             ).start()
         else:
-            self._log(
-                "⏳ Solicitando revisión AI (esto puede tardar unos segundos)…"
-            )
+            total = len(self.all_rows)
+            self._log(f"[AI] Revision en lote (modelo {model}, {total} filas) puede tardar unos segundos...")
+            self._show_progress(f"Revision AI en curso ({model}, {total} filas)...", determinate=False)
             threading.Thread(
                 target=self._ai_review_worker,
                 args=(self.all_rows, model),
@@ -1025,20 +1075,17 @@ class App(tk.Tk):
         original, asr = row_data[6], row_data[7]
 
         if not original.strip() or not asr.strip():
-            messagebox.showwarning(
-                "Falta texto",
-                "La fila seleccionada no tiene texto en 'Original' o 'ASR' para corregir.")
+            messagebox.showwarning("Falta texto", "La fila seleccionada no tiene texto en 'Original' o 'ASR' para corregir.")
             return
 
         self._snapshot()
-        self._log(f"⏳ Corrección y supervisión AI para fila {row_id}…")
+        self._log(f"Correccion y supervision AI para fila {row_id}")
         self.q.put(("AI_START_ID", row_id))
 
         tags = list(self.tree.item(iid, "tags"))
         if "processing" not in tags:
             tags.append("processing")
             self.tree.item(iid, tags=tuple(tags))
-
 
         model = self.v_ai_model.get()
         threading.Thread(
@@ -1071,7 +1118,7 @@ class App(tk.Tk):
             from ai_review import stop_review
 
             stop_review()
-            self._log("⏹ Deteniendo análisis AI…")
+            self._log("[AI] Deteniendo analisis")
         except Exception as exc:
             self._log(str(exc))
 
@@ -1080,22 +1127,30 @@ class App(tk.Tk):
         try:
             import ai_review
             model = model or self.v_ai_model.get()
+            total = len(rows_to_review) if rows_to_review is not None else 0
+            completed = 0
 
             if not rows_to_review:
                 approved, remaining = ai_review.review_file(self.v_json.get(), model=model)
                 self.q.put(("RELOAD", None))
                 if ai_review._stop_review:
-                    self.q.put("⚠ Revisión detenida")
+                    self.q.put("[AI] Revision detenida")
                 else:
                     self.q.put(f"Check Auto-aprobadas {approved} / Restantes {remaining}")
                 return
 
             def progress(stage: str, idx: int, row: list) -> None:
+                nonlocal completed
                 row_id = str(row[0])
                 if stage == "start":
                     self.q.put(("AI_START_ID", row_id))
                 else:
+                    completed += 1
+                    pct = int((completed / max(1, total)) * 100)
                     self.q.put(("AI_ROW_ID", (row_id, row[3], row[2])))
+                    self.q.put(("PROGRESS", pct))
+                    # Persist incremental progress to avoid repeated API calls
+                    self.save_json()
 
             try:
                 approved, remaining = ai_review.review_file(
@@ -1106,7 +1161,7 @@ class App(tk.Tk):
                 approved, remaining = ai_review.review_file(self.v_json.get(), model=model)
                 self.q.put(("RELOAD", None))
                 if ai_review._stop_review:
-                    self.q.put("⚠ Revisión detenida")
+                    self.q.put("[AI] Revision detenida")
                 else:
                     self.q.put(
                         f"Check Auto-aprobadas {approved} / Restantes {remaining}"
@@ -1114,7 +1169,7 @@ class App(tk.Tk):
                 return
 
             if ai_review._stop_review:
-                self.q.put("⚠ Revisión detenida")
+                self.q.put("[AI] Revision detenida")
             else:
                 self.q.put(
                     f"Check Auto-aprobadas {approved} / Restantes {remaining}"
@@ -1125,13 +1180,15 @@ class App(tk.Tk):
             err = buf.getvalue()
             print(err)
             self.q.put(err)
+        finally:
+            self.q.put(("CLOSE_PROGRESS", None))
 
     def _ai_review_one_worker(self, row_id: str, model: str) -> None:
         try:
             from ai_review import review_row
             row_data = next((r for r in self.all_rows if str(r[0]) == row_id), None)
             if not row_data:
-                self.q.put(f"Error: No se encontró la fila con ID {row_id}")
+                self.q.put(f"Error: No se encontro la fila con ID {row_id}")
                 return
 
             review_row(row_data, model=model)
@@ -1181,6 +1238,49 @@ class App(tk.Tk):
         if iid in self.prev_asr:
             self.tree.set(iid, "ASR", self.prev_asr[iid])
             self.prev_asr[iid] = current
+
+    def _undo_suspect_correction(self) -> None:
+        """Revert applied suspicion correction on selected rows using extras metadata."""
+        sel = list(self.tree.selection())
+        if not sel:
+            return
+        reverted = 0
+        for iid in sel:
+            vals = list(self.tree.item(iid)["values"])
+            if len(vals) <= 8:
+                continue
+            extras = vals[8:]
+            new_extras = []
+            original_asr = None
+            for ex in extras:
+                if isinstance(ex, dict) and ex.get("corrected") and ex.get("asr_original") is not None:
+                    original_asr = ex.get("asr_original")
+                    continue
+                new_extras.append(ex)
+            if original_asr is None:
+                continue
+            vals[7] = original_asr
+            vals = vals[:8] + new_extras
+            self.tree.item(iid, values=vals)
+            tags = [t for t in self.tree.item(iid, "tags") if t != "suspect_applied"]
+            self.tree.item(iid, tags=tuple(tags))
+            # actualizar all_rows
+            try:
+                target_id = str(vals[0])
+            except Exception:
+                target_id = None
+            if target_id is not None:
+                for idx, row in enumerate(self.all_rows):
+                    if str(row[0]) == target_id:
+                        base = list(row)
+                        base[7] = original_asr
+                        base = base[:8] + new_extras
+                        self.all_rows[idx] = base
+                        break
+            reverted += 1
+        if reverted:
+            self.save_json()
+            self._log(f"Revertidas {reverted} correcciones de sospecha.")
 
     def _retranscribe_row(self, iid: str) -> None:
         """Transcribe a single row with Whisper large model."""
@@ -1389,20 +1489,36 @@ class App(tk.Tk):
             start = float(_parse_tc(self.tree.set(iid, "tc")))
         except ValueError:
             return
-        children = list(self.tree.get_children())
-        idx = children.index(iid)
-        end = None
-        for next_iid in children[idx + 1:]:
-            try:
-                end = float(_parse_tc(self.tree.set(next_iid, "tc")))
-            except ValueError:
-                continue
-            if end > start:
-                break
+        row_id = self.tree.set(iid, "ID")
+        end = self._next_tc_full_table(row_id, start_hint=start)
         self._clip_item, self._clip_start, self._clip_end = iid, start, end
         self._clip_offset = 0.0
         self._show_text_popup(iid)
         self._play_current_clip()
+
+    def _next_tc_full_table(self, row_id: str, start_hint: float | None = None) -> float | None:
+        """Return tc of the next row in all_rows regardless of current filters."""
+        try:
+            target_id = int(row_id)
+        except Exception:
+            target_id = None
+        rows = self.all_rows
+        for idx, r in enumerate(rows):
+            try:
+                rid = int(r[0])
+            except Exception:
+                rid = None
+            if rid is not None and str(rid) == str(row_id):
+                next_idx = idx + 1
+                if next_idx < len(rows):
+                    try:
+                        val = float(_parse_tc(str(rows[next_idx][5])))
+                        if start_hint is None or val >= start_hint:
+                            return val
+                    except Exception:
+                        return None
+                return None
+        return None
 
     def _play_current_clip(self):
         if self._clip_item and self.v_audio.get():
@@ -2338,6 +2454,20 @@ class App(tk.Tk):
                 elif isinstance(msg, tuple) and msg[0] == "ROWS_READY":
                     self._apply_filter()
                     self._snapshot()
+                    # marcar filas con corrección aplicada (extra dict con 'corrected')
+                    for iid in self.tree.get_children():
+                        vals = self.tree.item(iid)["values"]
+                        has_corr = False
+                        if len(vals) > 8:
+                            extras = vals[8:]
+                            for ex in extras:
+                                if isinstance(ex, dict) and ex.get("corrected"):
+                                    has_corr = True
+                                    break
+                        tags = list(self.tree.item(iid, "tags"))
+                        if has_corr and "suspect_applied" not in tags:
+                            tags.append("suspect_applied")
+                        self.tree.item(iid, tags=tuple(tags))
 
                 elif isinstance(msg, tuple) and msg[0] == "SET_ASR":
                     self.v_asr.set(msg[1])
@@ -2385,6 +2515,7 @@ class App(tk.Tk):
                                 self.ok_rows.add(int(row_id))
                             break
                     self._apply_filter()
+                    self.save_json()
 
                 elif isinstance(msg, tuple) and msg[0] == "AI_CORRECTION_SUPERVISED_ID":
                     (
@@ -2428,6 +2559,8 @@ class App(tk.Tk):
                     else:
                         self._log(
                             f"  - Fila {row_id} no modificada. Veredicto supervisor: {verdict}")
+
+                    self.save_json()
 
                 elif isinstance(msg, tuple) and msg[0] == "AI_START_ID":
                     row_id = msg[1]

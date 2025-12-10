@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-"""Automatic AI review of QC rows using OpenAI's o3 models."""
+"""Automatic AI review of QC rows using OpenAI's gpt-5.1 models."""
 from pathlib import Path
 from typing import List, Callable
 import json
@@ -28,8 +28,8 @@ if os.getenv("AI_REVIEW_DEBUG", "").lower() in ("1", "true", "yes"):
 
 load_dotenv()
 
-# Use o3 model family
-MODEL_DEFAULT = "gpt-5"
+# Default GPT model family
+MODEL_DEFAULT = "gpt-5.1"
 _client_instance: OpenAI | None = None
 # Global flag to allow cancelling a long batch review
 _stop_review = False
@@ -473,6 +473,7 @@ def ai_verdict(
 
 def review_row(row: List, base_prompt: str | None = None, model: str | None = None) -> str:
     """Annotate a single QC row with AI verdict."""
+    row[:] = canonical_row(row)
     orig, asr = row[-2], row[-1]
     try:
         verdict = ai_verdict(str(orig), str(asr), base_prompt, model=model)
@@ -500,6 +501,7 @@ def review_row(row: List, base_prompt: str | None = None, model: str | None = No
 def review_row_feedback(row: List, base_prompt: str | None = None, model: str | None = None) -> tuple[str, str]:
     """Like :func:`review_row` but also return the model feedback text."""
 
+    row[:] = canonical_row(row)
     orig, asr = row[-2], row[-1]
     try:
         verdict, feedback = ai_verdict(
@@ -563,6 +565,7 @@ def ai_score(
 def score_row(row: List, base_prompt: str | None = None, model: str | None = None) -> str:
     """Return 1-5 score for a single QC row."""
 
+    row = canonical_row(row)
     orig, asr = row[-2], row[-1]
     try:
         rating = ai_score(str(orig), str(asr), base_prompt, model=model)
@@ -609,13 +612,16 @@ def review_file(
     current_model = model or MODEL_DEFAULT
     max_requests = limit if limit is not None else MAX_MESSAGES
     for i, row in enumerate(rows):
+        row = canonical_row(row)
+        rows[i] = row
         if _stop_review or (max_requests and sent >= max_requests):
             break
         tick = row[1] if len(row) > 1 else ""
-        ok = row[2] if len(row) >= 7 else ""
-        ai = row[3] if len(row) >= 8 else ""
+        ok = str(row[2]).strip().lower() if len(row) >= 7 else ""
+        ai = str(row[3]).strip() if len(row) >= 8 else ""
         # Skip rows already reviewed by AI regardless of verdict
-        if tick == "✅" or ok.lower() == "ok" or ai:
+        if tick == "✅" or ok == "ok" or ai:
+            logger.info("Skipping row %s due to prior status tick=%s ok=%s ai=%s", i, tick, ok, ai)
             continue
 
         # Skip rows with empty Original or ASR text
@@ -745,13 +751,16 @@ def review_file_feedback(
     feedback: List[str] = []
     current_model = model or MODEL_DEFAULT
     for i, row in enumerate(rows):
+        row = canonical_row(row)
+        rows[i] = row
         if _stop_review or (max_requests and sent >= max_requests):
             break
         tick = row[1] if len(row) > 1 else ""
-        ok = row[2] if len(row) >= 7 else ""
-        ai = row[3] if len(row) >= 8 else ""
+        ok = str(row[2]).strip().lower() if len(row) >= 7 else ""
+        ai = str(row[3]).strip() if len(row) >= 8 else ""
         # Skip rows already reviewed by AI regardless of verdict
-        if tick == "✅" or ok.lower() == "ok" or ai:
+        if tick == "✅" or ok == "ok" or ai:
+            logger.info("Skipping row %s due to prior status tick=%s ok=%s ai=%s", i, tick, ok, ai)
             continue
         sent += 1
         try:
@@ -795,7 +804,7 @@ def review_file_feedback(
 
 if __name__ == "__main__":
     import argparse
-    parser = argparse.ArgumentParser(description="Batch review QC JSON using o3 model")
+    parser = argparse.ArgumentParser(description="Batch review QC JSON using gpt-5.1")
     parser.add_argument("file", help="QC JSON file path")
     parser.add_argument("--prompt", default="prompt.txt")
     parser.add_argument(
