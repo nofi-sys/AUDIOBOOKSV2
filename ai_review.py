@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 """Automatic AI review of QC rows using OpenAI's gpt-5.1 models."""
+from difflib import SequenceMatcher
 from pathlib import Path
 from typing import List, Callable
 import json
@@ -9,7 +10,6 @@ import logging
 import time
 import threading
 
-from qc_utils import canonical_row
 from dotenv import load_dotenv
 from openai import (
     OpenAI,
@@ -20,6 +20,8 @@ from openai import (
     OpenAIError,
     BadRequestError,
 )
+from qc_utils import canonical_row
+from text_utils import find_repeated_sequences, normalize
 
 # Enable debug logging if environment variable set
 logger = logging.getLogger(__name__)
@@ -37,6 +39,22 @@ _stop_review = False
 # Maximum number of OpenAI requests per batch review
 MAX_MESSAGES = int(os.getenv("AI_REVIEW_MAX_MESSAGES", "100"))
 ROW_TIMEOUT_SEC = int(os.getenv("AI_REVIEW_ROW_TIMEOUT_SEC", "300"))  # 5 min default
+
+
+def _to_float(val: str, default: float) -> float:
+    try:
+        return float(val)
+    except Exception:
+        return default
+
+
+WER_VETO_THRESHOLD = _to_float(os.getenv("AI_REVIEW_WER_VETO", "7.0"), 7.0)
+MAX_INSERT_RUN_VETO = int(os.getenv("AI_REVIEW_MAX_INS_RUN_VETO", "2") or 2)
+REPEAT_MIN_WORDS = int(os.getenv("AI_REVIEW_REPEAT_MIN_WORDS", "3") or 3)
+
+ALLOWED_VERDICTS = {"ok", "mal", "error"}
+SKIP_TICKS = {"バ.", "ƒo."}
+TRACE_IO = os.getenv("AI_REVIEW_TRACE_IO", "").strip().lower() in {"1", "true", "yes"}
 
 
 def stop_review() -> None:
@@ -96,19 +114,14 @@ def load_prompt(path: str = "prompt.txt") -> str:
         return DEFAULT_PROMPT
 
 
-def _ai_verdict_with_timeout(
-    original: str, asr: str, prompt: str | None, timeout_sec: int, model: str | None = None
-) -> str:
-    """Run ai_verdict in a helper thread and enforce a timeout.
-
-    Returns the verdict string or raises TimeoutError/propagates exceptions.
-    """
-    result: dict[str, str] = {}
+def _call_with_timeout(fn: Callable, timeout_sec: int, *args, **kwargs):
+    """Run ``fn`` in a helper thread and enforce a timeout."""
+    result: dict[str, object] = {}
     error: dict[str, BaseException] = {}
 
     def _runner():
         try:
-            result["v"] = ai_verdict(original, asr, prompt, model=model)
+            result["v"] = fn(*args, **kwargs)
         except BaseException as exc:  # noqa: BLE001
             error["e"] = exc
 
@@ -116,12 +129,10 @@ def _ai_verdict_with_timeout(
     th.start()
     th.join(timeout=timeout_sec)
     if th.is_alive():
-        # Leave the worker thread to finish in the background; we will ignore it.
-        raise TimeoutError("ai_verdict timed out")
+        raise TimeoutError(f"{fn.__name__} timed out")
     if error:
-        exc = error["e"]
-        raise exc
-    return result.get("v", "dudoso")
+        raise error["e"]
+    return result.get("v")
 
 
 def _mark_error(row: List) -> None:
@@ -131,48 +142,162 @@ def _mark_error(row: List) -> None:
     row[3] = "error"
 
 
-# Default instruction prompt
-DEFAULT_PROMPT = """
-You are an audiobook QA assistant. Your job is to compare an ORIGINAL sentence
-(the correct text from the book) with an ASR sentence (automatic speech-to-text
-transcription, known to be phonetically imperfect).
+PASS1_SYSTEM_PROMPT = """
+Eres un corrector extremadamente estricto de audiolibros.
+Tu tarea es detectar errores de lectura en voz alta comparando el ORIGINAL con la TRANSCRIPCION (ASR).
+Ignora ortografia, tildes, mayusculas y puntuacion. Ignora variaciones minimas de estilo si el contenido es el mismo.
+Debes proteger al editor: ante cualquier duda razonable, responde "mal".
+""".strip()
 
-Your ONLY goal is to detect clear AUDIO READING or EDITING ERRORS that
-significantly affect the meaning, such as:
+PASS1_USER_TEMPLATE = """
+ORIGINAL (guion):
 
-- Entire words or phrases clearly omitted.
-- Entire words or phrases clearly repeated by mistake. A repetition of two or
-  more consecutive words should always be considered an error.
-- Completely different words clearly added or read incorrectly, substantially
-  changing the meaning of the sentence.
+```
+{original}
+```
 
-DO NOT consider the following as mistakes:
+TRANSCRIPCION (ASR):
 
-- Punctuation, accents, capitalization, spelling errors. Non standard
-  characters (like ||)
-- Minor phonetic variations, especially in proper names or foreign words.
-- Transcription inaccuracies that don't significantly impact understanding.
+```
+{asr}
+```
 
-Evaluation criteria:
+Instrucciones:
+1. Imagina que escuchas al locutor leyendo el ORIGINAL.
+2. Ignora diferencias de ortografia, tildes, mayusculas y puntuacion. Variantes minimas como "y"/"e" o "del"/"de el" son aceptables si el sentido es el mismo.
+3. Marca "mal" si falta una parte del ORIGINAL, si el locutor repite algo que en el ORIGINAL aparece solo una vez, si añade informacion nueva o si cambia palabras por otras que alteran el sentido u orden.
+4. Si tienes cualquier duda razonable sobre si la lectura respeta fielmente el ORIGINAL, responde "mal".
+5. Marca "ok" solo si la lectura dice lo mismo que el ORIGINAL, sin omisiones ni repeticiones.
 
-- If the ASR line does NOT show clear evidence of unacceptable reading or
-  editing errors (as described above), respond exactly with: ok
-- If the ASR line shows clear evidence of unacceptable reading or editing
-  errors, respond exactly with: mal
-
-Respond EXACTLY with one word, without explanations or punctuation:
-
+Responde solo con una de estas palabras en minusculas:
 ok
-
 mal
+""".strip()
 
-"""
+PASS2_SYSTEM_PROMPT = """
+Eres un corrector de audiolibros muy estricto. Revisas con contexto para detectar repeticiones u omisiones entre frases consecutivas.
+Ignora ortografia, tildes, mayusculas y puntuacion. Ante cualquier duda razonable, responde "mal".
+""".strip()
+
+PASS2_USER_TEMPLATE = """
+[ANTERIOR]
+ORIGINAL:
+{prev_original}
+ASR:
+{prev_asr}
+
+[ACTUAL]
+ORIGINAL:
+{original}
+ASR:
+{asr}
+
+[POSTERIOR]
+ORIGINAL:
+{next_original}
+ASR:
+{next_asr}
+
+Instrucciones:
+1. Verifica si la lectura del bloque ACTUAL respeta el contenido y el orden del ORIGINAL sin omisiones ni repeticiones.
+2. Usa el contexto (anterior y posterior) para detectar frases repetidas u omitidas entre lineas.
+3. Ignora ortografia, tildes, mayusculas y puntuacion; importa solo la fidelidad auditiva.
+4. Ante cualquier duda razonable, marca "mal".
+
+Responde solo con una de estas palabras en minusculas:
+ok
+mal
+""".strip()
+
+# New standard prompts that enfatize errores de lectura reales,
+# diferencias fonéticas y nombres propios mal transcriptos.
+STANDARD_PASS1_SYSTEM_PROMPT = """
+Eres un corrector de lecturas en voz alta para audiolibros.
+Tu tarea es decidir si el LOCUTOR leyó correctamente el texto ORIGINAL comparándolo con la TRANSCRIPCION automática (ASR).
+La ASR es ruidosa: puede tener faltas de ortografia, palabras inventadas o nombres propios mal escritos.
+Antes de marcar un error debes imaginar cómo suenan en voz alta el ORIGINAL y la ASR y juzgar si podrían corresponder a la misma grabación.
+Da prioridad a detectar REPETICIONES y OMISIONES GRAVES. Las diferencias menores de redacción no importan.
+Debes proteger al editor: si después de pensar en la relación fonética sigues con una duda razonable sobre si el LOCUTOR respetó el ORIGINAL, responde "mal".
+""".strip()
+
+STANDARD_PASS1_USER_TEMPLATE = """
+ORIGINAL (guion):
+
+```
+{original}
+```
+
+TRANSCRIPCION (ASR):
+
+```
+{asr}
+```
+
+Instrucciones:
+1. Imagina que escuchas al locutor leyendo el ORIGINAL y luego imagina cómo sonaría alguien leyendo en voz alta la TRANSCRIPCION (ASR).
+2. Ignora SIEMPRE: faltas de ortografia, tildes, mayusculas, uso de b/v/c/s/z, y pequeñas variaciones de estilo o sinónimos que no cambian el sentido.
+3. Ten en cuenta que la ASR puede escribir muy mal los nombres propios y apellidos. Antes de concluir que el locutor se equivocó, compara mentalmente el sonido del nombre en el ORIGINAL y en la ASR. Si podrían sonar como la misma persona o lugar, asume que es error de transcripción, no de lectura.
+4. Marca "mal" SOLO si, pensando en lo que se escucha en el audio, ves con alta probabilidad un error de lectura del LOCUTOR, por ejemplo:
+   - REPETICION: una palabra o grupo de palabras repetidos por el locutor que en el ORIGINAL aparecen solo una vez (por ejemplo "la la casa"). Una sola palabra repetida ya es un error.
+   - OMISION GRAVE: palabras o frases completas que faltan y cuya ausencia cambia claramente el significado o deja el texto incompleto.
+   - ADICION RELEVANTE: palabras o frases nuevas que añaden información o cambian el mensaje del ORIGINAL.
+   - CAMBIO FUERTE DE SENTIDO: números, fechas, nombres propios, negaciones ("no"), términos técnicos o palabras clave cambiados por otros que no son fonéticamente compatibles con el ORIGINAL.
+5. Si la diferencia puede explicarse razonablemente como un error de la ASR (otra forma de escribir casi lo mismo que se oye), responde "ok".
+6. Marca "ok" solo si, después de este análisis fonético, crees que el locutor dijo esencialmente lo mismo que el ORIGINAL, sin omisiones graves ni repeticiones.
+
+Responde solo con una de estas palabras en minusculas:
+ok
+mal
+""".strip()
+
+STANDARD_PASS2_SYSTEM_PROMPT = """
+Eres un corrector de audiolibros muy estricto que revisa con CONTEXTO para detectar principalmente repeticiones y omisiones graves entre frases consecutivas.
+La TRANSCRIPCION (ASR) es automática y puede contener muchos errores de ortografia y nombres propios mal transcriptos.
+Antes de concluir que el LOCUTOR se equivocó debes comparar fonéticamente el ORIGINAL y la ASR en los tres bloques (ANTERIOR, ACTUAL, POSTERIOR).
+""".strip()
+
+STANDARD_PASS2_USER_TEMPLATE = """
+[ANTERIOR]
+ORIGINAL:
+{prev_original}
+ASR:
+{prev_asr}
+
+[ACTUAL]
+ORIGINAL:
+{original}
+ASR:
+{asr}
+
+[POSTERIOR]
+ORIGINAL:
+{next_original}
+ASR:
+{next_asr}
+
+Instrucciones:
+1. Concéntrate en el bloque ACTUAL y usa los bloques ANTERIOR y POSTERIOR solo como contexto.
+2. Marca "mal" si, teniendo en cuenta el contexto, observas que el LOCUTOR:
+   - repite una palabra o frase (una o más palabras) que en el ORIGINAL solo aparece una vez, o
+   - omite una parte importante del ORIGINAL, o
+   - mueve palabras o frases clave a otra línea de forma que el texto quede truncado o desordenado.
+3. Ignora diferencias de ortografia, tildes, mayusculas y pequeñas variaciones de estilo que puedan explicarse como errores de ASR. Presta especial atención a los nombres propios: la ASR puede deformarlos, pero si suenan fonéticamente compatibles con el ORIGINAL, no los consideres error de lectura.
+4. Si después de comparar fonéticamente sigues con una duda razonable sobre si la lectura respeta el ORIGINAL, marca "mal".
+5. Marca "ok" solo si el contenido efectivo leído en ACTUAL coincide con el ORIGINAL, sin repeticiones ni omisiones graves.
+
+Responde solo con una de estas palabras en minusculas:
+ok
+mal
+""".strip()
+
+# Default instruction prompt (used as system fallback)
+DEFAULT_PROMPT = STANDARD_PASS1_SYSTEM_PROMPT
 
 # Extra prompt for re-review scoring from 1 (mal) to 5 (ok)
 REREVIEW_PROMPT = (
-    DEFAULT_PROMPT
-    + "\n\nAfter your assessment respond ONLY with a single number from 1 to 5 "
-    + "where 1 means mal and 5 means ok."
+    STANDARD_PASS1_SYSTEM_PROMPT
+    + "\n\nCalifica la fidelidad de la lectura con un numero del 1 al 5 (1=mal y 5=ok). "
+    + "Responde solo con ese numero."
 )
 
 # Prompt used when re-transcribing problematic lines. The ASR text is provided
@@ -180,15 +305,10 @@ REREVIEW_PROMPT = (
 # transcription of the target segment. Lines -1 and 1 contain surrounding
 # context. The model must judge ONLY line 0 against the ORIGINAL text.
 RETRANS_PROMPT = (
-    DEFAULT_PROMPT
+    STANDARD_PASS1_SYSTEM_PROMPT
     + "\n\nThe ASR text is numbered by lines as -1, 0 and 1. "
-    + "Line 0 must be compared with the ORIGINAL text. The other lines are"
-    + " context."
+    + "Line 0 must be compared with the ORIGINAL text. The other lines are context."
 )
-# # This is a testing phase: if you respond "mal" or "dudoso", provide a brief
-# # explanation of the specific reason for your assessment.
-# # Respond clearly with one of these words: ok, mal, or dudoso, followed by a
-# # brief explanation when necessary.
 
 CORRECTION_PROMPT = """
 You are an expert audio editor. Your task is to correct an ASR (Automatic
@@ -215,7 +335,7 @@ interpretation of the audio, whereas "Glick" and "dumps" are clear errors
 corrected to match the original script.)
 
 Return only the corrected text.
-"""
+""".strip()
 
 SUPERVISION_PROMPT = """
 You are a QA supervisor for an audiobook transcription correction system.
@@ -226,26 +346,171 @@ ASR_V2 is the proposed correction.
 
 Your ONLY job is to determine if ASR_V2 is a *phonetically plausible* correction of ASR_V1. Ask yourself: "Could a human have said what's in ASR_V2, and an imperfect transcription system have written ASR_V1?"
 
-- If the correction is plausible (e.g., "Glick" corrected to "quick", "dumps" to "jumps"), respond EXACTLY with: **plausible**
-- If the correction seems unlikely or invented, and does not seem to be a phonetically similar equivalent to what was originally transcribed, respond EXACTLY with: **implausible**
+- If the correction is plausible (e.g., "Glick" corrected to "quick", "dumps" to "jumps"), respond EXACTLY with: plausible
+- If the correction seems unlikely or invented, and does not seem to be a phonetically similar equivalent to what was originally transcribed, respond EXACTLY with: implausible
 
 Do not consider the original book script. Only compare ASR_V1 and ASR_V2. Respond with a single word.
+""".strip()
 
-Example 1:
-ASR_V1: "the Glick brown fox dumps over the hazy dog"
-ASR_V2: "the quick brown fox jumps over the hazy dog"
-Your response: plausible
+ADVANCED_REVIEW_PROMPT = """
+Eres un analista senior de QA para audiolibros. Tu tarea es volver a evaluar una fila de transcripción que fue marcada como 'mal'. Tendrás contexto de las filas anterior y posterior. Tu objetivo es clasificar con mayor precisión el tipo de error.
 
-Example 2:
-ASR_V1: "he went to the store"
-ASR_V2: "he navigated to the retail establishment"
-Your response: implausible
+CONTEXTO:
+Recibirás tres bloques de texto: [ANTERIOR], [ACTUAL] (el que debes analizar) y [POSTERIOR]. Cada bloque contiene el texto del guion (ORIGINAL) y la transcripción automática (ASR).
 
-Example 3:
-ASR_V1: "she said hello"
-ASR_V2: "she said hello world"
-Your response: implausible (a word was added without phonetic basis in V1)
-"""
+TEN EN CUENTA:
+- La ASR es automática y puede tener muchas faltas de ortografía, palabras inventadas y nombres propios mal transcriptos.
+- Antes de atribuir un error al LOCUTOR, imagina cómo sonarían en voz alta el ORIGINAL y la ASR y decide si podrían corresponder a la misma grabación.
+
+TU TAREA:
+1. Concéntrate en el bloque [ACTUAL].
+2. Usa [ANTERIOR] y [POSTERIOR] para entender el contexto. Presta atención a palabras que se repiten o se desplazan entre filas.
+3. Según tu análisis, clasifica el error en [ACTUAL] usando UNA de estas categorías:
+   - REPETICION: El locutor repitió por error una palabra o grupo de palabras (una o más palabras) que en el ORIGINAL aparecen solo una vez.
+   - OMISION: El locutor omitió una o más palabras del guion de forma que el sentido queda claramente incompleto o alterado.
+   - ADICION: El locutor añadió palabras que no están en el guion y cambian el mensaje.
+   - ERROR_LECTURA: El locutor leyó una palabra de forma claramente distinta, cambiando el significado (por ejemplo, otro número, otro nombre propio, otra negación).
+   - INSIGNIFICANTE: Solo hay errores de ASR o diferencias mínimas que no afectan el significado (incluyendo errores en nombres propios que siguen siendo fonéticamente compatibles).
+   - DESALINEADO: El problema principal es de alineación entre filas, no de lectura del locutor.
+   - OK: Tras revisar el contexto, no hay un error significativo del locutor.
+
+4. Proporciona una explicación breve, en una sola frase, para tu veredicto.
+
+FORMATO DE RESPUESTA:
+Responde con una sola línea en el formato: VERDICT: <categoria> | COMMENT: <tu explicación>
+""".strip()
+
+REPETITION_PROMPT = """
+Eres un analista de QA especializado en audiolibros, enfocado únicamente en detectar repeticiones no intencionales del LOCUTOR.
+
+CONTEXTO:
+Recibirás tres bloques de texto: [ANTERIOR], [ACTUAL] y [POSTERIOR]. Cada uno contiene el guion (ORIGINAL) y la transcripción automática (ASR).
+
+TEN EN CUENTA:
+- La ASR es automática y puede contener errores graves de ortografía y nombres propios deformados.
+- Antes de marcar una repetición, imagina cómo sonarían en voz alta el ORIGINAL y la ASR y decide si podrían ser dos transcripciones de la misma frase. Si la diferencia puede explicarse solo por error de ASR, no lo consideres un error del locutor.
+
+TU TAREA:
+1. Tu único objetivo es determinar si el LOCUTOR repitió de forma no intencional palabras o frases en el ASR del bloque [ACTUAL] que en el ORIGINAL aparecen una sola vez.
+2. Considera repetición significativa tanto una sola palabra repetida ("la la") como grupos de varias palabras ("en la casa en la casa").
+3. Usa el contexto de los bloques ANTERIOR y POSTERIOR para confirmar que se trata de una repetición real dentro de la misma zona del texto, y no de una estructura repetida del guion o un problema de alineación.
+4. Según tu análisis, devuelve uno de estos veredictos para el bloque [ACTUAL]:
+   - REPETICION: Detectas una repetición clara de una o más palabras que no está así en el guion ORIGINAL.
+   - OK: No hay repeticiones significativas del locutor.
+
+FORMATO DE RESPUESTA:
+Responde con una sola línea en el formato: VERDICT: <categoria> | COMMENT: <explicación breve de la frase repetida>
+""".strip()
+
+
+def _normalize_verdict(text: str | None) -> str:
+    word = ""
+    if text:
+        word = str(text).strip().split()[0].lower()
+    if word == "dudoso":
+        return "mal"
+    if word in ALLOWED_VERDICTS:
+        return word
+    if text:
+        logger.warning("Unexpected AI verdict '%s', defaulting to 'mal'", str(text).strip())
+    return "mal"
+
+
+def _trace_io(label: str, messages: list[dict], content: str | None, *, max_len: int = 4000) -> None:
+    """Print prompt/response for debugging when trace flag is on."""
+
+    def _fmt(val: object) -> str:
+        try:
+            s = str(val)
+        except Exception:
+            s = repr(val)
+        if len(s) > max_len:
+            s = s[:max_len] + "...[truncated]"
+        return s.encode("utf-8", "backslashreplace").decode("utf-8", "replace")
+
+    try:
+        print(f"\n[TRACE {label}] >>> prompt")
+        for msg in messages:
+            role = msg.get("role", "?")
+            body = _fmt(msg.get("content", ""))
+            print(f"[{role}]\n{body}\n")
+        print(f"[TRACE {label}] <<< response\n{_fmt(content)}\n")
+    except Exception as exc:  # pragma: no cover
+        logger.exception("Failed to trace AI IO: %s", exc)
+
+
+def _normalized_tokens(text: str) -> list[str]:
+    return normalize(text, strip_punct=True).split()
+
+
+def _extract_text(val: object) -> str:
+    """Return a safe text from possible dicts used in the GUI (corrected/asr_original)."""
+    if isinstance(val, dict):
+        for key in ("corrected", "asr_original", "original", "text"):
+            if key in val and val[key]:
+                return str(val[key])
+    return "" if val is None else str(val)
+
+
+def _max_insert_run(ref_tokens: list[str], asr_tokens: list[str]) -> int:
+    """Approximate the longest run of inserted tokens in ASR vs reference."""
+    if not asr_tokens:
+        return 0
+    matcher = SequenceMatcher(a=ref_tokens, b=asr_tokens, autojunk=False)
+    max_run = 0
+    for tag, i1, i2, j1, j2 in matcher.get_opcodes():
+        if tag == "insert":
+            max_run = max(max_run, j2 - j1)
+        elif tag == "replace":
+            extra = (j2 - j1) - (i2 - i1)
+            if extra > 0:
+                max_run = max(max_run, extra)
+    return max_run
+
+
+def _structure_signals(original: str, asr: str, wer_value) -> dict:
+    ref_tokens = _normalized_tokens(original)
+    asr_tokens = _normalized_tokens(asr)
+    wer = None
+    try:
+        wer = float(wer_value)
+    except Exception:
+        wer = None
+    repeats = find_repeated_sequences(
+        asr,
+        min_length=max(3, REPEAT_MIN_WORDS),
+        max_length=40,
+        similarity_threshold=85.0,
+    )
+    return {
+        "wer": wer,
+        "max_insert_run": _max_insert_run(ref_tokens, asr_tokens),
+        "repeats": repeats,
+        "has_tokens": bool(ref_tokens and asr_tokens),
+    }
+
+
+def _structure_is_clean(signals: dict) -> bool:
+    wer_ok = signals.get("wer") is not None and signals["wer"] <= WER_VETO_THRESHOLD
+    if not wer_ok:
+        return False
+    if not signals.get("has_tokens"):
+        return False
+    if signals.get("max_insert_run", 0) > MAX_INSERT_RUN_VETO:
+        return False
+    if signals.get("repeats"):
+        return False
+    return True
+
+
+def _context_text(rows: list[list], idx: int) -> tuple[str, str]:
+    if idx < 0 or idx >= len(rows):
+        return "", ""
+    row = canonical_row(rows[idx])
+    rows[idx] = row
+    original = row[6] if len(row) > 6 else ""
+    asr = row[7] if len(row) > 7 else ""
+    return str(original).strip(), str(asr).strip()
 
 
 def _get_ai_correction(original: str, asr: str, model: str | None = None) -> str:
@@ -307,72 +572,7 @@ def correct_and_supervise_text(original: str, asr: str, model: str | None = None
     return final_asr, supervisor_verdict, proposed_correction
 
 
-ADVANCED_REVIEW_PROMPT = """
-You are a senior QA analyst for audiobooks. Your task is to re-evaluate a transcription row that was previously flagged as 'mal' (bad). You will be given context from the previous and next rows. Your goal is to provide a more precise error classification.
-
-**CONTEXT:**
-You will receive three blocks of text: [ANTERIOR], [ACTUAL] (the one you must analyze), and [POSTERIOR]. Each block contains the original script text (ORIGINAL) and the automatic transcription (ASR).
-
-**YOUR TASK:**
-1.  Focus on the [ACTUAL] block.
-2.  Use the [ANTERIOR] and [POSTERIOR] blocks to understand the context. Pay close attention to words that might be misplaced between rows.
-3.  Based on your analysis, classify the error in the [ACTUAL] row using ONE of the following categories:
-    *   `REPETICION`: The speaker repeated one or more words by mistake.
-    *   `OMISION`: The speaker omitted one or more words from the original script.
-    *   `ADICION`: The speaker added words not present in the original script.
-    *   `ERROR_LECTURA`: The speaker read a word incorrectly, changing the meaning (e.g., read "casa" instead of "caza").
-    *   `INSIGNIFICANTE`: A minor transcription error that doesn't affect meaning (e.g., "treinta" vs "30", punctuation, a minor phonetic mistake that is understandable).
-    *   `DESALINEADO`: The error is clearly a misalignment. For example, a word from the end of the previous ASR belongs at the start of the current ASR, or vice versa. If you choose this, explain where the word should go.
-    *   `OK`: After reviewing the context, you realize there is no significant error and the initial 'mal' flag was a false positive.
-
-4.  Provide a brief, one-sentence explanation for your verdict.
-
-**RESPONSE FORMAT:**
-Respond with a single line in the format: `VERDICT: <category> | COMMENT: <your explanation>`
-
-**Example Response:**
-`VERDICT: DESALINEADO | COMMENT: La última palabra del ASR anterior ('casa') pertenece al inicio del ASR actual.`
-
----
-Now, analyze the following context:
-"""
-
-REPETITION_PROMPT = """
-You are a specialized QA analyst for audiobooks, focused *only* on detecting unintentional repetitions.
-
-**CONTEXT:**
-You will receive three blocks of text: [ANTERIOR], [ACTUAL], and [POSTERIOR]. Each contains the original script (ORIGINAL) and the automatic transcription (ASR).
-
-**YOUR TASK:**
-1.  Your **only** goal is to determine if the speaker unintentionally repeated words or phrases in the [ACTUAL] ASR that are not repeated in the ORIGINAL script.
-2.  A repetition is significant if it involves two or more consecutive words.
-3.  Use the context of the surrounding blocks to confirm that it's a genuine repetition and not a stylistic choice (like anaphora) or a misalignment issue.
-4.  Based on your analysis, provide one of two verdicts for the [ACTUAL] row:
-    *   `REPETICION`: You found a clear, unintentional repetition of two or more words.
-    *   `OK`: There are no significant repetitions.
-
-**RESPONSE FORMAT:**
-Respond with a single line in the format: `VERDICT: <category> | COMMENT: <brief explanation of the repeated phrase>`
-
-**Example 1:**
-- ORIGINAL: "dijo que iría a la tienda."
-- ASR: "dijo que iría a la a la tienda."
-Response: `VERDICT: REPETICION | COMMENT: Se repite "a la".`
-
-**Example 2 (Stylistic, not an error):**
-- ORIGINAL: "Paz en la tierra, paz en los cielos, paz en el corazón."
-- ASR: "Paz en la tierra, paz en los cielos, paz en el corazón."
-Response: `VERDICT: OK | COMMENT: La repetición de "Paz" es parte del texto original.`
-
-**Example 3 (No repetition):**
-- ORIGINAL: "El rápido zorro marrón."
-- ASR: "El rápido zorro marrón."
-Response: `VERDICT: OK | COMMENT: No se encontraron repeticiones.`
----
-Now, analyze the following context:
-"""
-
-def get_advanced_review_verdict(context: dict, model: str | None = None, repetition_check: bool = False) -> tuple[str, str]:
+def get_advanced_review_verdict(context: dict, model: str | None = None, repetition_check: bool = False) -> tuple[str | None, str | None]:
     """
     Performs an advanced, contextual AI review.
     Returns a tuple of (verdict, comment).
@@ -396,10 +596,13 @@ def get_advanced_review_verdict(context: dict, model: str | None = None, repetit
         user_prompt += f"- ASR: {context['next']['asr']}\n"
 
     prompt_template = REPETITION_PROMPT if repetition_check else ADVANCED_REVIEW_PROMPT
-    full_prompt = prompt_template + user_prompt
+    full_prompt = prompt_template + "\n\n" + user_prompt
 
-    system_content = "You are a specialized QA analyst for audiobooks, focused *only* on detecting unintentional repetitions." if repetition_check else "You are a senior QA analyst for audiobooks."
-
+    system_content = (
+        "You are a specialized QA analyst for audiobooks, focused only on detecting unintentional repetitions."
+        if repetition_check
+        else "You are a senior QA analyst for audiobooks."
+    )
 
     current_model = model or MODEL_DEFAULT
     resp = _chat_with_backoff(
@@ -424,7 +627,15 @@ def get_advanced_review_verdict(context: dict, model: str | None = None, repetit
         verdict = verdict_part.replace("VERDICT:", "").strip().upper()
         comment = comment_part.replace("COMMENT:", "").strip()
 
-        valid_verdicts = ["REPETICION", "OMISION", "ADICION", "ERROR_LECTURA", "INSIGNIFICANTE", "DESALINEADO", "OK"]
+        valid_verdicts = [
+            "REPETICION",
+            "OMISION",
+            "ADICION",
+            "ERROR_LECTURA",
+            "INSIGNIFICANTE",
+            "DESALINEADO",
+            "OK",
+        ]
         if verdict not in valid_verdicts:
             # If the model didn't follow instructions, use a default and return its full response as comment.
             return "DUDOSO", response_text
@@ -432,8 +643,47 @@ def get_advanced_review_verdict(context: dict, model: str | None = None, repetit
         return verdict, comment
     except ValueError:
         # The response was not in the expected format
-        logger.warning(f"Unexpected advanced AI response format: '{response_text}'")
+        logger.warning("Unexpected advanced AI response format: '%s'", response_text)
         return None, None
+
+
+def ai_verdict_pass1(
+    original: str,
+    asr: str,
+    base_prompt: str | None = None,
+    return_feedback: bool = False,
+    model: str | None = None,
+    trace_io: bool | None = None,
+) -> str | tuple[str, str]:
+    """Single-row, no-context verdict (strict, orthography-tolerant)."""
+    trace = TRACE_IO if trace_io is None else trace_io
+    system_prompt = base_prompt or STANDARD_PASS1_SYSTEM_PROMPT
+    original = _extract_text(original)
+    asr = _extract_text(asr)
+    logger.info("AI pass1 ORIGINAL=%s | ASR=%s", original, asr)
+    current_model = model or MODEL_DEFAULT
+    messages = [
+        {"role": "system", "content": system_prompt},
+        {
+            "role": "user",
+            "content": STANDARD_PASS1_USER_TEMPLATE.format(original=original, asr=asr),
+        },
+    ]
+    resp = _chat_with_backoff(
+        model=current_model,
+        messages=messages,
+        max_completion_tokens=800,
+        stop=None,
+    )
+    content = resp.choices[0].message.content or ""
+    if trace:
+        _trace_io("pass1", messages, content)
+    verdict = _normalize_verdict(content)
+    if return_feedback:
+        return verdict, content.strip()
+    # Por defecto devolvemos el texto literal de la IA;
+    # los llamadores aplican _normalize_verdict() solo para lógica interna.
+    return content.strip()
 
 
 def ai_verdict(
@@ -442,91 +692,180 @@ def ai_verdict(
     base_prompt: str | None = None,
     return_feedback: bool = False,
     model: str | None = None,
+    trace_io: bool | None = None,
 ) -> str | tuple[str, str]:
-    """Send a single comparison request and return the verdict.
+    """Backward-compatible wrapper over :func:`ai_verdict_pass1`."""
+    return ai_verdict_pass1(
+        original,
+        asr,
+        base_prompt=base_prompt,
+        return_feedback=return_feedback,
+        model=model,
+        trace_io=trace_io,
+    )
 
-    If ``return_feedback`` is ``True`` the full response text from the model is
-    also returned as a second element of the tuple.
-    """
-    prompt = base_prompt or DEFAULT_PROMPT
-    logger.info("AI review request ORIGINAL=%s | ASR=%s", original, asr)
+
+def ai_verdict_pass2(
+    prev_original: str,
+    prev_asr: str,
+    original: str,
+    asr: str,
+    next_original: str,
+    next_asr: str,
+    model: str | None = None,
+    trace_io: bool | None = None,
+) -> str:
+    """Contextual verdict used only after pass1 OK + structure healthy."""
+    trace = TRACE_IO if trace_io is None else trace_io
+    prev_original = _extract_text(prev_original)
+    prev_asr = _extract_text(prev_asr)
+    original = _extract_text(original)
+    asr = _extract_text(asr)
+    next_original = _extract_text(next_original)
+    next_asr = _extract_text(next_asr)
+    logger.info("AI pass2 ORIGINAL=%s | ASR=%s", original, asr)
     current_model = model or MODEL_DEFAULT
+    messages = [
+        {"role": "system", "content": STANDARD_PASS2_SYSTEM_PROMPT},
+        {
+            "role": "user",
+            "content": STANDARD_PASS2_USER_TEMPLATE.format(
+                prev_original=prev_original or "(sin contexto)",
+                prev_asr=prev_asr or "(sin contexto)",
+                original=original,
+                asr=asr,
+                next_original=next_original or "(sin contexto)",
+                next_asr=next_asr or "(sin contexto)",
+            ),
+        },
+    ]
     resp = _chat_with_backoff(
         model=current_model,
-        messages=[
-            {"role": "system", "content": prompt},
-            {"role": "user", "content": f"ORIGINAL:\n{original}\n\nASR:\n{asr}"},
-        ],
-        max_completion_tokens=2000,
+        messages=messages,
+        max_completion_tokens=800,
         stop=None,
     )
-    content = resp.choices[0].message.content
-    trimmed = content.strip()
-    word = trimmed.split()[0].lower() if trimmed else ""
-    if word not in {"ok", "mal", "dudoso", "error"}:
-        logger.warning("Unexpected AI response '%s', defaulting to dudoso", trimmed)
-        word = "dudoso"
-    if return_feedback:
-        return word, trimmed
-    return word
+    content = resp.choices[0].message.content or ""
+    if trace:
+        _trace_io("pass2", messages, content)
+    return content.strip()
 
 
-def review_row(row: List, base_prompt: str | None = None, model: str | None = None) -> str:
-    """Annotate a single QC row with AI verdict."""
+def _apply_verdict_to_row(row: List, ai_text: str, norm_verdict: str, auto_ok: bool) -> None:
+    """
+    Escribe siempre en la columna AI el texto literal devuelto por la IA.
+    ``norm_verdict`` se usa solo para marcar/limpiar la columna OK.
+    """
     row[:] = canonical_row(row)
-    orig, asr = row[-2], row[-1]
+    ai_text = "" if ai_text is None else str(ai_text)
+    verdict = _normalize_verdict(norm_verdict)
+    if len(row) == 6:
+        row.insert(2, "")
+        row.insert(3, ai_text)
+    elif len(row) == 7:
+        row.insert(3, ai_text)
+    else:
+        row[3] = ai_text
+    if auto_ok and verdict == "ok":
+        row[2] = "OK"
+    elif verdict != "ok" and row[2] == "OK":
+        row[2] = ""
+
+
+def review_row(
+    row: List,
+    base_prompt: str | None = None,
+    model: str | None = None,
+    previous: List | None = None,
+    next_row: List | None = None,
+    trace_io: bool | None = None,
+    dual_pass: bool = True,
+) -> str:
+    """Annotate a single QC row with AI verdict using the two-pass flow."""
+    row[:] = canonical_row(row)
+    orig = _extract_text(row[6] if len(row) > 6 else "").strip()
+    asr = _extract_text(row[7] if len(row) > 7 else "").strip()
+    pass1_prompt = base_prompt or STANDARD_PASS1_SYSTEM_PROMPT
     try:
-        verdict = ai_verdict(str(orig), str(asr), base_prompt, model=model)
+        ai_text1 = _call_with_timeout(
+            ai_verdict_pass1,
+            ROW_TIMEOUT_SEC,
+            orig,
+            asr,
+            pass1_prompt,
+            False,
+            model,
+            trace_io,
+        )
     except BadRequestError as exc:
         if "max_tokens" in str(exc) or "model output limit" in str(exc):
             _mark_error(row)
             return "error"
         raise
-    if verdict not in {"ok", "mal", "dudoso", "error"}:
-        verdict = "dudoso"
-    # Insert into row preserving structure
-    # Row formats: [ID, tick, OK?, WER, dur, original, asr]
-    if len(row) == 6:
-        row.insert(2, "")         # OK column
-        row.insert(3, verdict)      # AI verdict column
-    elif len(row) == 7:
-        row.insert(3, verdict)
-    else:
-        row[3] = verdict
-    if verdict == "ok":
-        row[2] = "OK"
-    return verdict
+    # Normalizar solo para lógica interna; la columna AI guarda el texto literal.
+    verdict1 = _normalize_verdict(ai_text1)
+    final_ai_text = ai_text1
+    final_verdict = verdict1
+    if verdict1 == "ok" and dual_pass:
+        prev_orig, prev_asr = ("", "")
+        next_orig, next_asr = ("", "")
+        if previous:
+            prev_orig, prev_asr = str(previous[-2]).strip(), str(previous[-1]).strip()
+        if next_row:
+            next_orig, next_asr = str(next_row[-2]).strip(), str(next_row[-1]).strip()
+        try:
+            ai_text2 = _call_with_timeout(
+                ai_verdict_pass2,
+                ROW_TIMEOUT_SEC,
+                _extract_text(prev_orig),
+                _extract_text(prev_asr),
+                orig,
+                asr,
+                _extract_text(next_orig),
+                _extract_text(next_asr),
+                model,
+                trace_io,
+            )
+        except Exception:
+            ai_text2 = "mal"
+        final_ai_text = ai_text2
+        final_verdict = _normalize_verdict(ai_text2)
+    auto_ok = final_verdict == "ok"
+    _apply_verdict_to_row(row, final_ai_text, final_verdict, auto_ok)
+    return final_verdict
 
 
-def review_row_feedback(row: List, base_prompt: str | None = None, model: str | None = None) -> tuple[str, str]:
-    """Like :func:`review_row` but also return the model feedback text."""
+def review_row_feedback(
+    row: List,
+    base_prompt: str | None = None,
+    model: str | None = None,
+    trace_io: bool | None = None,
+) -> tuple[str, str]:
+    """Like :func:`review_row` but also return the model feedback text (pass1)."""
 
     row[:] = canonical_row(row)
-    orig, asr = row[-2], row[-1]
+    orig, asr = _extract_text(row[6] if len(row) > 6 else ""), _extract_text(
+        row[7] if len(row) > 7 else ""
+    )
     try:
-        verdict, feedback = ai_verdict(
+        verdict, feedback = ai_verdict_pass1(
             str(orig),
             str(asr),
             base_prompt,
             return_feedback=True,
             model=model,
+            trace_io=trace_io,
         )
     except BadRequestError as exc:
         if "max_tokens" in str(exc) or "model output limit" in str(exc):
             _mark_error(row)
             return "error", ""
         raise
-    if verdict not in {"ok", "mal", "dudoso", "error"}:
-        verdict = "dudoso"
-    if len(row) == 6:
-        row.insert(2, "")
-        row.insert(3, verdict)
-    elif len(row) == 7:
-        row.insert(3, verdict)
-    else:
-        row[3] = verdict
-    if verdict == "ok":
-        row[2] = "OK"
+    verdict = _normalize_verdict(verdict)
+    # Guardar en AI el texto completo devuelto por la IA (feedback),
+    # pero seguir devolviendo/verificando el veredicto normalizado.
+    full_text = feedback.strip() if feedback else verdict
+    _apply_verdict_to_row(row, full_text, verdict, auto_ok=False)
     return verdict, feedback
 
 
@@ -565,7 +904,6 @@ def ai_score(
 def score_row(row: List, base_prompt: str | None = None, model: str | None = None) -> str:
     """Return 1-5 score for a single QC row."""
 
-    row = canonical_row(row)
     orig, asr = row[-2], row[-1]
     try:
         rating = ai_score(str(orig), str(asr), base_prompt, model=model)
@@ -583,20 +921,16 @@ def review_file(
     limit: int | None = None,
     progress_callback: Callable[[str, int, list], None] | None = None,
     model: str | None = None,
+    trace_io: bool | None = None,
+    dual_pass: bool = True,
 ) -> tuple[int, int]:
-    """Batch review QC JSON file, auto-approve lines marked ok.
+    """Batch review QC JSON file using the AI flow.
 
-    Parameters
-    ----------
-    qc_json:
-        Path to the QC JSON file.
-    prompt_path:
-        Optional prompt file path.
-    limit:
-        Maximum number of requests to send. ``None`` uses ``MAX_MESSAGES``.
-    progress_callback:
-        Optional callable invoked as ``callback(stage, index, row)`` before
-        (``stage='start'``) and after (``stage='done'``) each reviewed row.
+    If ``dual_pass`` is True (por defecto), usa la comprobación contextual
+    de la segunda pasada para auto-aprobar filas "ok". Si es False, solo
+    se utiliza la primera pasada más las heurísticas estructurales.
+
+    Returns (auto_approved_rows, processed_rows_minus_auto_approved).
     """
     global _stop_review
     _stop_review = False
@@ -607,26 +941,27 @@ def review_file(
             json.dumps(rows, ensure_ascii=False, indent=2),
             encoding="utf8",
         )
-    prompt = load_prompt(prompt_path)
-    sent = approved = 0
+    pass1_prompt = load_prompt(prompt_path)
+    approved = 0
+    processed = 0
     current_model = model or MODEL_DEFAULT
     max_requests = limit if limit is not None else MAX_MESSAGES
+    requests_sent = 0
+    trace = TRACE_IO if trace_io is None else trace_io
     for i, row in enumerate(rows):
         row = canonical_row(row)
         rows[i] = row
-        if _stop_review or (max_requests and sent >= max_requests):
+        if _stop_review or (max_requests and requests_sent >= max_requests):
             break
         tick = row[1] if len(row) > 1 else ""
         ok = str(row[2]).strip().lower() if len(row) >= 7 else ""
-        ai = str(row[3]).strip() if len(row) >= 8 else ""
-        # Skip rows already reviewed by AI regardless of verdict
-        if tick == "✅" or ok == "ok" or ai:
+        ai = str(row[3]).strip().lower() if len(row) >= 8 else ""
+        if tick.strip() in SKIP_TICKS or ok == "ok" or ai:
             logger.info("Skipping row %s due to prior status tick=%s ok=%s ai=%s", i, tick, ok, ai)
             continue
 
-        # Skip rows with empty Original or ASR text
-        original_text = str(row[-2]).strip()
-        asr_text = str(row[-1]).strip()
+        original_text = _extract_text(row[6] if len(row) > 6 else "").strip()
+        asr_text = _extract_text(row[7] if len(row) > 7 else "").strip()
         if not original_text or not asr_text:
             logger.info(f"Skipping row {i+1} due to missing Original or ASR text.")
             continue
@@ -637,23 +972,28 @@ def review_file(
             except Exception:
                 logger.exception("progress_callback start failed")
         attempts = 0
-        verdict = None  # type: ignore
+        ai_text1 = None  # type: ignore
         while True:
-            # Check max requests budget before each attempt
-            if max_requests and sent >= max_requests:
+            if max_requests and requests_sent >= max_requests:
                 break
-            sent += 1
             try:
-                verdict = _ai_verdict_with_timeout(
-                    str(row[-2]), str(row[-1]), prompt, ROW_TIMEOUT_SEC, model=current_model
+                requests_sent += 1
+                ai_text1 = _call_with_timeout(
+                    ai_verdict_pass1,
+                    ROW_TIMEOUT_SEC,
+                    original_text,
+                    asr_text,
+                    pass1_prompt,
+                    False,
+                    current_model,
+                    trace,
                 )
             except TimeoutError:
                 attempts += 1
                 logger.warning(
-                    "Row %d timed out after %ds (attempt %d)", i, ROW_TIMEOUT_SEC, attempts
+                    "Row %d timed out after %ds in pass1 (attempt %d)", i, ROW_TIMEOUT_SEC, attempts
                 )
                 if attempts >= 2:
-                    # Stop processing; show popup and exit loop
                     try:
                         from tkinter import messagebox  # type: ignore
 
@@ -664,14 +1004,12 @@ def review_file(
                     except Exception:
                         logger.exception("Failed to show error popup")
                     _stop_review = True
-                    # Clean processing tag in GUI by sending 'done' without verdict
                     if progress_callback:
                         try:
                             progress_callback("done", i, row)
                         except Exception:
                             logger.exception("progress_callback done failed (timeout)")
                     break
-                # Retry same row once
                 continue
             except BadRequestError as exc:
                 if "max_tokens" in str(exc) or "model output limit" in str(exc):
@@ -680,38 +1018,58 @@ def review_file(
                         json.dumps(rows, ensure_ascii=False, indent=2),
                         encoding="utf8",
                     )
-                    # Inform GUI that this row ended processing
                     if progress_callback:
                         try:
                             progress_callback("done", i, row)
                         except Exception:
                             logger.exception("progress_callback done failed (bad request)")
-                    verdict = "error"
+                    ai_text1 = "error"
                     break
                 raise
-            # Success
             break
 
-        # If we broke due to stop signal or budget, exit outer loop
-        if max_requests and sent >= max_requests and verdict is None:
+        if max_requests and requests_sent >= max_requests and ai_text1 is None:
             break
-        if verdict is None:
-            # No verdict produced (e.g., budget exhausted). Stop.
+        if ai_text1 is None:
             break
-        if verdict not in {"ok", "mal", "dudoso", "error"}:
-            verdict = "dudoso"
-        # Insert verdict column
-        if len(row) == 6:
-            row.insert(2, "")
-            row.insert(3, verdict)
-        elif len(row) == 7:
-            row.insert(3, verdict)
-        else:
-            row[3] = verdict
-        if verdict == "ok":
-            row[2] = "OK"
+
+        verdict1 = _normalize_verdict(ai_text1)
+        final_ai_text = ai_text1
+        final_verdict = verdict1
+        if verdict1 == "ok" and dual_pass and not (max_requests and requests_sent >= max_requests):
+            prev_orig, prev_asr = _context_text(rows, i - 1)
+            next_orig, next_asr = _context_text(rows, i + 1)
+            try:
+                requests_sent += 1
+                ai_text2 = _call_with_timeout(
+                    ai_verdict_pass2,
+                    ROW_TIMEOUT_SEC,
+                    prev_orig,
+                    prev_asr,
+                    original_text,
+                    asr_text,
+                    next_orig,
+                    next_asr,
+                    current_model,
+                    trace,
+                )
+            except TimeoutError:
+                logger.warning("Row %d timed out in pass2", i)
+                ai_text2 = "mal"
+            except BadRequestError as exc:
+                if "max_tokens" in str(exc) or "model output limit" in str(exc):
+                    ai_text2 = "mal"
+                else:
+                    raise
+            final_ai_text = ai_text2
+            final_verdict = _normalize_verdict(ai_text2)
+        auto_ok = final_verdict == "ok"
+
+        _apply_verdict_to_row(row, final_ai_text, final_verdict, auto_ok)
+        rows[i] = row
+        if auto_ok:
             approved += 1
-        # Save update
+        processed += 1
         Path(qc_json).write_text(
             json.dumps(rows, ensure_ascii=False, indent=2),
             encoding="utf8",
@@ -721,10 +1079,10 @@ def review_file(
                 progress_callback("done", i, row)
             except Exception:
                 logger.exception("progress_callback done failed")
-        if _stop_review or (max_requests and sent >= max_requests):
+        if _stop_review or (max_requests and requests_sent >= max_requests):
             break
-    logger.info("Approved %d / Remaining %d", approved, sent - approved)
-    return approved, sent - approved
+    logger.info("Approved %d / Remaining %d", approved, processed - approved)
+    return approved, processed - approved
 
 
 def review_file_feedback(
@@ -732,8 +1090,9 @@ def review_file_feedback(
     prompt_path: str = "prompt.txt",
     limit: int | None = None,
     model: str | None = None,
+    trace_io: bool | None = None,
 ) -> tuple[int, int, List[str]]:
-    """Batch review returning feedback strings for each processed row.
+    """Batch review returning feedback strings for each processed row (pass1 only).
 
     ``limit`` restricts how many requests are sent. ``None`` means use
     ``MAX_MESSAGES``.
@@ -741,6 +1100,7 @@ def review_file_feedback(
 
     global _stop_review
     _stop_review = False
+    trace = TRACE_IO if trace_io is None else trace_io
     rows = json.loads(Path(qc_json).read_text(encoding="utf8"))
     bak = Path(qc_json + ".bak")
     if not bak.exists():
@@ -757,19 +1117,20 @@ def review_file_feedback(
             break
         tick = row[1] if len(row) > 1 else ""
         ok = str(row[2]).strip().lower() if len(row) >= 7 else ""
-        ai = str(row[3]).strip() if len(row) >= 8 else ""
+        ai = str(row[3]).strip().lower() if len(row) >= 8 else ""
         # Skip rows already reviewed by AI regardless of verdict
-        if tick == "✅" or ok == "ok" or ai:
+        if tick.strip() in SKIP_TICKS or ok == "ok" or ai:
             logger.info("Skipping row %s due to prior status tick=%s ok=%s ai=%s", i, tick, ok, ai)
             continue
         sent += 1
         try:
-            verdict, fb = ai_verdict(
-                str(row[-2]),
-                str(row[-1]),
+            verdict, fb = ai_verdict_pass1(
+                _extract_text(row[6] if len(row) > 6 else ""),
+                _extract_text(row[7] if len(row) > 7 else ""),
                 prompt,
                 return_feedback=True,
                 model=current_model,
+                trace_io=trace,
             )
         except BadRequestError as exc:
             if "max_tokens" in str(exc) or "model output limit" in str(exc):
@@ -782,17 +1143,10 @@ def review_file_feedback(
                 continue
             raise
         feedback.append(fb)
-        if verdict not in {"ok", "mal", "dudoso", "error"}:
-            verdict = "dudoso"
-        if len(row) == 6:
-            row.insert(2, "")
-            row.insert(3, verdict)
-        elif len(row) == 7:
-            row.insert(3, verdict)
-        else:
-            row[3] = verdict
+        verdict = _normalize_verdict(verdict)
+        ai_text = fb.strip() if fb else verdict
+        _apply_verdict_to_row(row, ai_text, verdict, auto_ok=False)
         if verdict == "ok":
-            row[2] = "OK"
             approved += 1
         Path(qc_json).write_text(
             json.dumps(rows, ensure_ascii=False, indent=2),
@@ -813,6 +1167,16 @@ if __name__ == "__main__":
         default=None,
         help="maximum number of lines to review",
     )
+    parser.add_argument(
+        "--trace-io",
+        action="store_true",
+        help="Print prompts and responses for debugging",
+    )
     args = parser.parse_args()
-    a, b = review_file(args.file, args.prompt, args.limit)
+    a, b = review_file(
+        qc_json=args.file,
+        prompt_path=args.prompt,
+        limit=args.limit,
+        trace_io=args.trace_io,
+    )
     print(f"Auto-approved {a} / Remaining {b}")

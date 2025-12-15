@@ -1,0 +1,213 @@
+{
+  "rules": [
+    {
+      "id": "abbr_sr",
+      "pattern": "\\bSr\\.\\b",
+      "flags": "i",
+      "replacement": "señor",
+      "category": "abbreviation_title",
+      "examples": ["Sr."]
+    },
+    {
+      "id": "abbr_sra",
+      "pattern": "\\bSra\\.\\b",
+      "flags": "i",
+      "replacement": "señora",
+      "category": "abbreviation_title",
+      "examples": ["Sra."]
+    },
+    {
+      "id": "abbr_srta",
+      "pattern": "\\bSrta\\.\\b",
+      "flags": "i",
+      "replacement": "señorita",
+      "category": "abbreviation_title",
+      "examples": ["Srta."]
+    },
+    {
+      "id": "abbr_dr",
+      "pattern": "\\bDr\\.\\b",
+      "flags": "i",
+      "replacement": "doctor",
+      "category": "abbreviation_title",
+      "examples": ["Dr."]
+    },
+    {
+      "id": "abbr_dra",
+      "pattern": "\\bDra\\.\\b",
+      "flags": "i",
+      "replacement": "doctora",
+      "category": "abbreviation_title",
+      "examples": ["Dra."]
+    },
+    {
+      "id": "abbr_ing",
+      "pattern": "\\bIng\\.\\b",
+      "flags": "i",
+      "replacement": "ingeniero",
+      "category": "abbreviation_title",
+      "examples": ["Ing."]
+    },
+    {
+      "id": "abbr_lic",
+      "pattern": "\\bLic\\.\\b",
+      "flags": "i",
+      "replacement": "licenciado",
+      "category": "abbreviation_title",
+      "examples": ["Lic."]
+    },
+    {
+      "id": "abbr_prof",
+      "pattern": "\\bProf\\.\\b",
+      "flags": "i",
+      "replacement": "profesor",
+      "category": "abbreviation_title",
+      "examples": ["Prof."]
+    },
+    {
+      "id": "abbr_cap",
+      "pattern": "\\bCap\\.\\b",
+      "flags": "i",
+      "replacement": "capitán",
+      "category": "abbreviation_rank",
+      "examples": ["Cap."]
+    },
+    {
+      "id": "abbr_tte",
+      "pattern": "\\bTte\\.\\b",
+      "flags": "i",
+      "replacement": "teniente",
+      "category": "abbreviation_rank",
+      "examples": ["Tte."]
+    },
+    {
+      "id": "abbr_cnel",
+      "pattern": "\\bCnel\\.\\b",
+      "flags": "i",
+      "replacement": "coronel",
+      "category": "abbreviation_rank",
+      "examples": ["Cnel."]
+    },
+    {
+      "id": "abbr_gral",
+      "pattern": "\\bGral\\.\\b",
+      "flags": "i",
+      "replacement": "general",
+      "category": "abbreviation_rank",
+      "examples": ["Gral."]
+    },
+    {
+      "id": "abbr_bs_as",
+      "pattern": "\\bBs\\.\\s*As\\.\\b",
+      "flags": "i",
+      "replacement": "Buenos Aires",
+      "category": "abbreviation_geo",
+      "examples": ["Bs. As."]
+    },
+    {
+      "id": "abbr_sta",
+      "pattern": "\\bSta\\.\\b",
+      "flags": "i",
+      "replacement": "Santa",
+      "category": "abbreviation_geo",
+      "examples": ["Sta."]
+    },
+    {
+      "id": "abbr_sto",
+      "pattern": "\\bSto\\.\\b",
+      "flags": "i",
+      "replacement": "Santo",
+      "category": "abbreviation_geo",
+      "examples": ["Sto."]
+    },
+    {
+      "id": "abbr_etc",
+      "pattern": "\\betc\\.\\b",
+      "flags": "i",
+      "replacement": "etcétera",
+      "category": "latinism",
+      "examples": ["etc."]
+    },
+    {
+      "id": "abbr_p_ej",
+      "pattern": "\\bp\\.\\s*ej\\.\\b",
+      "flags": "i",
+      "replacement": "por ejemplo",
+      "category": "latinism",
+      "examples": ["p. ej."]
+    },
+    {
+      "id": "abbr_ac",
+      "pattern": "\\ba\\.C\\.\\b",
+      "flags": "i",
+      "replacement": "antes de Cristo",
+      "category": "latinism",
+      "examples": ["a.C."]
+    },
+    {
+      "id": "abbr_dc",
+      "pattern": "\\bd\\.C\\.\\b",
+      "flags": "i",
+      "replacement": "después de Cristo",
+      "category": "latinism",
+      "examples": ["d.C."]
+    },
+    {
+      "id": "abbr_eeuu",
+      "pattern": "\\bEE\\.\\s*UU\\.\\b",
+      "flags": "i",
+      "replacement": "Estados Unidos",
+      "category": "acronym",
+      "examples": ["EE. UU."]
+    },
+    {
+      "id": "abbr_onu",
+      "pattern": "\\bONU\\b",
+      "flags": "i",
+      "replacement": "ONU",
+      "category": "acronym",
+      "examples": ["ONU"]
+    },
+    {
+      "id": "abbr_ib",
+      "pattern": "\\bIB\\b",
+      "flags": "i",
+      "replacement": "IB",
+      "category": "acronym",
+      "examples": ["IB"]
+    },
+    {
+      "id": "sym_percent",
+      "pattern": "%",
+      "flags": "",
+      "replacement": " por ciento",
+      "category": "symbol",
+      "examples": ["%"]
+    },
+    {
+      "id": "sym_ampersand",
+      "pattern": "&",
+      "flags": "",
+      "replacement": " y ",
+      "category": "symbol",
+      "examples": ["&"]
+    },
+    {
+      "id": "sym_slash",
+      "pattern": "/",
+      "flags": "",
+      "replacement": " barra ",
+      "category": "symbol",
+      "examples": ["/"]
+    },
+    {
+      "id": "abbr_pd",
+      "pattern": "\\bP\\.D\\.\\b",
+      "flags": "i",
+      "replacement": "posdata",
+      "category": "abbreviation_style",
+      "examples": ["P.D."]
+    }
+  ]
+}
+

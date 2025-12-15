@@ -20,6 +20,8 @@ import subprocess
 import sys
 import tempfile
 import sqlite3
+import csv
+from datetime import datetime
 from pathlib import Path
 
 import pygame
@@ -41,6 +43,7 @@ from text_utils import (
     prepare_paragraphs,
     paragraphs_to_markdown,
 )
+from LEGACY.EXTRA_UTILS import normalizer_mvp
 from preprocess_clip import propose_clip, save_clip
 from rapidfuzz.distance import Levenshtein
 from qc_utils import canonical_row, log_correction_metadata
@@ -124,6 +127,104 @@ def _prepare_ref_text(text: str) -> tuple[str, list[str]]:
     """
     paragraphs = prepare_paragraphs(text)
     return "\n\n".join(paragraphs), paragraphs
+
+
+_NORMALIZER_RULES: list[dict] | None = None
+
+
+def _resolve_normalizer_path() -> Path | None:
+    """Return normalization dictionary path if present via env or default."""
+    env = os.getenv("QC_NORMALIZATION_JSON") or os.getenv("QC_NORMALIZER_JSON")
+    candidates: list[Path] = []
+    if env:
+        candidates.append(Path(env))
+    try:
+        core = Path(normalizer_mvp.CORE_DICT_PATH)
+        candidates.append(core)
+    except Exception:
+        pass
+    for cand in candidates:
+        try:
+            if cand and cand.exists():
+                return cand
+        except Exception:
+            continue
+    return None
+
+
+def _ensure_normalization_rules_global(notify=None) -> list[dict]:
+    """Lazy-load and cache normalization rules; optionally log via notify()."""
+    global _NORMALIZER_RULES
+    if _NORMALIZER_RULES is not None:
+        return _NORMALIZER_RULES
+
+    path = _resolve_normalizer_path()
+    if not path:
+        _NORMALIZER_RULES = []
+        return _NORMALIZER_RULES
+
+    try:
+        rules = normalizer_mvp.load_rules_from_json(str(path))
+    except Exception as exc:
+        if notify:
+            notify(f"DEBUG: No se pudieron cargar reglas de normalización desde {path}: {exc}")
+        _NORMALIZER_RULES = []
+        return _NORMALIZER_RULES
+
+    if notify:
+        notify(f"DEBUG: Reglas de normalización cargadas desde {path} ({len(rules)} reglas)")
+    _NORMALIZER_RULES = rules
+    return _NORMALIZER_RULES
+
+
+def _test_normalization_button(app: "App") -> None:
+    """Handler para el botón de prueba de normalización."""
+    script_path = app.v_ref.get()
+    if not script_path:
+        messagebox.showwarning("Falta info", "Selecciona guion (PDF/TXT) primero.")
+        return
+
+    try:
+        raw_text = read_script(script_path)
+    except Exception as exc:
+        show_error("Error al leer guion", exc)
+        return
+
+    rules = _ensure_normalization_rules_global(notify=app._log)
+    if not rules:
+        messagebox.showwarning(
+            "Diccionario de normalización",
+            "No se encontraron reglas de normalización.\n"
+            "Configura QC_NORMALIZATION_JSON o verifica normalization_core.json.",
+        )
+        return
+
+    try:
+        matches, normalized = normalizer_mvp.find_replacements(raw_text, rules)
+    except Exception as exc:
+        show_error("Error en normalización", exc)
+        return
+
+    app._log(f"DEBUG: Normalización de prueba: {len(matches)} reemplazos.")
+
+    win = tk.Toplevel(app)
+    win.title("Vista previa de normalización de guion")
+    win.geometry("900x600")
+
+    header = tk.Label(
+        win,
+        text=(
+            f"Guion: {os.path.basename(script_path)}\n"
+            f"Reemplazos aplicados: {len(matches)}"
+        ),
+        justify="left",
+    )
+    header.pack(padx=8, pady=(8, 4), anchor="w")
+
+    txt = scrolledtext.ScrolledText(win, wrap="word")
+    txt.pack(fill="both", expand=True, padx=8, pady=(0, 8))
+    txt.insert("1.0", normalized)
+    txt.focus_set()
 
 
 def _resolve_glossary_path(ref_path: Path) -> Path | None:
@@ -306,12 +407,16 @@ class App(tk.Tk):
         self.v_asr = tk.StringVar(self)
         self.v_audio = tk.StringVar(self)
         self.v_json = tk.StringVar(self)
+        self.v_audio.trace_add("write", lambda *_: self._on_audio_change())
         self.ai_one = tk.BooleanVar(self, value=False)
+        self.v_ai_trace = tk.BooleanVar(self, value=False)
+        self.v_ai_dual_pass = tk.BooleanVar(self, value=False)
         self.v_ai_repetition_check = tk.BooleanVar(self, value=False)
         self.v_ai_model = tk.StringVar(self, value="gpt-5.1")
         self.v_transcribe_model = tk.StringVar(self, value="large-v3")
         self.v_align_db = tk.BooleanVar(self, value=True)
         self.v_write_md = tk.BooleanVar(self, value=True)
+        self.v_use_normalizer = tk.BooleanVar(self, value=False)
 
         # --- Estadísticas y Filtros ---
         self.v_stats_total = tk.StringVar(self, value="Total: 0")
@@ -332,6 +437,8 @@ class App(tk.Tk):
         self.prev_asr: dict[str, str] = {}
         self.asr_confidence: dict[str, float] = {}
         self._stop_reprocess = False
+        self._normalizer_rules: list[dict] | None = None
+        self._use_normalizer_runtime: bool = False
 
         self.selected_cell: tuple[str, str] | None = None
         self.tree_tag = "sel_cell"
@@ -406,6 +513,12 @@ class App(tk.Tk):
         ttk.Button(files_frame, text="Abrir JSON…", command=self.load_json).grid(row=3, column=2, pady=(4, 0))
         ttk.Button(files_frame, text="Procesar", width=12, command=self.launch).grid(
             row=0, column=3, rowspan=2, padx=6, ipady=5)
+        ttk.Button(
+            files_frame,
+            text="Probar normalización",
+            width=16,
+            command=lambda: _test_normalization_button(self),
+        ).grid(row=2, column=3, padx=6, ipady=2)
         ttk.Checkbutton(
             files_frame,
             text="Guardar alineación .align.db",
@@ -416,6 +529,11 @@ class App(tk.Tk):
             text="Exportar guion normalizado .md",
             variable=self.v_write_md,
         ).grid(row=5, column=0, columnspan=3, sticky="w")
+        ttk.Checkbutton(
+            files_frame,
+            text="Normalizar guion (diccionario)",
+            variable=self.v_use_normalizer,
+        ).grid(row=6, column=0, columnspan=3, sticky="w")
 
         # --- Frame for AI tools ---
         ai_tools_frame = ttk.LabelFrame(controls_frame, text="Herramientas AI")
@@ -446,6 +564,12 @@ class App(tk.Tk):
         self.ai_model_combo.set(ai_models[0])
         ttk.Checkbutton(ai_tools_frame, text="una fila", variable=self.ai_one).grid(
             row=1, column=4, padx=2, pady=2)
+        ttk.Checkbutton(
+            ai_tools_frame, text="Debug IA", variable=self.v_ai_trace
+        ).grid(row=1, column=5, padx=2, pady=2, sticky="w")
+        ttk.Checkbutton(
+            ai_tools_frame, text="Dual pass", variable=self.v_ai_dual_pass
+        ).grid(row=1, column=6, padx=2, pady=2, sticky="w")
 
         # Row 2
         ttk.Button(
@@ -464,6 +588,11 @@ class App(tk.Tk):
         ttk.Checkbutton(
             ai_tools_frame, text="Detectar Repeticiones",
             variable=self.v_ai_repetition_check).grid(row=4, column=0, columnspan=5, sticky="w", padx=2, pady=2)
+
+        # Row 5
+        ttk.Button(
+            ai_tools_frame, text="Borrar veredictos",
+            command=self.clear_verdicts).grid(row=5, column=0, columnspan=5, sticky="ew", padx=2, pady=2)
 
         # --- Frame for Other tools ---
         other_tools_frame = ttk.LabelFrame(controls_frame, text="Otras Herramientas y Reportes")
@@ -489,6 +618,11 @@ class App(tk.Tk):
             text="Vista continua (Kivy)",
             command=self.open_continuous_view
         ).grid(row=3, column=0, sticky="ew", padx=2, pady=2)
+        ttk.Button(
+            other_tools_frame,
+            text="Exportar vista a CSV",
+            command=self.export_visible_to_csv,
+        ).grid(row=4, column=0, sticky="ew", padx=2, pady=2)
 
         # Frame para estadísticas y filtros
         stats_filter_frame = ttk.LabelFrame(self, text="Estadísticas y Filtros", padding=5)
@@ -696,9 +830,13 @@ class App(tk.Tk):
         if self.v_filter_mal.get():
             rows_to_display = [
                 r for r in rows_to_display
-                if len(r) > 3
-                and str(r[2]).strip().lower() != "ok"
-                and str(r[3]).strip().lower() != "ok"
+                if len(r) > 3 and (
+                    str(r[3]).strip().lower() == "mal"
+                    or (
+                        str(r[2]).strip().lower() != "ok"
+                        and str(r[3]).strip().lower() != "ok"
+                    )
+                )
             ]
 
         # 2. Filtrar por texto
@@ -862,6 +1000,94 @@ class App(tk.Tk):
         self.ok_rows.clear()
         self._update_scale_range()
 
+    def export_visible_to_csv(self) -> None:
+        """Exporta a CSV las filas actualmente visibles en la tabla."""
+        if not self.tree.get_children():
+            messagebox.showinfo("Sin datos", "No hay filas para exportar.")
+            return
+
+        path = filedialog.asksaveasfilename(
+            filetypes=[("CSV", "*.csv")],
+            defaultextension=".csv",
+            title="Exportar vista a CSV",
+        )
+        if not path:
+            return
+
+        try:
+            columns = list(self.tree["columns"])
+            with open(path, "w", newline="", encoding="utf-8-sig") as f:
+                writer = csv.writer(f)
+                writer.writerow(columns)
+                for iid in self.tree.get_children():
+                    values = list(self.tree.item(iid)["values"])
+                    if len(values) < len(columns):
+                        values.extend([""] * (len(columns) - len(values)))
+                    elif len(values) > len(columns):
+                        values = values[: len(columns)]
+                    writer.writerow(values)
+            self._log(f"Exportado CSV de vista actual a {path}")
+        except Exception as exc:
+            show_error("Error al exportar CSV", exc)
+
+    def clear_verdicts(self) -> None:
+        """Borra todos los veredictos (AI y manuales) de la sesión actual.
+
+        Antes de modificar el JSON crea una copia de seguridad con sufijo
+        basado en fecha/hora.
+        """
+        if not self.v_json.get():
+            messagebox.showwarning("Falta JSON", "Cargar JSON primero.")
+            return
+
+        confirm = messagebox.askyesno(
+            "Borrar veredictos",
+            "Se borrarán TODOS los veredictos (AI y OK manuales) del archivo actual.\n"
+            "Se guardará una copia de seguridad del JSON antes de continuar.\n\n"
+            "¿Seguro que quieres continuar?",
+        )
+        if not confirm:
+            return
+
+        try:
+            json_path = Path(self.v_json.get())
+            if json_path.exists():
+                ts = datetime.now().strftime("%Y%m%d-%H%M%S")
+                backup_path = json_path.with_suffix(json_path.suffix + f".bak-{ts}")
+                backup_path.write_text(json_path.read_text(encoding="utf8"), encoding="utf8")
+                self._log(f"Copia de seguridad creada: {backup_path}")
+        except Exception as exc:
+            show_error("Error al crear copia de seguridad del JSON", exc)
+            return
+
+        # Snapshot para undo/redo
+        self._snapshot()
+
+        # Limpiar en el modelo
+        new_rows: list[list] = []
+        for row in self.all_rows:
+            base = list(row)
+            if len(base) >= 3:
+                base[2] = ""
+            if len(base) >= 4:
+                base[3] = ""
+            new_rows.append(base)
+        self.all_rows = new_rows
+
+        # Limpiar en la vista
+        for iid in self.tree.get_children():
+            vals = list(self.tree.item(iid)["values"])
+            if len(vals) >= 3:
+                vals[2] = ""
+            if len(vals) >= 4:
+                vals[3] = ""
+            self.tree.item(iid, values=vals)
+
+        # Actualizar filtros y guardar
+        self._apply_filter()
+        self.save_json()
+        self._log("Todos los veredictos (AI y OK) fueron borrados.")
+
     def save_json(self) -> None:
         if not self.v_json.get():
             p = filedialog.asksaveasfilename(
@@ -872,16 +1098,8 @@ class App(tk.Tk):
                 return
             self.v_json.set(p)
         try:
-            rows = []
-            for iid in list(self.tree.get_children()):
-                try:
-                    rows.append(list(self.tree.item(iid)["values"]))
-                except tk.TclError as exc:
-                    # Si el item desaparece durante el guardado, avisar y seguir
-                    self._log(f"[WARN] No se pudo leer fila {iid}: {exc}")
-                    continue
-            for r in rows:
-                r[5] = _parse_tc(str(r[5]))
+            # Guardar SIEMPRE desde el modelo completo (all_rows), no desde la vista filtrada.
+            rows = [canonical_row(r) for r in self.all_rows]
             Path(self.v_json.get()).write_text(
                 json.dumps(rows, ensure_ascii=False, indent=2), encoding="utf8"
             )
@@ -1028,6 +1246,7 @@ class App(tk.Tk):
             return
 
         model = self.v_ai_model.get()
+        trace_flag = self.v_ai_trace.get()
         if self.ai_one.get():
             sel = self.tree.selection()
             if not sel:
@@ -1045,19 +1264,23 @@ class App(tk.Tk):
                 messagebox.showwarning("Falta texto", "La fila seleccionada no tiene texto en 'Original' o 'ASR'.")
                 return
             self._log("[AI] Enviada 1 fila a revision")
+            if trace_flag:
+                print("[AI TRACE] Debug IA activo: se mostraran prompts/respuestas en consola para esta fila.")
 
             threading.Thread(
                 target=self._ai_review_one_worker,
-                args=(row_id, model),
+                args=(row_id, model, trace_flag),
                 daemon=True,
             ).start()
         else:
             total = len(self.all_rows)
             self._log(f"[AI] Revision en lote (modelo {model}, {total} filas) puede tardar unos segundos...")
             self._show_progress(f"Revision AI en curso ({model}, {total} filas)...", determinate=False)
+            if trace_flag:
+                print("[AI TRACE] Debug IA activo: se mostraran prompts/respuestas en consola durante la revision en lote.")
             threading.Thread(
                 target=self._ai_review_worker,
-                args=(self.all_rows, model),
+                args=(self.all_rows, model, trace_flag),
                 daemon=True,
             ).start()
 
@@ -1122,16 +1345,24 @@ class App(tk.Tk):
         except Exception as exc:
             self._log(str(exc))
 
-    def _ai_review_worker(self, rows_to_review: list[list] | None = None, model: str | None = None) -> None:
+    def _ai_review_worker(
+        self,
+        rows_to_review: list[list] | None = None,
+        model: str | None = None,
+        trace_io: bool = False,
+    ) -> None:
         """Run batch AI review updating the GUI incrementally."""
         try:
             import ai_review
             model = model or self.v_ai_model.get()
+            dual_pass = self.v_ai_dual_pass.get()
             total = len(rows_to_review) if rows_to_review is not None else 0
             completed = 0
 
             if not rows_to_review:
-                approved, remaining = ai_review.review_file(self.v_json.get(), model=model)
+                approved, remaining = ai_review.review_file(
+                    self.v_json.get(), model=model, trace_io=trace_io, dual_pass=dual_pass
+                )
                 self.q.put(("RELOAD", None))
                 if ai_review._stop_review:
                     self.q.put("[AI] Revision detenida")
@@ -1154,11 +1385,17 @@ class App(tk.Tk):
 
             try:
                 approved, remaining = ai_review.review_file(
-                    self.v_json.get(), progress_callback=progress, model=model
+                    self.v_json.get(),
+                    progress_callback=progress,
+                    model=model,
+                    trace_io=trace_io,
+                    dual_pass=dual_pass,
                 )
             except TypeError:
                 # Fallback for older ai_review versions without progress_callback
-                approved, remaining = ai_review.review_file(self.v_json.get(), model=model)
+                approved, remaining = ai_review.review_file(
+                    self.v_json.get(), model=model, trace_io=trace_io
+                )
                 self.q.put(("RELOAD", None))
                 if ai_review._stop_review:
                     self.q.put("[AI] Revision detenida")
@@ -1183,7 +1420,7 @@ class App(tk.Tk):
         finally:
             self.q.put(("CLOSE_PROGRESS", None))
 
-    def _ai_review_one_worker(self, row_id: str, model: str) -> None:
+    def _ai_review_one_worker(self, row_id: str, model: str, trace_io: bool = False) -> None:
         try:
             from ai_review import review_row
             row_data = next((r for r in self.all_rows if str(r[0]) == row_id), None)
@@ -1191,7 +1428,7 @@ class App(tk.Tk):
                 self.q.put(f"Error: No se encontro la fila con ID {row_id}")
                 return
 
-            review_row(row_data, model=model)
+            review_row(row_data, model=model, trace_io=trace_io, dual_pass=self.v_ai_dual_pass.get())
             verdict = row_data[3]
             ok = row_data[2]
             self.q.put(("AI_ROW_ID", (row_id, verdict, ok)))
@@ -1199,6 +1436,9 @@ class App(tk.Tk):
             buf = io.StringIO()
             traceback.print_exc(file=buf)
             self.q.put(buf.getvalue())
+        finally:
+            self.q.put(("AI_DONE_ID", row_id))
+            self.q.put(("CLOSE_PROGRESS", None))
 
     # ------------------------------------------------------------------ reprocess
     def reprocess_bad(self) -> None:
@@ -1422,6 +1662,15 @@ class App(tk.Tk):
         except Exception:
             pass
 
+    def _on_audio_change(self) -> None:
+        """Persist the audio selection together with the current session."""
+        if not self.v_json.get():
+            return
+        try:
+            self._save_last_session(self.v_json.get())
+        except Exception:
+            pass
+
     def _auto_load_last_session(self) -> None:
         data = self._read_last_session()
         if not data:
@@ -1482,9 +1731,12 @@ class App(tk.Tk):
 
     def _play_clip(self, iid: str):
         """Calcula tc inicio - fin y prepara _clip_*"""
-        if not self.v_audio.get():
-            messagebox.showwarning("Falta audio", "Selecciona archivo de audio")
-            return
+        missing_audio = not self.v_audio.get()
+        if missing_audio:
+            messagebox.showwarning(
+                "Falta audio",
+                "No hay audio seleccionado; se abre el texto sin reproducir sonido.",
+            )
         try:
             start = float(_parse_tc(self.tree.set(iid, "tc")))
         except ValueError:
@@ -1494,6 +1746,8 @@ class App(tk.Tk):
         self._clip_item, self._clip_start, self._clip_end = iid, start, end
         self._clip_offset = 0.0
         self._show_text_popup(iid)
+        if missing_audio:
+            return
         self._play_current_clip()
 
     def _next_tc_full_table(self, row_id: str, start_hint: float | None = None) -> float | None:
@@ -2366,11 +2620,18 @@ class App(tk.Tk):
                 candidate = asr_path.with_suffix(".csv")
                 if candidate.exists():
                     csv_path = candidate
+                if csv_path is None:
+                    candidate = asr_path.with_suffix(".words.csv")
+                    debug(f"DEBUG: Buscando CSV junto al ASR: {candidate}")
+                    if candidate.exists():
+                        csv_path = candidate
                 if csv_path is None and self.v_audio.get():
                     candidate = Path(self.v_audio.get()).with_suffix(".words.csv")
+                    debug(f"DEBUG: Buscando CSV junto al audio: {candidate}")
                     if candidate.exists():
                         csv_path = candidate
                 if csv_path is None:
+                    debug("DEBUG: No se encontró CSV automático; solicitando al usuario")
                     from tkinter import filedialog
                     p = filedialog.askopenfilename(filetypes=[("CSV", "*.csv"), ("All", "*")])
                     if p:

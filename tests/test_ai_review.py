@@ -12,44 +12,55 @@ from alignment import build_rows
 
 def test_review_file_basic_skip_and_autofill():
     rows = [
-        [0, "✅", "", 10.0, 0.5, "hola", "hola"],
-        [1, "", "", 20.0, 0.5, "adios", "adio"],
-        [2, "", "OK", 30.0, 0.5, "buenos", "bueno"],
+        [0, "バ.", "", 5.0, 0.5, "hola", "hola"],
+        [1, "", "", 5.0, 0.5, "adios", "adio"],
+        [2, "", "OK", 3.0, 0.5, "buenos", "bueno"],
     ]
     with tempfile.TemporaryDirectory() as td:
         path = Path(td) / "file.json"
         path.write_text(json.dumps(rows, ensure_ascii=False), encoding="utf8")
 
-        with mock.patch("ai_review.ai_verdict", return_value="ok") as m:
+        with mock.patch("ai_review.ai_verdict_pass1", return_value="ok") as p1, mock.patch(
+            "ai_review.ai_verdict_pass2", return_value="ok"
+        ) as p2:
             approved, remaining = ai_review.review_file(str(path))
 
         data = json.loads(path.read_text(encoding="utf8"))
-        assert len(data[0]) == 7  # skipped due to tick ✅
+        assert len(data[0]) == 8  # skipped due to tick バ. but canonicalized
         assert len(data[1]) == 8
-        assert m.call_count == 1
+        assert p1.call_count == 1 and p2.call_count == 1
         assert data[1][3] == "ok" and data[1][2] == "OK"
         assert data[0][2] == ""
         assert approved == 1 and remaining == 0
 
 
-def test_review_file_bad_response_mark_dudoso():
-    rows = [[0, "", "", 20.0, 0.5, "hola", "halo"]]
+def test_review_file_bad_response_mark_mal():
+    rows = [[0, "", "", 5.0, 0.5, "hola", "halo"]]
     with tempfile.TemporaryDirectory() as td:
         p = Path(td) / "f.json"
         p.write_text(json.dumps(rows), encoding="utf8")
-        with mock.patch("ai_review.ai_verdict", return_value="blah"):
+        with mock.patch("ai_review.ai_verdict_pass1", return_value="blah") as p1, mock.patch(
+            "ai_review.ai_verdict_pass2"
+        ) as p2:
             ai_review.review_file(str(p))
         out = json.loads(p.read_text())
-        assert out[0][3] == "dudoso"
+        # La columna AI conserva la respuesta literal de la IA
+        assert out[0][3] == "blah"
+        # Pero la normalización interna sigue interpretándola como "mal"
+        assert ai_review._normalize_verdict(out[0][3]) == "mal"
+        p2.assert_not_called()
+        p1.assert_called_once()
 
 
 def test_review_row_updates_list():
-    row = [0, "", "", 20.0, 0.5, "hola", "hola"]
-    with mock.patch("ai_review.ai_verdict", return_value="ok") as m:
+    row = [0, "", "", 5.0, 0.5, "hola", "hola"]
+    with mock.patch("ai_review.ai_verdict_pass1", return_value="ok") as p1, mock.patch(
+        "ai_review.ai_verdict_pass2", return_value="ok"
+    ) as p2:
         ai_review.review_row(row)
     assert row[2] == "OK"
     assert row[3] == "ok"
-    assert m.called
+    assert p1.called and p2.called
 
 
 def test_review_file_on_six_column_rows(tmp_path):
@@ -58,7 +69,9 @@ def test_review_file_on_six_column_rows(tmp_path):
         r[1] = ""  # ensure not skipped
     path = tmp_path / "rows6.json"
     path.write_text(json.dumps(rows, ensure_ascii=False), encoding="utf8")
-    with mock.patch("ai_review.ai_verdict", return_value="ok"):
+    with mock.patch("ai_review.ai_verdict_pass1", return_value="ok"), mock.patch(
+        "ai_review.ai_verdict_pass2", return_value="ok"
+    ):
         ai_review.review_file(str(path))
     data = json.loads(path.read_text())
     assert len(data[0]) == 8
@@ -69,20 +82,24 @@ def test_review_file_on_eight_column_rows(tmp_path):
     rows = [[0, "", "", "", 10.0, 0.5, "hola", "hola"]]
     path = tmp_path / "rows8.json"
     path.write_text(json.dumps(rows, ensure_ascii=False), encoding="utf8")
-    with mock.patch("ai_review.ai_verdict", return_value="mal"):
+    with mock.patch("ai_review.ai_verdict_pass1", return_value="mal") as p1, mock.patch(
+        "ai_review.ai_verdict_pass2"
+    ) as p2:
         ai_review.review_file(str(path))
     data = json.loads(path.read_text())
     assert len(data[0]) == 8
     assert data[0][3] == "mal"
+    p2.assert_not_called()
+    p1.assert_called_once()
 
 
 def test_review_file_skips_existing_ai_verdict(tmp_path):
     rows = [[0, "", "", "mal", 10.0, 0.5, "hola", "hola"]]
     path = tmp_path / "rows_skip.json"
     path.write_text(json.dumps(rows, ensure_ascii=False), encoding="utf8")
-    with mock.patch("ai_review.ai_verdict") as m:
+    with mock.patch("ai_review.ai_verdict_pass1") as p1, mock.patch("ai_review.ai_verdict_pass2") as p2:
         approved, remaining = ai_review.review_file(str(path))
-    assert m.call_count == 0
+    assert p1.call_count == 0 and p2.call_count == 0
     out = json.loads(path.read_text())
     assert out[0][3] == "mal"
     assert approved == 0 and remaining == 0
@@ -96,9 +113,9 @@ def test_backup_created_and_partial_save(tmp_path):
     path = tmp_path / "rows.json"
     path.write_text(json.dumps(rows, ensure_ascii=False), encoding="utf8")
     with mock.patch(
-        "ai_review.ai_verdict",
+        "ai_review.ai_verdict_pass1",
         side_effect=["ok", Exception("boom")],
-    ):
+    ), mock.patch("ai_review.ai_verdict_pass2", return_value="ok"):
         with pytest.raises(Exception):
             ai_review.review_file(str(path))
     data = json.loads(path.read_text())
@@ -115,8 +132,8 @@ def test_load_prompt_fallback(tmp_path):
 
 def test_stop_review_midway(tmp_path):
     rows = [
-        [0, "", 10.0, 0.5, "hola", "hola"],
-        [1, "", 20.0, 0.5, "adios", "adios"],
+        [0, "", 5.0, 0.5, "hola", "hola"],
+        [1, "", 5.0, 0.5, "adios", "adios"],
     ]
     path = tmp_path / "rows.json"
     path.write_text(json.dumps(rows, ensure_ascii=False), encoding="utf8")
@@ -130,12 +147,14 @@ def test_stop_review_midway(tmp_path):
             ai_review.stop_review()
         return "ok"
 
-    with mock.patch("ai_review.ai_verdict", side_effect=_verdict):
+    with mock.patch("ai_review.ai_verdict_pass1", side_effect=_verdict):
         approved, remaining = ai_review.review_file(str(path))
 
     data = json.loads(path.read_text())
     assert calls == 1
-    assert data[0][2] == "OK"
+    # La primera fila se procesa con el veredicto de la IA
+    assert data[0][3] == "ok"
+    # La segunda fila permanece sin expandir (6 columnas originales)
     assert len(data[1]) == 6
     assert approved == 1 and remaining == 0
 
@@ -143,12 +162,13 @@ def test_stop_review_midway(tmp_path):
 def test_review_row_feedback_returns_tuple():
     row = [0, "", "", 0.0, 0.0, "hola", "hola"]
     with mock.patch(
-        "ai_review.ai_verdict",
+        "ai_review.ai_verdict_pass1",
         return_value=("ok", "ok porque coincide"),
     ):
         verdict, info = ai_review.review_row_feedback(row)
     assert verdict == "ok" and info == "ok porque coincide"
-    assert row[2] == "OK" and row[3] == "ok"
+    # La columna AI guarda el texto literal devuelto por la IA
+    assert row[2] == "" and row[3] == "ok porque coincide"
 
 
 def test_review_file_feedback_collects_messages(tmp_path):
@@ -156,14 +176,15 @@ def test_review_file_feedback_collects_messages(tmp_path):
     path = tmp_path / "rows.json"
     path.write_text(json.dumps(rows, ensure_ascii=False), encoding="utf8")
     with mock.patch(
-        "ai_review.ai_verdict",
+        "ai_review.ai_verdict_pass1",
         return_value=("mal", "mal por error"),
     ):
         approved, remaining, logs = ai_review.review_file_feedback(str(path))
     assert approved == 0 and remaining == 1
     assert logs == ["mal por error"]
     data = json.loads(path.read_text())
-    assert data[0][3] == "mal"
+    # La columna AI guarda el texto literal devuelto por la IA
+    assert data[0][3] == "mal por error"
 
 
 def test_review_file_handles_badrequest_error(tmp_path):
@@ -177,7 +198,7 @@ def test_review_file_handles_badrequest_error(tmp_path):
         response=resp,
         body=None,
     )
-    with mock.patch("ai_review.ai_verdict", side_effect=exc):
+    with mock.patch("ai_review.ai_verdict_pass1", side_effect=exc):
         approved, remaining = ai_review.review_file(str(path))
     data = json.loads(path.read_text())
     assert approved == 0 and remaining == 1
@@ -202,15 +223,17 @@ def test_client_singleton(monkeypatch):
 
 def test_review_file_respects_limit(tmp_path):
     rows = [
-        [0, "", "", 0.0, 0.0, "a", "a"],
-        [1, "", "", 0.0, 0.0, "b", "b"],
-        [2, "", "", 0.0, 0.0, "c", "c"],
+        [0, "", "", 20.0, 0.0, "a", "a"],
+        [1, "", "", 20.0, 0.0, "b", "b"],
+        [2, "", "", 20.0, 0.0, "c", "c"],
     ]
     p = tmp_path / "rows.json"
     p.write_text(json.dumps(rows, ensure_ascii=False), encoding="utf8")
-    with mock.patch("ai_review.ai_verdict", return_value="ok") as m:
+    with mock.patch("ai_review.ai_verdict_pass1", return_value="ok") as m1:
         approved, remaining = ai_review.review_file(str(p), limit=2)
-    assert m.call_count == 2
+    assert m1.call_count == 2
     data = json.loads(p.read_text())
     assert len(data[0]) == 8 and len(data[1]) == 8 and len(data[2]) == 7
+    # Solo las dos primeras filas reciben veredicto de la IA
+    assert data[0][3] == "ok" and data[1][3] == "ok"
     assert approved == 2 and remaining == 0
